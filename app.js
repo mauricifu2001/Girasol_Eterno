@@ -10,7 +10,8 @@ const state = {
     matcher: null,
     loadingStarted: false,
     soundtrack: null,
-    soundtrackPrimed: false
+    soundtrackPrimed: false,
+    museumEntries: []
 };
 
 const gateSection = document.getElementById("gateSection");
@@ -29,10 +30,33 @@ const hintText = document.getElementById("hintText");
 const welcomeScreen = document.getElementById("welcomeScreen");
 const welcomeTitle = document.getElementById("welcomeTitle");
 const welcomeMessage = document.getElementById("welcomeMessage");
+const museumGrid = document.getElementById("museumGrid");
+const closeVideoModalButton = document.getElementById("closeVideoModalButton");
+const videoModal = document.getElementById("videoModal");
+const videoModalFrame = document.getElementById("videoModalFrame");
+const videoModalTitle = document.getElementById("videoModalTitle");
 const welcomeRevealDelay = 2800;
 
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
+}
+
+function padSequenceNumber(value) {
+    return String(value).padStart(3, "0");
+}
+
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>\"']/g, (character) => {
+        const entities = {
+            "&": "&amp;",
+            "<": "&lt;",
+            ">": "&gt;",
+            '"': "&quot;",
+            "'": "&#39;"
+        };
+
+        return entities[character] || character;
+    });
 }
 
 function shouldPlaySoundtrackForLabel(label) {
@@ -193,7 +217,274 @@ function buildWelcomeContent(label) {
     };
 }
 
-function renderStory() {
+function getMuseumConfig() {
+    return storyConfig.museum || {};
+}
+
+function isHttpUrl(value) {
+    return /^https?:\/\//i.test(value || "");
+}
+
+function parseMuseumEntriesFromText(sourceText, museumConfig) {
+    const lines = String(sourceText || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"));
+
+    return lines.map((line, index) => {
+        const sequence = padSequenceNumber(index + 1);
+        const segments = line.split("|").map((segment) => segment.trim()).filter(Boolean);
+        const defaultEntry = {
+            title: `Fucknews - archivo ${sequence}`,
+            series: museumConfig.seriesLabel || "Fucknews Fridays",
+            date: `Viernes ${sequence}`,
+            note: museumConfig.defaultNote || "Otro viernes guardado en nuestro museo.",
+            url: line
+        };
+
+        if (segments.length === 1 && isHttpUrl(segments[0])) {
+            return {
+                ...defaultEntry,
+                url: segments[0]
+            };
+        }
+
+        if (segments.length === 2 && isHttpUrl(segments[1])) {
+            return {
+                ...defaultEntry,
+                title: segments[0] || defaultEntry.title,
+                url: segments[1]
+            };
+        }
+
+        if (segments.length >= 3 && isHttpUrl(segments[2])) {
+            return {
+                ...defaultEntry,
+                date: segments[0] || defaultEntry.date,
+                title: segments[1] || defaultEntry.title,
+                url: segments[2],
+                note: segments.slice(3).join(" | ") || defaultEntry.note
+            };
+        }
+
+        return defaultEntry;
+    });
+}
+
+async function loadMuseumEntries() {
+    const museumConfig = getMuseumConfig();
+    const inlineEntries = Array.isArray(museumConfig.entries) ? museumConfig.entries : [];
+
+    if (!museumConfig.source) {
+        state.museumEntries = inlineEntries;
+        return inlineEntries;
+    }
+
+    try {
+        const response = await fetch(museumConfig.source, { cache: "no-store" });
+
+        if (!response.ok) {
+            throw new Error(`No pude leer ${museumConfig.source}: ${response.status}`);
+        }
+
+        const sourceText = await response.text();
+        const parsedEntries = parseMuseumEntriesFromText(sourceText, museumConfig);
+        state.museumEntries = parsedEntries.length ? parsedEntries : inlineEntries;
+        return state.museumEntries;
+    } catch (error) {
+        console.warn("No pude cargar el archivo del museo. Uso las entradas del config como respaldo.", error);
+        state.museumEntries = inlineEntries;
+        return inlineEntries;
+    }
+}
+
+function formatMuseumDate(value) {
+    if (!value) {
+        return "Fecha pendiente";
+    }
+
+    const parsedDate = new Date(value);
+
+    if (Number.isNaN(parsedDate.getTime())) {
+        return value;
+    }
+
+    return new Intl.DateTimeFormat("es-CO", {
+        day: "numeric",
+        month: "long",
+        year: "numeric"
+    }).format(parsedDate);
+}
+
+function getYouTubeVideoId(url) {
+    if (!url) {
+        return "";
+    }
+
+    try {
+        const parsedUrl = new URL(url);
+        const host = parsedUrl.hostname.replace(/^www\./, "").toLowerCase();
+
+        if (host === "youtu.be") {
+            return parsedUrl.pathname.slice(1).split("/")[0];
+        }
+
+        if (host === "youtube.com" || host === "m.youtube.com") {
+            if (parsedUrl.pathname === "/watch") {
+                return parsedUrl.searchParams.get("v") || "";
+            }
+
+            if (parsedUrl.pathname.startsWith("/embed/") || parsedUrl.pathname.startsWith("/shorts/")) {
+                return parsedUrl.pathname.split("/")[2] || "";
+            }
+        }
+    } catch (error) {
+        return "";
+    }
+
+    return "";
+}
+
+function getYouTubeThumbnail(url) {
+    const videoId = getYouTubeVideoId(url);
+    return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "";
+}
+
+function getYouTubeEmbedUrl(url) {
+    const videoId = getYouTubeVideoId(url);
+    return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0` : "";
+}
+
+function openVideoModal(embedUrl, title) {
+    if (!embedUrl) {
+        return;
+    }
+
+    videoModalTitle.textContent = title || "Nuestro capitulo";
+    videoModalFrame.src = embedUrl;
+    videoModal.classList.remove("hidden");
+    videoModal.setAttribute("aria-hidden", "false");
+    document.body.classList.add("modal-open");
+
+    requestAnimationFrame(() => {
+        videoModal.classList.add("visible");
+    });
+}
+
+function closeVideoModal() {
+    if (!videoModal || videoModal.classList.contains("hidden")) {
+        return;
+    }
+
+    videoModal.classList.remove("visible");
+    videoModal.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("modal-open");
+
+    window.setTimeout(() => {
+        videoModal.classList.add("hidden");
+        videoModalFrame.src = "";
+    }, 220);
+}
+
+function renderMuseum(entries) {
+    const museumConfig = getMuseumConfig();
+
+    document.getElementById("museumStats").innerHTML = [
+        {
+            value: entries.length || "0",
+            label: "Capitulos guardados",
+            note: entries.length ? "Cada uno puede abrirse desde aqui mismo." : "Cuando pegues links, esta cuenta sube sola."
+        },
+        {
+            value: museumConfig.frequencyLabel || "Cada viernes",
+            label: "Ritual",
+            note: museumConfig.frequencyNote || "Ideal para registrar ese acto fijo que ya es tan de ustedes."
+        },
+        {
+            value: museumConfig.yearsLabel || "3 anos",
+            label: "Tiempo compartido",
+            note: museumConfig.yearsNote || "Perfecto para que se sienta como archivo vivo y no como lista suelta."
+        }
+    ]
+        .map(
+            (item) => `
+                <article class="museum-stat glass">
+                    <p class="museum-stat-value">${escapeHtml(item.value)}</p>
+                    <p class="museum-stat-label">${escapeHtml(item.label)}</p>
+                    <p class="museum-stat-note">${escapeHtml(item.note)}</p>
+                </article>
+            `
+        )
+        .join("");
+
+    if (!entries.length) {
+        museumGrid.innerHTML = `
+            <article class="museum-empty glass">
+                <p class="eyebrow">Archivo esperando</p>
+                <h3>Este museo queda listo para llenarlo con sus capitulos</h3>
+                <p>Pega enlaces de YouTube en <strong>config.js</strong> o en el archivo fuente del museo y cada tarjeta sacara su miniatura automaticamente. Tambien puedes anotar la fecha, una frase y cualquier recuerdo de ese viernes.</p>
+            </article>
+        `;
+        return;
+    }
+
+    museumGrid.innerHTML = entries
+        .map((entry) => {
+            const title = entry.title || "Capitulo compartido";
+            const embedUrl = getYouTubeEmbedUrl(entry.url);
+            const thumbnail = entry.coverImage || getYouTubeThumbnail(entry.url);
+            const series = entry.series || museumConfig.seriesLabel || "Archivo compartido";
+            const note = entry.note || "";
+            const thumbContent = thumbnail
+                ? `
+                    <img src="${escapeHtml(thumbnail)}" alt="Caratula de ${escapeHtml(title)}" loading="lazy">
+                    <span class="museum-play">${embedUrl ? "Ver aqui" : "Sin video"}</span>
+                `
+                : `
+                    <div class="museum-placeholder-copy">
+                        <strong>${escapeHtml(title)}</strong>
+                        <span>Pega un link de YouTube para que aparezca la caratula automaticamente.</span>
+                    </div>
+                `;
+            const thumbMarkup = embedUrl
+                ? `
+                    <button
+                        class="museum-thumb museum-thumb-button"
+                        type="button"
+                        data-video-embed="${escapeHtml(embedUrl)}"
+                        data-video-title="${escapeHtml(title)}"
+                    >
+                        ${thumbContent}
+                    </button>
+                `
+                : `
+                    <div class="museum-thumb museum-thumb-placeholder">
+                        ${thumbContent}
+                    </div>
+                `;
+
+            return `
+                <article class="museum-card">
+                    ${thumbMarkup}
+                    <div class="museum-card-body">
+                        <p class="museum-meta">
+                            <span>${escapeHtml(series)}</span>
+                            <span>${escapeHtml(formatMuseumDate(entry.date))}</span>
+                        </p>
+                        <h3>${escapeHtml(title)}</h3>
+                        <p class="museum-note">${escapeHtml(note)}</p>
+                        <div class="museum-actions">
+                            ${embedUrl ? `<button class="ghost museum-watch-button" type="button" data-video-embed="${escapeHtml(embedUrl)}" data-video-title="${escapeHtml(title)}">Ver dentro de la pagina</button>` : ""}
+                            ${entry.url ? `<a class="secondary museum-link" href="${escapeHtml(entry.url)}" target="_blank" rel="noreferrer noopener">Abrir enlace</a>` : ""}
+                        </div>
+                    </div>
+                </article>
+            `;
+        })
+        .join("");
+}
+
+async function renderStory() {
     gateTitle.textContent = portalConfig.title || gateTitle.textContent;
     gateCopy.textContent = portalConfig.intro || gateCopy.textContent;
     hintText.textContent = portalConfig.secretHint || "";
@@ -203,6 +494,12 @@ function renderStory() {
     document.getElementById("heroMessage").textContent = storyConfig.message || "";
     document.getElementById("finalTitle").textContent = storyConfig.finalTitle || "";
     document.getElementById("finalMessage").textContent = storyConfig.finalMessage || "";
+
+    const museumConfig = getMuseumConfig();
+
+    document.getElementById("museumEyebrow").textContent = museumConfig.eyebrow || "Museo compartido";
+    document.getElementById("museumTitle").textContent = museumConfig.title || "Los shows que hemos visto juntos";
+    document.getElementById("museumMessage").textContent = museumConfig.message || "";
 
     const metricsSection = document.getElementById("metricsSection");
     const relationshipDays = daysBetween(storyConfig.relationshipStart);
@@ -297,6 +594,8 @@ function renderStory() {
             `
         )
         .join("");
+
+    renderMuseum(await loadMuseumEntries());
 }
 
 async function startCamera() {
@@ -409,7 +708,7 @@ async function buildAuthorizedMatcher() {
 }
 
 async function initializePortal() {
-    renderStory();
+    await renderStory();
     ensureSoundtrack();
     stopSoundtrack();
 
@@ -511,6 +810,24 @@ function grantAccess(message, welcomeContent = null, accessLabel = "") {
 retryCameraButton.addEventListener("click", startCamera);
 captureButton.addEventListener("click", captureAndVerify);
 
+museumGrid.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-video-embed]");
+
+    if (!trigger) {
+        return;
+    }
+
+    openVideoModal(trigger.dataset.videoEmbed, trigger.dataset.videoTitle || "Nuestro capitulo");
+});
+
+closeVideoModalButton.addEventListener("click", closeVideoModal);
+
+videoModal.addEventListener("click", (event) => {
+    if (event.target === videoModal || event.target.dataset.closeVideo === "true") {
+        closeVideoModal();
+    }
+});
+
 secretForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const secretPhrase = normalizeText(portalConfig.secretPhrase);
@@ -531,6 +848,13 @@ secretForm.addEventListener("submit", (event) => {
 
 window.addEventListener("beforeunload", () => {
     stopSoundtrack(false);
+    closeVideoModal();
+});
+
+window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+        closeVideoModal();
+    }
 });
 
 window.addEventListener("load", initializePortal);

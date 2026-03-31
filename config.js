@@ -58,6 +58,28 @@ window.appConfig = {
                 note: "Y quiero vivirlos contigo, uno por uno, sin saltarme ninguno."
             }
         ],
+        museum: {
+            eyebrow: "Museo de nuestros viernes",
+            title: "Archivo de nuestras noches de Fucknews",
+            message: "Aqui quedan guardados todos esos capitulos que hemos convertido en ritual. Este rincon ahora puede crecer como un museo bonito de todo lo que nos hemos reido juntos.",
+            frequencyLabel: "Todos los viernes",
+            frequencyNote: "Como ritual fijo, no como lista cualquiera.",
+            yearsLabel: "3 anos",
+            yearsNote: "Y contando, viernes por viernes.",
+            seriesLabel: "Fucknews Fridays",
+            source: "fucknews_links.txt",
+            defaultNote: "Otro viernes guardado en nuestro museo.",
+            entries: [
+                // Ejemplo de tarjeta:
+                // {
+                //     title: "Fucknews - episodio 001",
+                //     series: "Fucknews Fridays",
+                //     date: "2026-03-27",
+                //     note: "Ese viernes nos reiamos de tal chiste y terminamos hablando media hora mas.",
+                //     url: "https://www.youtube.com/watch?v=XXXXXXXXXXX"
+                // }
+            ]
+        },
         timeline: [
             {
                 date: "El primer mensaje",

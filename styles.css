@@ -44,6 +44,10 @@ body.unlocked .welcome-screen {
     pointer-events: none;
 }
 
+body.modal-open {
+    overflow: hidden;
+}
+
 a {
     color: inherit;
     text-decoration: none;
@@ -601,6 +605,7 @@ button:hover,
 }
 
 .hero,
+.museum,
 .story,
 .reasons,
 .letters,
@@ -632,6 +637,209 @@ button:hover,
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 1rem;
+}
+
+.museum-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+    gap: 1.2rem;
+    align-items: end;
+}
+
+.museum-copy {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.8;
+}
+
+.museum-stats,
+.museum-grid {
+    display: grid;
+    gap: 1rem;
+}
+
+.museum-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin-bottom: 1.15rem;
+}
+
+.museum-stat {
+    border-radius: 24px;
+    padding: 1.15rem;
+}
+
+.museum-stat-value,
+.museum-card h3,
+.museum-empty h3,
+.video-modal-copy h3 {
+    margin: 0;
+    font-family: "Cormorant Garamond", serif;
+}
+
+.museum-stat-value {
+    font-size: clamp(2rem, 4vw, 3rem);
+    color: var(--gold);
+}
+
+.museum-stat-label,
+.museum-note,
+.museum-stat-note,
+.museum-empty p,
+.museum-placeholder-copy span {
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+.museum-stat-label {
+    margin: 0.35rem 0 0;
+    font-weight: 600;
+}
+
+.museum-stat-note {
+    margin: 0.45rem 0 0;
+}
+
+.museum-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.museum-card,
+.museum-empty {
+    border-radius: 28px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.museum-thumb {
+    position: relative;
+    display: grid;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    overflow: hidden;
+    background: linear-gradient(135deg, rgba(240, 194, 123, 0.14), rgba(240, 159, 156, 0.12));
+}
+
+.museum-thumb::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, transparent 0%, rgba(17, 12, 13, 0.15) 45%, rgba(17, 12, 13, 0.78) 100%);
+    pointer-events: none;
+}
+
+.museum-thumb-button {
+    border: 0;
+    padding: 0;
+    cursor: pointer;
+}
+
+.museum-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transform: scale(1.01);
+    transition: transform 0.35s ease, filter 0.35s ease;
+    filter: saturate(0.95) contrast(1.02);
+}
+
+.museum-thumb-button:hover img,
+.museum-thumb-button:focus-visible img {
+    transform: scale(1.05);
+    filter: saturate(1.05) contrast(1.08);
+}
+
+.museum-play {
+    position: absolute;
+    right: 1rem;
+    bottom: 1rem;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 999px;
+    background: rgba(16, 12, 13, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+}
+
+.museum-thumb-placeholder {
+    place-items: center;
+    min-height: 220px;
+}
+
+.museum-placeholder-copy {
+    position: relative;
+    z-index: 1;
+    max-width: 28ch;
+    padding: 1rem;
+    text-align: center;
+}
+
+.museum-placeholder-copy strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    font-size: 1.35rem;
+    font-family: "Cormorant Garamond", serif;
+}
+
+.museum-card-body {
+    display: grid;
+    gap: 0.85rem;
+    padding: 1.15rem;
+}
+
+.museum-meta {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+    margin: 0;
+    color: var(--gold);
+    font-size: 0.75rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
+.museum-card h3,
+.museum-empty h3,
+.video-modal-copy h3 {
+    font-size: clamp(2rem, 4vw, 2.85rem);
+    line-height: 0.96;
+}
+
+.museum-note {
+    margin: 0;
+}
+
+.museum-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.museum-watch-button,
+.museum-link {
+    flex: 1 1 180px;
+}
+
+.museum-empty {
+    grid-column: 1 / -1;
+    padding: 1.35rem;
+    text-align: center;
+}
+
+.museum-empty h3 {
+    margin-top: 0.25rem;
+}
+
+.museum-empty p {
+    max-width: 60ch;
+    margin: 0.85rem auto 0;
 }
 
 .metric-card {
@@ -777,6 +985,71 @@ button:hover,
     text-align: center;
 }
 
+.video-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.22s ease, visibility 0.22s ease;
+}
+
+.video-modal.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.video-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(9, 7, 7, 0.76);
+    backdrop-filter: blur(8px);
+}
+
+.video-modal-card {
+    position: relative;
+    z-index: 1;
+    width: min(980px, 100%);
+    padding: 1.2rem;
+    border-radius: 32px;
+}
+
+.video-modal-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.video-modal-copy h3 {
+    margin-top: 0.15rem;
+}
+
+.video-modal-close {
+    flex: 0 0 auto;
+}
+
+.video-frame {
+    position: relative;
+    overflow: hidden;
+    border-radius: 26px;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 56.25%;
+}
+
+.video-frame iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+
 #finalMessage {
     max-width: 60ch;
     margin: 1rem auto 0;
@@ -819,10 +1092,16 @@ button:hover,
 
 @media (max-width: 980px) {
     .metrics,
+    .museum-stats,
+    .museum-grid,
     .reason-grid,
     .letter-grid,
     .playlist-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .museum-head {
+        grid-template-columns: 1fr;
     }
 }
 
@@ -837,6 +1116,8 @@ button:hover,
     }
 
     .metrics,
+    .museum-stats,
+    .museum-grid,
     .reason-grid,
     .letter-grid,
     .playlist-list {
@@ -845,14 +1126,19 @@ button:hover,
 
     .control-row,
     .hero-actions,
-    .secret-form {
+    .secret-form,
+    .museum-actions,
+    .video-modal-top {
         flex-direction: column;
     }
 
     .primary,
     .secondary,
     .ghost,
-    #secretInput {
+    #secretInput,
+    .museum-watch-button,
+    .museum-link,
+    .video-modal-close {
         width: 100%;
     }
 }

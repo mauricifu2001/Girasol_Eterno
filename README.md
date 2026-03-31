@@ -43,9 +43,39 @@ Si prefieres VS Code, tambien puedes usar una extension como Live Server.
 - `portal.authorizedProfiles`
 - `story.title`
 - `story.message`
+- `story.museum`
 - `story.timeline`
 - `story.letters`
 - `story.playlist`
+
+## Museo de shows
+
+La pagina ya puede mostrar un museo de videos vistos juntos usando enlaces de YouTube.
+
+1. Abre `config.js`.
+2. Busca `story.museum.source` y `story.museum.entries`.
+3. Si quieres manejarlo facil, deja tus links en `fucknews_links.txt` y la pagina los leera automaticamente.
+4. El archivo acepta estas formas por linea:
+
+```txt
+https://www.youtube.com/watch?v=XXXXXXXXXXX
+Titulo personalizado | https://www.youtube.com/watch?v=XXXXXXXXXXX
+2026-03-27 | Fucknews episodio 001 | https://www.youtube.com/watch?v=XXXXXXXXXXX | Ese viernes nos reimos demasiado con este capitulo
+```
+
+5. Si prefieres control manual total, tambien puedes agregar objetos con esta forma dentro de `story.museum.entries`:
+
+```js
+{
+	title: "Fucknews - episodio 001",
+	series: "Fucknews Fridays",
+	date: "2026-03-27",
+	note: "Ese viernes nos reimos durisimo con este capitulo.",
+	url: "https://www.youtube.com/watch?v=XXXXXXXXXXX"
+}
+```
+
+Con eso la pagina sacara automaticamente la miniatura del video y permitira abrirlo dentro de la pagina o en YouTube.
 
 ## Ideas para mejorarla despues
 
