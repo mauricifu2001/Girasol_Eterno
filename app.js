@@ -379,18 +379,18 @@ function renderMuseum(entries) {
     document.getElementById("museumStats").innerHTML = [
         {
             value: entries.length || "0",
-            label: "Capitulos archivados",
-            note: entries.length ? "La cartelera completa vive en su propia sala." : "Cuando agregues capitulos, esta cuenta sube sola."
+            label: "Capitulos guardados",
+            note: entries.length ? "La lista completa te la deje aparte." : "Cuando haya capitulos, aqui se van a ir sumando."
         },
         {
             value: museumConfig.frequencyLabel || "Cada viernes",
             label: "Ritual",
-            note: museumConfig.frequencyNote || "Un plan fijo que ya es demasiado de ustedes."
+            note: museumConfig.frequencyNote || "Ya es plan fijo entre tu y yo."
         },
         {
             value: museumConfig.yearsLabel || "3 anos",
             label: "Historia guardada",
-            note: museumConfig.yearsNote || "Suficiente tiempo para que esto se sintiera como una verdadera sala privada."
+            note: museumConfig.yearsNote || "Y espero que sigan siendo muchos mas."
         }
     ]
         .map(
@@ -407,10 +407,10 @@ function renderMuseum(entries) {
     if (!entries.length) {
         museumGrid.innerHTML = `
             <article class="museum-launch-panel glass">
-                <p class="eyebrow">Sala esperando</p>
-                <h3>La cartelera se activa apenas haya capitulos</h3>
-                <p>Deja los enlaces en el archivo del museo y esta entrada se convertira en la puerta hacia la sala completa.</p>
-                <a class="primary museum-panel-button" href="museum.html">Abrir sala privada</a>
+                <p class="eyebrow">Todavia vacio</p>
+                <h3>Aqui van a ir quedando nuestros capitulos</h3>
+                <p>Apenas haya enlaces en el archivo, desde aqui se entra a todo.</p>
+                <a class="primary museum-panel-button" href="museum.html">Entrar</a>
             </article>
         `;
         return;
@@ -418,10 +418,10 @@ function renderMuseum(entries) {
 
     museumGrid.innerHTML = `
         <article class="museum-launch-panel glass">
-            <p class="eyebrow">Entrada reservada</p>
-            <h3>${escapeHtml(museumConfig.previewTitle || "La cartelera completa nos espera adentro")}</h3>
-            <p>${escapeHtml(museumConfig.previewMessage || "Quise que esto se sintiera mas como una puerta al recuerdo que como una lista infinita en la misma pantalla.")}</p>
-            <a class="primary museum-panel-button" href="museum.html">${escapeHtml(museumConfig.ctaLabel || "Entrar a la sala")}</a>
+            <p class="eyebrow">Te lo deje aparte</p>
+            <h3>${escapeHtml(museumConfig.previewTitle || "Aqui te deje todos nuestros Fucknews")}</h3>
+            <p>${escapeHtml(museumConfig.previewMessage || "Preferi dejar esto aparte para que se sintiera mas nuestro.")}</p>
+            <a class="primary museum-panel-button" href="museum.html">${escapeHtml(museumConfig.ctaLabel || "Entrar")}</a>
         </article>
     ` + previewEntries
         .map(
@@ -429,8 +429,8 @@ function renderMuseum(entries) {
                 <article class="museum-preview-card">
                     <span class="museum-preview-index">${padSequenceNumber(index + 1)}</span>
                     <h3>${escapeHtml(entry.title || `Fucknews - archivo ${padSequenceNumber(index + 1)}`)}</h3>
-                    <p>${escapeHtml(entry.note || museumConfig.defaultNote || "Otro viernes guardado en nuestro museo.")}</p>
-                    <a class="museum-preview-link" href="museum.html">Ver en la sala</a>
+                    <p>${escapeHtml(entry.note || museumConfig.defaultNote || "Otro viernes contigo que quise guardar aqui.")}</p>
+                    <a class="museum-preview-link" href="museum.html">Ver</a>
                 </article>
             `
         )
@@ -451,12 +451,12 @@ async function renderStory() {
     const museumConfig = getMuseumConfig();
     const museumLaunchButton = document.getElementById("museumLaunchButton");
 
-    document.getElementById("museumEyebrow").textContent = museumConfig.eyebrow || "Museo compartido";
-    document.getElementById("museumTitle").textContent = museumConfig.title || "Los shows que hemos visto juntos";
+    document.getElementById("museumEyebrow").textContent = museumConfig.eyebrow || "Nuestros viernes";
+    document.getElementById("museumTitle").textContent = museumConfig.title || "Los Fucknews que he visto contigo";
     document.getElementById("museumMessage").textContent = museumConfig.message || "";
 
     if (museumLaunchButton) {
-        museumLaunchButton.textContent = museumConfig.ctaLabel || "Entrar a la sala";
+        museumLaunchButton.textContent = museumConfig.ctaLabel || "Entrar";
     }
 
     const metricsSection = document.getElementById("metricsSection");

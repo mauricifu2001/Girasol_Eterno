@@ -224,24 +224,24 @@ function openVideoModal(embedUrl, title) {
 }
 
 function applyMuseumCopy() {
-    introEyebrow.textContent = museumConfig.introEyebrow || "La taquilla ya prendio sus luces";
-    introTitle.textContent = museumConfig.introTitle || "Mi Girasol Hermosa, esta sala ya te estaba esperando";
-    introMessage.textContent = museumConfig.introMessage || "Quise que entrar aqui se sintiera como abrir una sala hecha por mi para nosotros.";
-    introTicketLabel.textContent = museumConfig.introTicketLabel || "Entrada reservada";
+    introEyebrow.textContent = museumConfig.introEyebrow || "Te deje esto aqui";
+    introTitle.textContent = museumConfig.introTitle || "Mi Girasol Hermosa, entra";
+    introMessage.textContent = museumConfig.introMessage || "Queria que esta parte se sintiera bonita desde el principio, porque estos viernes contigo ya son de mis cosas favoritas.";
+    introTicketLabel.textContent = museumConfig.introTicketLabel || "Entrada para ti";
     introTicketName.textContent = museumConfig.introTicketName || "Mi Girasol Hermosa";
-    introTicketMeta.textContent = museumConfig.introTicketMeta || "Funcion privada para nuestros viernes";
-    enterMuseumButton.textContent = museumConfig.introEnterLabel || "Abrir la sala";
-    skipIntroButton.textContent = museumConfig.introSkipLabel || "Entrar sin espera";
-    pageEyebrow.textContent = museumConfig.pageEyebrow || museumConfig.eyebrow || "Cartelera privada para ti";
-    pageTitle.textContent = museumConfig.pageTitle || museumConfig.title || "La sala que hice para nuestros viernes";
+    introTicketMeta.textContent = museumConfig.introTicketMeta || "Nuestros viernes con Fucknews";
+    enterMuseumButton.textContent = museumConfig.introEnterLabel || "Entrar";
+    skipIntroButton.textContent = museumConfig.introSkipLabel || "Ir de una";
+    pageEyebrow.textContent = museumConfig.pageEyebrow || museumConfig.eyebrow || "Solo nosotros";
+    pageTitle.textContent = museumConfig.pageTitle || museumConfig.title || "Nuestros viernes con Fucknews";
     pageMessage.textContent = museumConfig.pageMessage || museumConfig.message || "";
-    museumBackLink.textContent = museumConfig.backButtonLabel || "Volver al portal";
-    museumGalleryJumpLink.textContent = museumConfig.galleryButtonLabel || "Ver cartelera";
-    museumStripEyebrow.textContent = museumConfig.stripEyebrow || "Titulares de nuestra cartelera";
-    museumStripTitle.textContent = museumConfig.stripTitle || "Los viernes que ya se volvieron parte de lo nuestro";
-    museumGalleryEyebrow.textContent = museumConfig.galleryEyebrow || "Cartelera completa";
-    museumGalleryTitle.textContent = museumConfig.galleryTitle || "Todos los capitulos guardados para mi Girasol Hermosa";
-    museumGalleryBackLink.textContent = museumConfig.galleryBackLabel || "Regresar al portal";
+    museumBackLink.textContent = museumConfig.backButtonLabel || "Volver";
+    museumGalleryJumpLink.textContent = museumConfig.galleryButtonLabel || "Ver capitulos";
+    museumStripEyebrow.textContent = museumConfig.stripEyebrow || "Lo nuestro";
+    museumStripTitle.textContent = museumConfig.stripTitle || "Todos esos viernes que ya son muy nuestros";
+    museumGalleryEyebrow.textContent = museumConfig.galleryEyebrow || "Todo lo que hemos visto";
+    museumGalleryTitle.textContent = museumConfig.galleryTitle || "Todos los capitulos que he visto contigo";
+    museumGalleryBackLink.textContent = museumConfig.galleryBackLabel || "Volver";
 }
 
 function revealMuseum(instant = false) {
@@ -284,17 +284,17 @@ function closeVideoModal() {
 
 function renderEmptyState() {
     premierePoster.innerHTML = "";
-    premiereEyebrow.textContent = museumConfig.premiereEyebrow || "Estreno mas reciente";
-    premiereTitle.textContent = "Todavia no hay estreno cargado";
-    premiereNote.textContent = "Apenas aparezcan capitulos en el archivo, este espacio va a encender la funcion mas reciente por si quiero dejartela lista de una vez.";
+    premiereEyebrow.textContent = museumConfig.premiereEyebrow || "El mas reciente";
+    premiereTitle.textContent = "Todavia no hay capitulos aqui";
+    premiereNote.textContent = "Apenas aparezcan capitulos en el archivo, te los voy dejando guardados aqui.";
     premiereButton.disabled = true;
     premiereExternalLink.removeAttribute("href");
     premiereExternalLink.setAttribute("aria-disabled", "true");
     posterGrid.innerHTML = `
         <article class="cinema-empty">
-            <p class="eyebrow">Sala esperando</p>
-            <h3>Todavia no hay capitulos en cartelera</h3>
-            <p>En cuanto haya enlaces en el archivo del museo, esta sala se va a llenar sola con todos nuestros viernes guardados.</p>
+            <p class="eyebrow">Todavia vacio</p>
+            <h3>Aqui van a ir quedando nuestros capitulos</h3>
+            <p>En cuanto haya enlaces en el archivo del museo, esto se va llenando solo.</p>
         </article>
     `;
 }
@@ -302,8 +302,8 @@ function renderEmptyState() {
 function renderMuseumPage(entries) {
     applyMuseumCopy();
     archiveCount.textContent = String(entries.length || 0);
-    archiveLabel.textContent = museumConfig.pageStatLabel || "Capitulos en cartelera";
-    archiveNote.textContent = museumConfig.pageStatNote || "Cada titulo sale del archivo que me compartiste.";
+    archiveLabel.textContent = museumConfig.pageStatLabel || "Capitulos guardados";
+    archiveNote.textContent = museumConfig.pageStatNote || "Cada uno me acuerda de ti y de uno de nuestros viernes.";
 
     headlineRow.innerHTML = entries.slice(0, 10)
         .map((entry) => `<span class="cinema-chip">${escapeHtml(entry.title || "Capitulo compartido")}</span>`)
@@ -319,15 +319,15 @@ function renderMuseumPage(entries) {
     const latestEmbedUrl = getYouTubeEmbedUrl(latestEntry.url);
     const latestThumbnail = latestEntry.coverImage || getYouTubeThumbnail(latestEntry.url);
 
-    premiereEyebrow.textContent = museumConfig.premiereEyebrow || "Estreno mas reciente";
+    premiereEyebrow.textContent = museumConfig.premiereEyebrow || "El mas reciente";
     premiereTitle.textContent = latestTitle;
-    premiereNote.textContent = latestEntry.note || museumConfig.defaultNote || "Otro viernes guardado en nuestro museo.";
+    premiereNote.textContent = latestEntry.note || museumConfig.defaultNote || "Otro viernes contigo que quise guardar aqui.";
     premiereButton.disabled = !latestEmbedUrl;
     premiereButton.dataset.videoEmbed = latestEmbedUrl;
     premiereButton.dataset.videoTitle = latestTitle;
-    premiereButton.textContent = museumConfig.premiereButtonLabel || "Ver estreno en sala";
+    premiereButton.textContent = museumConfig.premiereButtonLabel || "Ver aqui";
     premiereExternalLink.href = latestEntry.url || "#";
-    premiereExternalLink.textContent = museumConfig.premiereExternalLabel || "Abrir en YouTube";
+    premiereExternalLink.textContent = museumConfig.premiereExternalLabel || "Ver en YouTube";
     premiereExternalLink.setAttribute("aria-disabled", latestEntry.url ? "false" : "true");
     premierePoster.innerHTML = latestThumbnail
         ? `<img src="${escapeHtml(latestThumbnail)}" alt="Caratula de ${escapeHtml(latestTitle)}" loading="lazy">`
@@ -338,8 +338,8 @@ function renderMuseumPage(entries) {
             const title = entry.title || `Fucknews - archivo ${padSequenceNumber(index + 1)}`;
             const thumbnail = entry.coverImage || getYouTubeThumbnail(entry.url);
             const embedUrl = getYouTubeEmbedUrl(entry.url);
-            const note = entry.note || museumConfig.defaultNote || "Otro viernes guardado en nuestro museo.";
-            const series = entry.series || museumConfig.seriesLabel || "Archivo compartido";
+            const note = entry.note || museumConfig.defaultNote || "Otro viernes contigo que quise guardar aqui.";
+            const series = entry.series || museumConfig.seriesLabel || "Nuestros viernes";
 
             return `
                 <article class="poster-card">
@@ -356,8 +356,8 @@ function renderMuseumPage(entries) {
                         <h3>${escapeHtml(title)}</h3>
                         <p class="poster-note">${escapeHtml(note)}</p>
                         <div class="poster-actions">
-                            <button class="ghost poster-open-button" type="button" data-video-embed="${escapeHtml(embedUrl)}" data-video-title="${escapeHtml(title)}">Ver dentro de la sala</button>
-                            <a class="secondary poster-link" href="${escapeHtml(entry.url)}" target="_blank" rel="noreferrer noopener">Abrir en YouTube</a>
+                            <button class="ghost poster-open-button" type="button" data-video-embed="${escapeHtml(embedUrl)}" data-video-title="${escapeHtml(title)}">Ver aqui</button>
+                            <a class="secondary poster-link" href="${escapeHtml(entry.url)}" target="_blank" rel="noreferrer noopener">Ver en YouTube</a>
                         </div>
                     </div>
                 </article>
