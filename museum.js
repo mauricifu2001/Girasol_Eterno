@@ -7,9 +7,25 @@ const headlineRow = document.getElementById("museumHeadlineRow");
 const archiveCount = document.getElementById("museumArchiveCount");
 const archiveLabel = document.getElementById("museumArchiveLabel");
 const archiveNote = document.getElementById("museumArchiveNote");
+const cinemaIntro = document.getElementById("cinemaIntro");
+const introEyebrow = document.getElementById("cinemaIntroEyebrow");
+const introTitle = document.getElementById("cinemaIntroTitle");
+const introMessage = document.getElementById("cinemaIntroMessage");
+const introTicketLabel = document.getElementById("cinemaIntroTicketLabel");
+const introTicketName = document.getElementById("cinemaIntroTicketName");
+const introTicketMeta = document.getElementById("cinemaIntroTicketMeta");
+const enterMuseumButton = document.getElementById("enterMuseumButton");
+const skipIntroButton = document.getElementById("skipIntroButton");
 const pageEyebrow = document.getElementById("museumPageEyebrow");
 const pageTitle = document.getElementById("museumPageTitle");
 const pageMessage = document.getElementById("museumPageMessage");
+const museumBackLink = document.getElementById("museumBackLink");
+const museumGalleryJumpLink = document.getElementById("museumGalleryJumpLink");
+const museumStripEyebrow = document.getElementById("museumStripEyebrow");
+const museumStripTitle = document.getElementById("museumStripTitle");
+const museumGalleryEyebrow = document.getElementById("museumGalleryEyebrow");
+const museumGalleryTitle = document.getElementById("museumGalleryTitle");
+const museumGalleryBackLink = document.getElementById("museumGalleryBackLink");
 const premierePoster = document.getElementById("cinemaPremierePoster");
 const premiereEyebrow = document.getElementById("cinemaPremiereEyebrow");
 const premiereTitle = document.getElementById("cinemaPremiereTitle");
@@ -20,6 +36,7 @@ const videoModal = document.getElementById("videoModal");
 const videoModalFrame = document.getElementById("videoModalFrame");
 const videoModalTitle = document.getElementById("videoModalTitle");
 const closeVideoModalButton = document.getElementById("closeVideoModalButton");
+const introRevealDelay = 1320;
 
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => {
@@ -206,6 +223,50 @@ function openVideoModal(embedUrl, title) {
     });
 }
 
+function applyMuseumCopy() {
+    introEyebrow.textContent = museumConfig.introEyebrow || "La taquilla ya prendio sus luces";
+    introTitle.textContent = museumConfig.introTitle || "Mi Girasol Hermosa, esta sala ya te estaba esperando";
+    introMessage.textContent = museumConfig.introMessage || "Quise que entrar aqui se sintiera como abrir una sala hecha por mi para nosotros.";
+    introTicketLabel.textContent = museumConfig.introTicketLabel || "Entrada reservada";
+    introTicketName.textContent = museumConfig.introTicketName || "Mi Girasol Hermosa";
+    introTicketMeta.textContent = museumConfig.introTicketMeta || "Funcion privada para nuestros viernes";
+    enterMuseumButton.textContent = museumConfig.introEnterLabel || "Abrir la sala";
+    skipIntroButton.textContent = museumConfig.introSkipLabel || "Entrar sin espera";
+    pageEyebrow.textContent = museumConfig.pageEyebrow || museumConfig.eyebrow || "Cartelera privada para ti";
+    pageTitle.textContent = museumConfig.pageTitle || museumConfig.title || "La sala que hice para nuestros viernes";
+    pageMessage.textContent = museumConfig.pageMessage || museumConfig.message || "";
+    museumBackLink.textContent = museumConfig.backButtonLabel || "Volver al portal";
+    museumGalleryJumpLink.textContent = museumConfig.galleryButtonLabel || "Ver cartelera";
+    museumStripEyebrow.textContent = museumConfig.stripEyebrow || "Titulares de nuestra cartelera";
+    museumStripTitle.textContent = museumConfig.stripTitle || "Los viernes que ya se volvieron parte de lo nuestro";
+    museumGalleryEyebrow.textContent = museumConfig.galleryEyebrow || "Cartelera completa";
+    museumGalleryTitle.textContent = museumConfig.galleryTitle || "Todos los capitulos guardados para mi Girasol Hermosa";
+    museumGalleryBackLink.textContent = museumConfig.galleryBackLabel || "Regresar al portal";
+}
+
+function revealMuseum(instant = false) {
+    if (!document.body.classList.contains("museum-intro-pending") && !document.body.classList.contains("museum-intro-opening")) {
+        return;
+    }
+
+    if (instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        document.body.classList.remove("museum-intro-pending", "museum-intro-opening");
+        document.body.classList.add("museum-intro-complete");
+        cinemaIntro.classList.add("hidden");
+        return;
+    }
+
+    enterMuseumButton.disabled = true;
+    skipIntroButton.disabled = true;
+    document.body.classList.add("museum-intro-opening");
+
+    window.setTimeout(() => {
+        document.body.classList.remove("museum-intro-pending", "museum-intro-opening");
+        document.body.classList.add("museum-intro-complete");
+        cinemaIntro.classList.add("hidden");
+    }, introRevealDelay);
+}
+
 function closeVideoModal() {
     if (videoModal.classList.contains("hidden")) {
         return;
@@ -225,7 +286,7 @@ function renderEmptyState() {
     premierePoster.innerHTML = "";
     premiereEyebrow.textContent = museumConfig.premiereEyebrow || "Estreno mas reciente";
     premiereTitle.textContent = "Todavia no hay estreno cargado";
-    premiereNote.textContent = "Apenas agregues episodios al archivo, este espacio resaltara automaticamente el mas reciente.";
+    premiereNote.textContent = "Apenas aparezcan capitulos en el archivo, este espacio va a encender la funcion mas reciente por si quiero dejartela lista de una vez.";
     premiereButton.disabled = true;
     premiereExternalLink.removeAttribute("href");
     premiereExternalLink.setAttribute("aria-disabled", "true");
@@ -233,15 +294,13 @@ function renderEmptyState() {
         <article class="cinema-empty">
             <p class="eyebrow">Sala esperando</p>
             <h3>Todavia no hay capitulos en cartelera</h3>
-            <p>En cuanto haya enlaces en el archivo del museo, esta sala se llenara sola con todos los episodios.</p>
+            <p>En cuanto haya enlaces en el archivo del museo, esta sala se va a llenar sola con todos nuestros viernes guardados.</p>
         </article>
     `;
 }
 
 function renderMuseumPage(entries) {
-    pageEyebrow.textContent = museumConfig.pageEyebrow || museumConfig.eyebrow || "Cartelera privada";
-    pageTitle.textContent = museumConfig.pageTitle || museumConfig.title || "La sala de nuestros viernes con Fucknews";
-    pageMessage.textContent = museumConfig.pageMessage || museumConfig.message || "";
+    applyMuseumCopy();
     archiveCount.textContent = String(entries.length || 0);
     archiveLabel.textContent = museumConfig.pageStatLabel || "Capitulos en cartelera";
     archiveNote.textContent = museumConfig.pageStatNote || "Cada titulo sale del archivo que me compartiste.";
@@ -322,7 +381,22 @@ async function initializeMuseumPage() {
     }
 
     renderMuseumPage(await loadMuseumEntries());
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        revealMuseum(true);
+        return;
+    }
+
+    enterMuseumButton.focus();
 }
+
+enterMuseumButton.addEventListener("click", () => {
+    revealMuseum(false);
+});
+
+skipIntroButton.addEventListener("click", () => {
+    revealMuseum(true);
+});
 
 posterGrid.addEventListener("click", (event) => {
     const trigger = event.target.closest("[data-video-embed]");

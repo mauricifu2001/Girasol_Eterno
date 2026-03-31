@@ -48,6 +48,11 @@ body.modal-open {
     overflow: hidden;
 }
 
+body.museum-intro-pending,
+body.museum-intro-opening {
+    overflow: hidden;
+}
+
 a {
     color: inherit;
     text-decoration: none;
@@ -1160,12 +1165,220 @@ body.museum-route::after {
     opacity: 0.75;
 }
 
+.cinema-intro {
+    position: fixed;
+    inset: 0;
+    z-index: 35;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 50% 24%, rgba(240, 194, 123, 0.2), transparent 18%),
+        radial-gradient(circle at bottom, rgba(240, 159, 156, 0.12), transparent 24%),
+        linear-gradient(180deg, rgba(12, 7, 8, 0.96), rgba(12, 7, 8, 0.84) 36%, rgba(8, 5, 6, 0.98));
+}
+
+.cinema-intro-grain {
+    position: absolute;
+    inset: -20%;
+    opacity: 0.16;
+    background-image:
+        radial-gradient(circle, rgba(255, 255, 255, 0.22) 0 1px, transparent 1px),
+        radial-gradient(circle, rgba(240, 194, 123, 0.18) 0 1px, transparent 1px);
+    background-size: 12px 12px, 18px 18px;
+    animation: drift 18s linear infinite;
+    pointer-events: none;
+}
+
+.cinema-curtains {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    pointer-events: none;
+}
+
+.cinema-curtain {
+    position: relative;
+    background:
+        linear-gradient(90deg, rgba(54, 8, 17, 0.98), rgba(113, 18, 34, 0.94) 18%, rgba(89, 12, 27, 0.96) 36%, rgba(128, 19, 39, 0.94) 52%, rgba(77, 11, 25, 0.98) 68%, rgba(44, 7, 14, 0.98)),
+        repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.04) 0 22px, rgba(255, 255, 255, 0) 22px 48px);
+    box-shadow: inset 0 0 60px rgba(0, 0, 0, 0.36);
+    transition: transform 1.2s cubic-bezier(0.2, 0.8, 0.14, 1);
+}
+
+.cinema-curtain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.1), transparent 14%, transparent 82%, rgba(0, 0, 0, 0.3));
+    opacity: 0.9;
+}
+
+.cinema-curtain-left {
+    transform-origin: left center;
+    border-right: 1px solid rgba(255, 220, 181, 0.14);
+}
+
+.cinema-curtain-right {
+    transform-origin: right center;
+    border-left: 1px solid rgba(255, 220, 181, 0.14);
+}
+
+body.museum-intro-opening .cinema-curtain-left {
+    transform: translateX(-104%);
+}
+
+body.museum-intro-opening .cinema-curtain-right {
+    transform: translateX(104%);
+}
+
+.cinema-intro-stage {
+    position: relative;
+    z-index: 1;
+    width: min(1100px, 100%);
+    display: grid;
+    grid-template-columns: minmax(240px, 320px) minmax(0, 1fr);
+    gap: 1.25rem;
+    padding: clamp(1.4rem, 3vw, 2.4rem);
+    border-radius: 36px;
+    background:
+        linear-gradient(180deg, rgba(31, 18, 21, 0.9), rgba(12, 8, 9, 0.92)),
+        radial-gradient(circle at top, rgba(240, 194, 123, 0.16), transparent 40%);
+    overflow: hidden;
+}
+
+.cinema-intro-stage::before,
+.cinema-intro-stage::after {
+    content: "";
+    position: absolute;
+    left: 1rem;
+    right: 1rem;
+    height: 1.25rem;
+    background-image: radial-gradient(circle, rgba(255, 236, 197, 0.96) 0 28%, rgba(240, 194, 123, 0.72) 29% 46%, transparent 47%);
+    background-size: 1.5rem 1.25rem;
+    background-repeat: repeat-x;
+    filter: drop-shadow(0 0 10px rgba(240, 194, 123, 0.5));
+}
+
+.cinema-intro-stage::before {
+    top: 0.9rem;
+}
+
+.cinema-intro-stage::after {
+    bottom: 0.9rem;
+}
+
+.cinema-intro-lights {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.cinema-intro-lights::before {
+    content: "";
+    position: absolute;
+    inset: 18% 10% auto;
+    height: 16rem;
+    background: radial-gradient(circle, rgba(240, 194, 123, 0.18), transparent 66%);
+    filter: blur(20px);
+}
+
+.cinema-intro-ticket,
+.cinema-intro-copy {
+    position: relative;
+    z-index: 1;
+}
+
+.cinema-intro-ticket {
+    align-self: center;
+    display: grid;
+    gap: 0.75rem;
+    padding: 1.4rem;
+    border-radius: 28px;
+    background:
+        linear-gradient(180deg, rgba(248, 225, 192, 0.96), rgba(231, 192, 142, 0.9)),
+        repeating-linear-gradient(90deg, rgba(92, 37, 12, 0.08) 0 18px, rgba(255, 255, 255, 0) 18px 42px);
+    color: #2a1713;
+    box-shadow: 0 28px 60px rgba(0, 0, 0, 0.3);
+    transform: rotate(-4deg);
+}
+
+.cinema-intro-ticket .eyebrow {
+    color: rgba(61, 35, 28, 0.72);
+}
+
+.cinema-intro-ticket h2 {
+    margin: 0;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(2.6rem, 5vw, 4rem);
+    line-height: 0.92;
+}
+
+.cinema-intro-ticket-meta {
+    margin: 0;
+    font-size: 0.95rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.cinema-intro-copy {
+    display: grid;
+    align-content: center;
+    gap: 1rem;
+    padding: clamp(1rem, 2vw, 1.4rem);
+}
+
+.cinema-intro-copy h1 {
+    margin: 0;
+    max-width: 11ch;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(3.4rem, 8vw, 6.4rem);
+    line-height: 0.9;
+}
+
+.cinema-intro-message {
+    margin: 0;
+    max-width: 60ch;
+    color: var(--muted);
+    line-height: 1.9;
+}
+
+.cinema-intro-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.85rem;
+}
+
 .cinema-shell {
     position: relative;
     z-index: 1;
     width: min(1280px, calc(100% - 2rem));
     margin: 0 auto;
     padding: 2rem 0 4rem;
+    opacity: 0;
+    transform: translateY(28px) scale(0.985);
+    filter: blur(14px);
+    transition: opacity 0.9s ease, transform 0.95s cubic-bezier(0.2, 0.8, 0.18, 1), filter 0.9s ease;
+}
+
+body.museum-intro-complete .cinema-shell {
+    opacity: 1;
+    transform: none;
+    filter: none;
+}
+
+body.museum-intro-complete .cinema-intro {
+    pointer-events: none;
+}
+
+body.museum-intro-opening .cinema-intro-stage {
+    animation: introStageLift 1.15s ease forwards;
+}
+
+body.museum-intro-opening .cinema-intro {
+    animation: introFadeOut 1.2s ease forwards;
 }
 
 .cinema-hero,
@@ -1402,6 +1615,14 @@ body.museum-route::after {
     align-items: end;
 }
 
+.poster-head h2,
+.cinema-strip h2 {
+    margin: 0;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(2rem, 4vw, 3.2rem);
+    line-height: 0.96;
+}
+
 .poster-grid {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1585,13 +1806,46 @@ body.museum-route::after {
     }
 }
 
+@keyframes introStageLift {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(-18px) scale(0.96);
+    }
+}
+
+@keyframes introFadeOut {
+    0% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+        visibility: hidden;
+    }
+}
+
 @media (max-width: 980px) {
+    .cinema-intro-stage,
     .metrics,
     .museum-stats,
     .reason-grid,
     .letter-grid,
     .playlist-list {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .cinema-intro-stage,
+    .cinema-marquee,
+    .poster-head,
+    .poster-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cinema-intro-ticket {
+        transform: none;
     }
 
     .museum-head {
@@ -1609,26 +1863,17 @@ body.museum-route::after {
     .museum-launch-panel {
         grid-column: 1 / -1;
     }
-
-    .cinema-marquee,
-    .poster-head,
-    .poster-grid {
-        grid-template-columns: 1fr;
-    }
 }
 
-
-    .poster-head h2,
-    .cinema-strip h2 {
-        margin: 0;
-        font-family: "Cormorant Garamond", serif;
-        font-size: clamp(2rem, 4vw, 3.2rem);
-        line-height: 0.96;
-    }
 @media (max-width: 720px) {
     .shell {
         width: min(100% - 1rem, 100%);
         padding-top: 1rem;
+    }
+
+    .cinema-intro-copy h1,
+    .cinema-hero h1 {
+        max-width: none;
     }
 
     .camera-frame {
@@ -1649,6 +1894,7 @@ body.museum-route::after {
     .secret-form,
     .museum-actions,
     .video-modal-top,
+    .cinema-intro-actions,
     .cinema-actions,
     .poster-actions {
         flex-direction: column;
@@ -1658,7 +1904,9 @@ body.museum-route::after {
     .secondary,
     .ghost,
     #secretInput,
-    .video-modal-close {
+    .video-modal-close,
+    #enterMuseumButton,
+    #skipIntroButton {
         width: 100%;
     }
 

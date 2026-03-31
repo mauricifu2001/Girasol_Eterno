@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sala privada de Fucknews</title>
-    <meta name="description" content="Cartelera privada con todos los capitulos de Fucknews que Mauricio y Valentina han visto juntos.">
+    <title>La sala de mi Girasol Hermosa</title>
+    <meta name="description" content="Cartelera privada que Mauricio preparo para su Girasol Hermosa con todos sus viernes de Fucknews.">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -12,9 +12,34 @@
     <script defer src="config.js"></script>
     <script defer src="museum.js"></script>
 </head>
-<body class="museum-route">
+<body class="museum-route museum-intro-pending">
     <div class="ambient ambient-one"></div>
     <div class="ambient ambient-two"></div>
+
+    <div class="cinema-intro" id="cinemaIntro" aria-live="polite">
+        <div class="cinema-curtains" aria-hidden="true">
+            <span class="cinema-curtain cinema-curtain-left"></span>
+            <span class="cinema-curtain cinema-curtain-right"></span>
+        </div>
+        <div class="cinema-intro-grain" aria-hidden="true"></div>
+        <div class="cinema-intro-stage glass">
+            <div class="cinema-intro-lights" aria-hidden="true"></div>
+            <div class="cinema-intro-ticket">
+                <p class="eyebrow" id="cinemaIntroTicketLabel">Entrada reservada</p>
+                <h2 id="cinemaIntroTicketName">Mi Girasol Hermosa</h2>
+                <p class="cinema-intro-ticket-meta" id="cinemaIntroTicketMeta">Funcion privada para nuestros viernes</p>
+            </div>
+            <div class="cinema-intro-copy">
+                <p class="eyebrow" id="cinemaIntroEyebrow">La taquilla ya prendio sus luces</p>
+                <h1 id="cinemaIntroTitle">Mi Girasol Hermosa, esta sala ya te estaba esperando</h1>
+                <p class="cinema-intro-message" id="cinemaIntroMessage">Quise que entrar aqui se sintiera como abrir una sala hecha por mi para nosotros, con luces, telon y esa sensacion de que nuestros viernes ya merecian su propia cartelera.</p>
+                <div class="cinema-intro-actions">
+                    <button class="primary" id="enterMuseumButton" type="button">Abrir la sala</button>
+                    <button class="ghost" id="skipIntroButton" type="button">Entrar sin espera</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <main class="cinema-shell">
         <section class="cinema-hero glass">
@@ -23,8 +48,8 @@
             <h1 id="museumPageTitle">La sala de nuestros viernes con Fucknews</h1>
             <p class="cinema-copy" id="museumPageMessage"></p>
             <div class="cinema-actions">
-                <a class="secondary" href="index.html">Volver al portal</a>
-                <a class="primary" href="#posterGallery">Ver cartelera</a>
+                <a class="secondary" href="index.html" id="museumBackLink">Volver al portal</a>
+                <a class="primary" href="#posterGallery" id="museumGalleryJumpLink">Ver cartelera</a>
             </div>
         </section>
 
@@ -37,8 +62,8 @@
             </article>
 
             <article class="cinema-strip">
-                <p class="eyebrow">Titulares del archivo</p>
-                <h2>Los viernes que ya tienen nombre propio</h2>
+                <p class="eyebrow" id="museumStripEyebrow">Titulares del archivo</p>
+                <h2 id="museumStripTitle">Los viernes que ya tienen nombre propio</h2>
                 <div class="cinema-chip-row" id="museumHeadlineRow"></div>
             </article>
 
@@ -59,10 +84,10 @@
         <section class="poster-gallery glass" id="posterGallery">
             <div class="section-head poster-head">
                 <div>
-                    <p class="eyebrow">Cartelera completa</p>
-                    <h2>Todos los capitulos en la sala</h2>
+                    <p class="eyebrow" id="museumGalleryEyebrow">Cartelera completa</p>
+                    <h2 id="museumGalleryTitle">Todos los capitulos en la sala</h2>
                 </div>
-                <a class="secondary" href="index.html">Regresar al portal</a>
+                <a class="secondary" href="index.html" id="museumGalleryBackLink">Regresar al portal</a>
             </div>
             <div class="poster-grid" id="posterGrid"></div>
         </section>
@@ -73,7 +98,7 @@
         <div class="video-modal-card glass">
             <div class="video-modal-top">
                 <div class="video-modal-copy">
-                    <p class="eyebrow">Archivo compartido</p>
+                    <p class="eyebrow">Archivo de nosotros</p>
                     <h3 id="videoModalTitle">Nuestro capitulo</h3>
                 </div>
                 <button class="ghost video-modal-close" id="closeVideoModalButton" type="button" aria-label="Cerrar video">Cerrar</button>
