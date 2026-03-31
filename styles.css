@@ -1602,7 +1602,9 @@ body.museum-intro-seating .cinema-curtain-right {
 }
 
 body.museum-intro-opening .cinema-intro-stage {
-    animation: introStageLift 1.7s ease forwards;
+    opacity: 0;
+    transform: translateY(26px) scale(0.95);
+    pointer-events: none;
 }
 
 body.museum-intro-opening .cinema-intro {
