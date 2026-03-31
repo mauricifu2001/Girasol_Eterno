@@ -49,6 +49,7 @@ body.modal-open {
 }
 
 body.museum-intro-pending,
+body.museum-intro-seating,
 body.museum-intro-opening {
     overflow: hidden;
 }
@@ -1191,6 +1192,217 @@ body.museum-route::after {
     pointer-events: none;
 }
 
+.cinema-seat-call {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    opacity: 0;
+    transform: scale(1.06);
+    pointer-events: none;
+}
+
+.theater-illustration {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 50% 18%, rgba(245, 226, 188, 0.38), transparent 20%),
+        linear-gradient(180deg, #f2e2bd 0%, #d5b884 20%, #44282a 21%, #2a181a 62%, #1a1113 100%);
+}
+
+.theater-arch-shell {
+    position: absolute;
+    inset: 0 0 34% 0;
+}
+
+.theater-balcony-ring {
+    position: absolute;
+    top: -12%;
+    left: 50%;
+    width: min(1120px, 110%);
+    aspect-ratio: 1.75 / 1;
+    border-radius: 0 0 52% 52% / 0 0 100% 100%;
+    transform: translateX(-50%);
+    border: 12px solid rgba(61, 34, 28, 0.9);
+    box-shadow:
+        0 0 0 16px rgba(240, 224, 195, 0.98),
+        0 0 0 28px rgba(110, 79, 47, 0.58),
+        inset 0 -12px 0 rgba(96, 67, 43, 0.55);
+}
+
+.theater-proscenium {
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: min(980px, 92%);
+    aspect-ratio: 1.8 / 1;
+    transform: translateX(-50%);
+    border-radius: 38px 38px 0 0;
+    background:
+        linear-gradient(180deg, rgba(245, 231, 204, 0.98), rgba(221, 194, 143, 0.94));
+    box-shadow:
+        0 0 0 10px rgba(61, 34, 28, 0.86),
+        0 0 0 24px rgba(243, 228, 201, 0.88),
+        inset 0 -18px 0 rgba(104, 71, 45, 0.22);
+}
+
+.theater-proscenium::before,
+.theater-proscenium::after {
+    content: "";
+    position: absolute;
+    top: 13%;
+    bottom: 0;
+    width: 12%;
+    background:
+        linear-gradient(180deg, rgba(247, 235, 211, 0.98), rgba(208, 177, 127, 0.94));
+    box-shadow: inset 0 0 0 6px rgba(64, 37, 29, 0.82);
+}
+
+.theater-proscenium::before {
+    left: 3%;
+}
+
+.theater-proscenium::after {
+    right: 3%;
+}
+
+.theater-stage-ornament {
+    position: absolute;
+    top: 6%;
+    left: 12%;
+    right: 12%;
+    height: 14%;
+    border-radius: 999px;
+    background:
+        radial-gradient(circle at 50% 0, rgba(255, 245, 220, 0.9), transparent 50%),
+        linear-gradient(180deg, rgba(164, 123, 66, 0.84), rgba(99, 70, 42, 0.92));
+    box-shadow: inset 0 -4px 0 rgba(61, 34, 28, 0.5);
+}
+
+.theater-stage-curtain {
+    position: absolute;
+    left: 18%;
+    right: 18%;
+    top: 18%;
+    bottom: 12%;
+    border-radius: 22px 22px 0 0;
+    background:
+        linear-gradient(90deg, #5f1417 0 6%, #8e2529 6% 15%, #6b161b 15% 23%, #972c31 23% 32%, #651519 32% 40%, #8b242a 40% 49%, #611318 49% 57%, #8e262b 57% 67%, #69151b 67% 76%, #91292d 76% 86%, #651419 86% 94%, #4f1014 94% 100%),
+        linear-gradient(180deg, rgba(255, 223, 160, 0.18), rgba(0, 0, 0, 0.2));
+    box-shadow: inset 0 0 0 5px rgba(70, 20, 18, 0.48);
+}
+
+.theater-stage-curtain::before {
+    content: "";
+    position: absolute;
+    top: -7%;
+    left: 8%;
+    right: 8%;
+    height: 16%;
+    background:
+        radial-gradient(circle at 12% 100%, transparent 24px, rgba(219, 184, 124, 0.96) 25px 43px, transparent 44px),
+        radial-gradient(circle at 50% 100%, transparent 26px, rgba(219, 184, 124, 0.96) 27px 45px, transparent 46px),
+        radial-gradient(circle at 88% 100%, transparent 24px, rgba(219, 184, 124, 0.96) 25px 43px, transparent 44px);
+}
+
+.theater-stage-floor {
+    position: absolute;
+    left: 14%;
+    right: 14%;
+    bottom: 5%;
+    height: 8%;
+    border-radius: 6px;
+    background: linear-gradient(180deg, #f3e0b8, #b98c54);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18);
+}
+
+.theater-seat-sea {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -2%;
+    height: 42%;
+    background: linear-gradient(180deg, rgba(41, 25, 27, 0), rgba(16, 9, 10, 0.7) 18%, rgba(10, 6, 7, 0.98) 100%);
+}
+
+.theater-seat-row {
+    position: absolute;
+    left: 50%;
+    width: min(1160px, 112%);
+    height: 18%;
+    transform: translateX(-50%);
+    background-image: radial-gradient(circle at 50% 32%, rgba(245, 239, 226, 0.98) 0 32%, rgba(48, 32, 34, 0.98) 33% 100%);
+    background-size: 62px 100%;
+    background-repeat: repeat-x;
+    filter: drop-shadow(0 -2px 0 rgba(246, 239, 226, 0.35));
+}
+
+.theater-seat-row::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: -18%;
+    height: 48%;
+    background-image: linear-gradient(90deg, rgba(245, 239, 226, 0.95) 0 3px, rgba(20, 12, 13, 0) 3px 62px);
+    background-size: 62px 100%;
+    background-repeat: repeat-x;
+    opacity: 0.78;
+}
+
+.theater-seat-row-one {
+    bottom: 2%;
+    transform: translateX(-50%) scale(1.08);
+}
+
+.theater-seat-row-two {
+    bottom: 15%;
+    transform: translateX(-50%) scale(0.98);
+}
+
+.theater-seat-row-three {
+    bottom: 27%;
+    transform: translateX(-50%) scale(0.88);
+}
+
+.theater-seat-row-four {
+    bottom: 38%;
+    transform: translateX(-50%) scale(0.78);
+}
+
+.theater-seat-row-five {
+    bottom: 49%;
+    transform: translateX(-50%) scale(0.68);
+}
+
+.cinema-seat-copy {
+    position: relative;
+    z-index: 1;
+    width: min(620px, calc(100% - 2rem));
+    padding: 1.5rem 1.7rem;
+    text-align: center;
+    background: rgba(24, 15, 17, 0.72);
+    border-radius: 28px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+}
+
+.cinema-seat-copy h2 {
+    margin: 0.25rem 0 0;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(2.8rem, 6vw, 4.6rem);
+    line-height: 0.95;
+}
+
+.cinema-seat-copy p:last-child {
+    margin: 0.9rem auto 0;
+    max-width: 30ch;
+    color: rgba(255, 244, 230, 0.88);
+    line-height: 1.7;
+}
+
 .cinema-curtains {
     position: absolute;
     inset: 0;
@@ -1373,12 +1585,36 @@ body.museum-intro-complete .cinema-intro {
     pointer-events: none;
 }
 
+body.museum-intro-seating .cinema-intro-stage {
+    animation: introStageToSeat 0.95s ease forwards;
+}
+
+body.museum-intro-seating .cinema-seat-call {
+    animation: seatCallReveal 0.9s ease 0.3s forwards;
+}
+
+body.museum-intro-seating .cinema-curtain-left {
+    transform: translateX(-28%);
+}
+
+body.museum-intro-seating .cinema-curtain-right {
+    transform: translateX(28%);
+}
+
 body.museum-intro-opening .cinema-intro-stage {
     animation: introStageLift 1.15s ease forwards;
 }
 
 body.museum-intro-opening .cinema-intro {
     animation: introFadeOut 1.2s ease forwards;
+}
+
+body.museum-intro-opening .cinema-seat-call {
+    animation: seatCallExit 1.05s ease forwards;
+}
+
+body.museum-intro-opening .theater-illustration {
+    animation: theaterPushIn 1.05s ease forwards;
 }
 
 .cinema-hero,
@@ -1817,6 +2053,17 @@ body.museum-intro-opening .cinema-intro {
     }
 }
 
+@keyframes introStageToSeat {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: translateY(26px) scale(0.95);
+    }
+}
+
 @keyframes introFadeOut {
     0% {
         opacity: 1;
@@ -1824,6 +2071,39 @@ body.museum-intro-opening .cinema-intro {
     100% {
         opacity: 0;
         visibility: hidden;
+    }
+}
+
+@keyframes seatCallReveal {
+    0% {
+        opacity: 0;
+        transform: scale(1.06);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes seatCallExit {
+    0% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    100% {
+        opacity: 0;
+        transform: scale(1.06);
+    }
+}
+
+@keyframes theaterPushIn {
+    0% {
+        transform: scale(1);
+        filter: none;
+    }
+    100% {
+        transform: scale(1.08);
+        filter: blur(1.5px);
     }
 }
 
@@ -1846,6 +2126,14 @@ body.museum-intro-opening .cinema-intro {
 
     .cinema-intro-ticket {
         transform: none;
+    }
+
+    .theater-balcony-ring {
+        width: 130%;
+    }
+
+    .theater-proscenium {
+        width: 96%;
     }
 
     .museum-head {
@@ -1874,6 +2162,24 @@ body.museum-intro-opening .cinema-intro {
     .cinema-intro-copy h1,
     .cinema-hero h1 {
         max-width: none;
+    }
+
+    .cinema-seat-copy {
+        width: min(100%, calc(100% - 1rem));
+        padding: 1.2rem;
+    }
+
+    .theater-stage-curtain {
+        left: 13%;
+        right: 13%;
+    }
+
+    .theater-seat-row {
+        background-size: 42px 100%;
+    }
+
+    .theater-seat-row::after {
+        background-size: 42px 100%;
     }
 
     .camera-frame {

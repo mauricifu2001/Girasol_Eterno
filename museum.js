@@ -16,6 +16,10 @@ const introTicketName = document.getElementById("cinemaIntroTicketName");
 const introTicketMeta = document.getElementById("cinemaIntroTicketMeta");
 const enterMuseumButton = document.getElementById("enterMuseumButton");
 const skipIntroButton = document.getElementById("skipIntroButton");
+const cinemaSeatCall = document.getElementById("cinemaSeatCall");
+const cinemaSeatEyebrow = document.getElementById("cinemaSeatEyebrow");
+const cinemaSeatTitle = document.getElementById("cinemaSeatTitle");
+const cinemaSeatMessage = document.getElementById("cinemaSeatMessage");
 const pageEyebrow = document.getElementById("museumPageEyebrow");
 const pageTitle = document.getElementById("museumPageTitle");
 const pageMessage = document.getElementById("museumPageMessage");
@@ -36,7 +40,8 @@ const videoModal = document.getElementById("videoModal");
 const videoModalFrame = document.getElementById("videoModalFrame");
 const videoModalTitle = document.getElementById("videoModalTitle");
 const closeVideoModalButton = document.getElementById("closeVideoModalButton");
-const introRevealDelay = 1320;
+const seatRevealDelay = 1200;
+const introRevealDelay = 2850;
 
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => {
@@ -232,6 +237,9 @@ function applyMuseumCopy() {
     introTicketMeta.textContent = museumConfig.introTicketMeta || "Nuestros viernes con Fucknews";
     enterMuseumButton.textContent = museumConfig.introEnterLabel || "Entrar";
     skipIntroButton.textContent = museumConfig.introSkipLabel || "Ir de una";
+    cinemaSeatEyebrow.textContent = museumConfig.seatEyebrow || "Primera fila";
+    cinemaSeatTitle.textContent = museumConfig.seatTitle || "Toma asiento en primera fila";
+    cinemaSeatMessage.textContent = museumConfig.seatMessage || "Vamos a ver nuestro capitulo juntos.";
     pageEyebrow.textContent = museumConfig.pageEyebrow || museumConfig.eyebrow || "Solo nosotros";
     pageTitle.textContent = museumConfig.pageTitle || museumConfig.title || "Nuestros viernes con Fucknews";
     pageMessage.textContent = museumConfig.pageMessage || museumConfig.message || "";
@@ -250,7 +258,7 @@ function revealMuseum(instant = false) {
     }
 
     if (instant || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-        document.body.classList.remove("museum-intro-pending", "museum-intro-opening");
+        document.body.classList.remove("museum-intro-pending", "museum-intro-seating", "museum-intro-opening");
         document.body.classList.add("museum-intro-complete");
         cinemaIntro.classList.add("hidden");
         return;
@@ -258,10 +266,14 @@ function revealMuseum(instant = false) {
 
     enterMuseumButton.disabled = true;
     skipIntroButton.disabled = true;
-    document.body.classList.add("museum-intro-opening");
+    document.body.classList.add("museum-intro-seating");
 
     window.setTimeout(() => {
-        document.body.classList.remove("museum-intro-pending", "museum-intro-opening");
+        document.body.classList.add("museum-intro-opening");
+    }, seatRevealDelay);
+
+    window.setTimeout(() => {
+        document.body.classList.remove("museum-intro-pending", "museum-intro-seating", "museum-intro-opening");
         document.body.classList.add("museum-intro-complete");
         cinemaIntro.classList.add("hidden");
     }, introRevealDelay);
