@@ -31,6 +31,7 @@ const welcomeScreen = document.getElementById("welcomeScreen");
 const welcomeTitle = document.getElementById("welcomeTitle");
 const welcomeMessage = document.getElementById("welcomeMessage");
 const museumGrid = document.getElementById("museumGrid");
+const scopedExperienceElements = Array.from(document.querySelectorAll("[data-experience-scope]"));
 const welcomeRevealDelay = 2800;
 
 function clamp(value, min, max) {
@@ -195,6 +196,43 @@ function daysBetween(dateString) {
 
 function getAuthorizedProfile(label) {
     return (portalConfig.authorizedProfiles || []).find((profile) => profile.label === label) || null;
+}
+
+function getSecretAccess(labelOrPhrase) {
+    const normalizedValue = normalizeText(labelOrPhrase);
+    const secretEntries = Array.isArray(portalConfig.secretPhrases) ? portalConfig.secretPhrases : [];
+
+    return secretEntries.find((entry) => normalizeText(entry.phrase) === normalizedValue) || null;
+}
+
+function getExperienceModeForLabel(label) {
+    const profile = getAuthorizedProfile(label);
+
+    return profile?.experienceMode || portalConfig.defaultExperienceMode || "full";
+}
+
+function shouldShowElementForMode(scope, mode) {
+    if (!scope || mode === "full") {
+        return true;
+    }
+
+    const allowedModes = String(scope)
+        .split(/\s+/)
+        .map((value) => value.trim())
+        .filter(Boolean);
+
+    return allowedModes.includes(mode) || allowedModes.includes("all");
+}
+
+function applyExperienceMode(accessLabel) {
+    const mode = getExperienceModeForLabel(accessLabel);
+
+    document.body.dataset.experienceMode = mode;
+
+    scopedExperienceElements.forEach((element) => {
+        const scope = element.dataset.experienceScope;
+        element.classList.toggle("hidden", !shouldShowElementForMode(scope, mode));
+    });
 }
 
 function buildWelcomeContent(label) {
@@ -694,15 +732,19 @@ async function captureAndVerify() {
 }
 
 function grantAccess(message, welcomeContent = null, accessLabel = "") {
+    const resolvedAccessLabel = accessLabel || portalConfig.secretAccessLabel || "";
+
     setStatus(message, "ready");
     gateSection.classList.add("fade-out");
     window.sessionStorage.setItem("girasolPortalUnlocked", "true");
+    window.sessionStorage.setItem("girasolPortalAccessLabel", resolvedAccessLabel);
 
     if (state.stream) {
         state.stream.getTracks().forEach((track) => track.stop());
     }
 
-    playSoundtrackForLabel(accessLabel);
+    applyExperienceMode(resolvedAccessLabel);
+    playSoundtrackForLabel(resolvedAccessLabel);
 
     if (welcomeContent) {
         welcomeTitle.textContent = welcomeContent.title;
@@ -733,7 +775,6 @@ captureButton.addEventListener("click", captureAndVerify);
 
 secretForm.addEventListener("submit", (event) => {
     event.preventDefault();
-    const secretPhrase = normalizeText(portalConfig.secretPhrase);
     const attemptedSecret = normalizeText(secretInput.value);
 
     if (!attemptedSecret) {
@@ -741,8 +782,13 @@ secretForm.addEventListener("submit", (event) => {
         return;
     }
 
-    if (attemptedSecret === secretPhrase) {
-        grantAccess("Clave valida. Bienvenida al portal.");
+    const secretAccess = getSecretAccess(attemptedSecret);
+
+    if (secretAccess) {
+        const fallbackLabel = secretAccess.accessLabel || "";
+        const fallbackWelcomeContent = fallbackLabel ? buildWelcomeContent(fallbackLabel) : null;
+
+        grantAccess("Clave valida. Bienvenida al portal.", fallbackWelcomeContent, fallbackLabel);
         return;
     }
 

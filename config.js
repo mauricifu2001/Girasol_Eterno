@@ -2,7 +2,16 @@ window.appConfig = {
     portal: {
         title: "Portal para mi Girasol Hermosa",
         intro: "Valentina, si eres tu, mira a la camara y deja que este portal confirme que llegaste al lugar que prepare solo para ti. Si el reconocimiento no coopera, usa la clave secreta que solo nosotros entenderiamos.",
-        secretPhrase: "girasol",
+        secretPhrases: [
+            {
+                phrase: "girasol",
+                accessLabel: "Valentina"
+            },
+            {
+                phrase: "mauricio",
+                accessLabel: "Mauricio"
+            }
+        ],
         secretHint: "Pista: el apodo bonito con el que te guardo en el corazon.",
         recognitionThreshold: 0.52,
         soundtrack: {
@@ -16,6 +25,7 @@ window.appConfig = {
             {
                 label: "Valentina",
                 displayName: "mi Girasol Hermosa",
+                experienceMode: "museum-only",
                 welcomeTitle: "Bienvenida, mi Girasol Hermosa",
                 welcomeMessage: "Prepare este lugarcito para ti, para que cada click te recuerde lo especial que eres para mi.",
                 images: [
@@ -28,6 +38,7 @@ window.appConfig = {
             {
                 label: "Mauricio",
                 displayName: "Mauricio",
+                experienceMode: "full",
                 welcomeTitle: "Bienvenido, Mauricio",
                 welcomeMessage: "Puedes entrar tambien para seguir puliendo cada detalle antes de compartirlo con ella.",
                 images: [
