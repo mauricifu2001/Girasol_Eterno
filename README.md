@@ -52,6 +52,8 @@ Si prefieres VS Code, tambien puedes usar una extension como Live Server.
 
 La pagina ya puede mostrar un museo de videos vistos juntos usando enlaces de YouTube.
 
+La forma principal de alimentarlo ahora es `fucknews_links.txt`. Tambien existe soporte para feed automatico, pero queda desactivado por defecto para que la pagina no esté consultando YouTube todo el tiempo.
+
 1. Abre `config.js`.
 2. Busca `story.museum.source` y `story.museum.entries`.
 3. Si quieres manejarlo facil, deja tus links en `fucknews_links.txt` y la pagina los leera automaticamente.
@@ -77,6 +79,38 @@ Titulo personalizado | https://www.youtube.com/watch?v=XXXXXXXXXXX | Nota opcion
 ```
 
 Con eso la pagina sacara automaticamente la miniatura del video y permitira abrirlo dentro de la pagina o en YouTube.
+
+## Automatizacion semanal con YouTube
+
+La opcion mas estable para este proyecto es actualizar `fucknews_links.txt` automaticamente una vez por semana desde GitHub Actions. Asi:
+
+- El archivo queda actualizado tambien en el repo.
+- Netlify redepliega sola despues del commit automatico.
+- La pagina no depende de consultar YouTube cada vez que alguien entra.
+
+El proyecto ya incluye un workflow en `.github/workflows/sync-fucknews-links.yml` y un script en `scripts/sync-fucknews-links.mjs`.
+
+### Como dejarlo funcionando
+
+1. En GitHub, entra al repositorio.
+2. Ve a `Settings` -> `Secrets and variables` -> `Actions`.
+3. Crea un secret llamado `YOUTUBE_API_KEY`.
+4. Usa una API key con acceso a YouTube Data API v3.
+5. El workflow quedara programado para correr cada viernes a las `10:00 UTC`, que equivale a `5:00 a. m.` hora de Colombia.
+
+### Que hace ese workflow
+
+1. Consulta el canal de F*cksNews.
+2. Reconstruye `fucknews_links.txt` con `titulo | link`.
+3. Mantiene el archivo en orden cronologico antiguo -> nuevo.
+4. Como la pagina invierte el orden al mostrarlo, el estreno siempre sera el mas reciente.
+5. Si hubo cambios, hace commit y push automaticamente.
+
+Notas importantes:
+
+- GitHub Actions usa horario UTC en los cron.
+- La ejecucion no es garantizada al segundo exacto; GitHub puede retrasarla unos minutos.
+- En local, seguira leyendo `fucknews_links.txt` como siempre.
 
 ## Ideas para mejorarla despues
 

@@ -1,0 +1,41 @@
+name: Sync FucksNews Links
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 10:00 UTC = 5:00 a. m. Colombia (UTC-5)
+    - cron: "0 10 * * 5"
+
+permissions:
+  contents: write
+
+jobs:
+  sync-links:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Sync fucknews archive
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          YOUTUBE_CHANNEL_ID: UCc8o0cT4aD3n1Bw3k5GIdQQ
+        run: node scripts/sync-fucknews-links.mjs
+
+      - name: Commit changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- fucknews_links.txt; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git add fucknews_links.txt
+          git commit -m "chore: sync fucknews archive"
+          git push

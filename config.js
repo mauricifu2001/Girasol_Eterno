@@ -63,6 +63,11 @@ window.appConfig = {
             title: "La sala privada de Fucknews",
             message: "No quise dejar todos los capitulos tirados en la portada. Preferi abrir una entrada aparte, como si nuestros viernes merecieran su propia cartelera elegante.",
             reverseOrder: true,
+            autoFeed: {
+                enabled: false,
+                channelId: "UCc8o0cT4aD3n1Bw3k5GIdQQ",
+                limit: 80
+            },
             frequencyLabel: "Todos los viernes",
             frequencyNote: "Como ritual fijo, no como lista cualquiera.",
             yearsLabel: "3 anos",

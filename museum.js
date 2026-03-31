@@ -81,13 +81,58 @@ function parseMuseumEntriesFromText(sourceText, sourceConfig) {
 
 async function loadMuseumEntries() {
     const inlineEntries = Array.isArray(museumConfig.entries) ? museumConfig.entries : [];
-    const sortEntries = (entries) => {
+    const sortEntries = (entries, sourceOrder = "oldest-first") => {
         const normalizedEntries = [...entries];
-        return museumConfig.reverseOrder === false ? normalizedEntries : normalizedEntries.reverse();
+        const wantsNewestFirst = museumConfig.reverseOrder !== false;
+        const isNewestFirst = sourceOrder === "newest-first";
+
+        if (wantsNewestFirst === isNewestFirst) {
+            return normalizedEntries;
+        }
+
+        return normalizedEntries.reverse();
     };
 
+    const loadAutomaticEntries = async () => {
+        const autoFeedConfig = museumConfig.autoFeed || {};
+
+        if (!autoFeedConfig.enabled || !autoFeedConfig.channelId) {
+            return null;
+        }
+
+        try {
+            const params = new URLSearchParams({
+                channelId: autoFeedConfig.channelId,
+                limit: String(autoFeedConfig.limit || 80),
+                series: museumConfig.seriesLabel || "Fucknews Fridays",
+                note: museumConfig.defaultNote || "Otro viernes guardado en nuestro museo."
+            });
+            const response = await fetch(`/.netlify/functions/youtube-feed?${params.toString()}`, {
+                cache: "no-store"
+            });
+
+            if (!response.ok) {
+                throw new Error(`No pude cargar el feed automatico: ${response.status}`);
+            }
+
+            const payload = await response.json();
+            const entries = Array.isArray(payload.entries) ? payload.entries : [];
+
+            return entries.length ? sortEntries(entries, "newest-first") : null;
+        } catch (error) {
+            console.warn("No pude cargar el feed automatico. Uso el archivo local como respaldo.", error);
+            return null;
+        }
+    };
+
+    const automaticEntries = await loadAutomaticEntries();
+
+    if (automaticEntries?.length) {
+        return automaticEntries;
+    }
+
     if (!museumConfig.source) {
-        return sortEntries(inlineEntries);
+        return sortEntries(inlineEntries, "oldest-first");
     }
 
     try {
@@ -99,10 +144,10 @@ async function loadMuseumEntries() {
 
         const sourceText = await response.text();
         const parsedEntries = parseMuseumEntriesFromText(sourceText, museumConfig);
-        return sortEntries(parsedEntries.length ? parsedEntries : inlineEntries);
+        return sortEntries(parsedEntries.length ? parsedEntries : inlineEntries, "oldest-first");
     } catch (error) {
         console.warn("No pude cargar el archivo de capitulos. Uso las entradas del config como respaldo.", error);
-        return sortEntries(inlineEntries);
+        return sortEntries(inlineEntries, "oldest-first");
     }
 }
 
