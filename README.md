@@ -60,10 +60,11 @@ La pagina ya puede mostrar un museo de videos vistos juntos usando enlaces de Yo
 ```txt
 https://www.youtube.com/watch?v=XXXXXXXXXXX
 Titulo personalizado | https://www.youtube.com/watch?v=XXXXXXXXXXX
-2026-03-27 | Fucknews episodio 001 | https://www.youtube.com/watch?v=XXXXXXXXXXX | Ese viernes nos reimos demasiado con este capitulo
+Titulo personalizado | https://www.youtube.com/watch?v=XXXXXXXXXXX | Nota opcional
 ```
 
-5. Si prefieres control manual total, tambien puedes agregar objetos con esta forma dentro de `story.museum.entries`:
+5. La portada ahora muestra una entrada elegante hacia `museum.html`, y la cartelera completa vive en esa pagina aparte.
+6. Si prefieres control manual total, tambien puedes agregar objetos con esta forma dentro de `story.museum.entries`:
 
 ```js
 {

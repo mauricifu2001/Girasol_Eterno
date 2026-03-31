@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sala privada de Fucknews</title>
+    <meta name="description" content="Cartelera privada con todos los capitulos de Fucknews que Mauricio y Valentina han visto juntos.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="config.js"></script>
+    <script defer src="museum.js"></script>
+</head>
+<body class="museum-route">
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="cinema-shell">
+        <section class="cinema-hero glass">
+            <p class="eyebrow" id="museumPageEyebrow">Cartelera privada</p>
+            <h1 id="museumPageTitle">La sala de nuestros viernes con Fucknews</h1>
+            <p class="cinema-copy" id="museumPageMessage"></p>
+            <div class="cinema-actions">
+                <a class="secondary" href="index.html">Volver al portal</a>
+                <a class="primary" href="#posterGallery">Ver cartelera</a>
+            </div>
+        </section>
+
+        <section class="cinema-marquee glass">
+            <article class="cinema-ticket">
+                <p class="eyebrow">En cartelera</p>
+                <p class="cinema-ticket-value" id="museumArchiveCount">0</p>
+                <p class="cinema-ticket-label" id="museumArchiveLabel">Capitulos en cartelera</p>
+                <p class="cinema-ticket-note" id="museumArchiveNote"></p>
+            </article>
+
+            <article class="cinema-strip">
+                <p class="eyebrow">Titulares del archivo</p>
+                <h2>Los viernes que ya tienen nombre propio</h2>
+                <div class="cinema-chip-row" id="museumHeadlineRow"></div>
+            </article>
+        </section>
+
+        <section class="poster-gallery glass" id="posterGallery">
+            <div class="section-head poster-head">
+                <div>
+                    <p class="eyebrow">Cartelera completa</p>
+                    <h2>Todos los capitulos en la sala</h2>
+                </div>
+                <a class="secondary" href="index.html">Regresar al portal</a>
+            </div>
+            <div class="poster-grid" id="posterGrid"></div>
+        </section>
+    </main>
+
+    <div class="video-modal hidden" id="videoModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="videoModalTitle">
+        <div class="video-modal-backdrop" data-close-video="true"></div>
+        <div class="video-modal-card glass">
+            <div class="video-modal-top">
+                <div class="video-modal-copy">
+                    <p class="eyebrow">Archivo compartido</p>
+                    <h3 id="videoModalTitle">Nuestro capitulo</h3>
+                </div>
+                <button class="ghost video-modal-close" id="closeVideoModalButton" type="button" aria-label="Cerrar video">Cerrar</button>
+            </div>
+            <div class="video-frame">
+                <iframe
+                    id="videoModalFrame"
+                    src=""
+                    title="Video del museo"
+                    loading="lazy"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowfullscreen
+                ></iframe>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

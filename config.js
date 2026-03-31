@@ -59,9 +59,9 @@ window.appConfig = {
             }
         ],
         museum: {
-            eyebrow: "Museo de nuestros viernes",
-            title: "Archivo de nuestras noches de Fucknews",
-            message: "Aqui quedan guardados todos esos capitulos que hemos convertido en ritual. Este rincon ahora puede crecer como un museo bonito de todo lo que nos hemos reido juntos.",
+            eyebrow: "Sala de nuestros viernes",
+            title: "La sala privada de Fucknews",
+            message: "No quise dejar todos los capitulos tirados en la portada. Preferi abrir una entrada aparte, como si nuestros viernes merecieran su propia cartelera elegante.",
             frequencyLabel: "Todos los viernes",
             frequencyNote: "Como ritual fijo, no como lista cualquiera.",
             yearsLabel: "3 anos",
@@ -69,12 +69,19 @@ window.appConfig = {
             seriesLabel: "Fucknews Fridays",
             source: "fucknews_links.txt",
             defaultNote: "Otro viernes guardado en nuestro museo.",
+            ctaLabel: "Entrar a la sala",
+            previewTitle: "La cartelera completa nos espera adentro",
+            previewMessage: "Quise que esto se sintiera mas como una puerta al recuerdo que como una lista infinita en la misma pantalla.",
+            pageEyebrow: "Cartelera privada",
+            pageTitle: "La sala de nuestros viernes con Fucknews",
+            pageMessage: "Todos los capitulos que hemos visto juntos viven aqui, en orden, como una cartelera intima de todo lo que nos ha hecho reir a traves de estos anos.",
+            pageStatLabel: "Capitulos en cartelera",
+            pageStatNote: "Cada titulo sale del archivo que me compartiste.",
             entries: [
                 // Ejemplo de tarjeta:
                 // {
                 //     title: "Fucknews - episodio 001",
                 //     series: "Fucknews Fridays",
-                //     date: "2026-03-27",
                 //     note: "Ese viernes nos reiamos de tal chiste y terminamos hablando media hora mas.",
                 //     url: "https://www.youtube.com/watch?v=XXXXXXXXXXX"
                 // }

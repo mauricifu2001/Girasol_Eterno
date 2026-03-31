@@ -31,10 +31,6 @@ const welcomeScreen = document.getElementById("welcomeScreen");
 const welcomeTitle = document.getElementById("welcomeTitle");
 const welcomeMessage = document.getElementById("welcomeMessage");
 const museumGrid = document.getElementById("museumGrid");
-const closeVideoModalButton = document.getElementById("closeVideoModalButton");
-const videoModal = document.getElementById("videoModal");
-const videoModalFrame = document.getElementById("videoModalFrame");
-const videoModalTitle = document.getElementById("videoModalTitle");
 const welcomeRevealDelay = 2800;
 
 function clamp(value, min, max) {
@@ -46,7 +42,7 @@ function padSequenceNumber(value) {
 }
 
 function escapeHtml(value) {
-    return String(value ?? "").replace(/[&<>\"']/g, (character) => {
+    return String(value ?? "").replace(/[&<>"']/g, (character) => {
         const entities = {
             "&": "&amp;",
             "<": "&lt;",
@@ -232,12 +228,11 @@ function parseMuseumEntriesFromText(sourceText, museumConfig) {
         .filter((line) => line && !line.startsWith("#"));
 
     return lines.map((line, index) => {
-        const sequence = padSequenceNumber(index + 1);
         const segments = line.split("|").map((segment) => segment.trim()).filter(Boolean);
+        const urlIndex = segments.findIndex((segment) => isHttpUrl(segment));
         const defaultEntry = {
-            title: `Fucknews - archivo ${sequence}`,
+            title: `Fucknews - archivo ${padSequenceNumber(index + 1)}`,
             series: museumConfig.seriesLabel || "Fucknews Fridays",
-            date: `Viernes ${sequence}`,
             note: museumConfig.defaultNote || "Otro viernes guardado en nuestro museo.",
             url: line
         };
@@ -249,21 +244,12 @@ function parseMuseumEntriesFromText(sourceText, museumConfig) {
             };
         }
 
-        if (segments.length === 2 && isHttpUrl(segments[1])) {
+        if (urlIndex !== -1) {
             return {
                 ...defaultEntry,
-                title: segments[0] || defaultEntry.title,
-                url: segments[1]
-            };
-        }
-
-        if (segments.length >= 3 && isHttpUrl(segments[2])) {
-            return {
-                ...defaultEntry,
-                date: segments[0] || defaultEntry.date,
-                title: segments[1] || defaultEntry.title,
-                url: segments[2],
-                note: segments.slice(3).join(" | ") || defaultEntry.note
+                title: segments.slice(0, urlIndex).join(" | ") || defaultEntry.title,
+                url: segments[urlIndex],
+                note: segments.slice(urlIndex + 1).join(" | ") || defaultEntry.note
             };
         }
 
@@ -298,112 +284,25 @@ async function loadMuseumEntries() {
     }
 }
 
-function formatMuseumDate(value) {
-    if (!value) {
-        return "Fecha pendiente";
-    }
-
-    const parsedDate = new Date(value);
-
-    if (Number.isNaN(parsedDate.getTime())) {
-        return value;
-    }
-
-    return new Intl.DateTimeFormat("es-CO", {
-        day: "numeric",
-        month: "long",
-        year: "numeric"
-    }).format(parsedDate);
-}
-
-function getYouTubeVideoId(url) {
-    if (!url) {
-        return "";
-    }
-
-    try {
-        const parsedUrl = new URL(url);
-        const host = parsedUrl.hostname.replace(/^www\./, "").toLowerCase();
-
-        if (host === "youtu.be") {
-            return parsedUrl.pathname.slice(1).split("/")[0];
-        }
-
-        if (host === "youtube.com" || host === "m.youtube.com") {
-            if (parsedUrl.pathname === "/watch") {
-                return parsedUrl.searchParams.get("v") || "";
-            }
-
-            if (parsedUrl.pathname.startsWith("/embed/") || parsedUrl.pathname.startsWith("/shorts/")) {
-                return parsedUrl.pathname.split("/")[2] || "";
-            }
-        }
-    } catch (error) {
-        return "";
-    }
-
-    return "";
-}
-
-function getYouTubeThumbnail(url) {
-    const videoId = getYouTubeVideoId(url);
-    return videoId ? `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg` : "";
-}
-
-function getYouTubeEmbedUrl(url) {
-    const videoId = getYouTubeVideoId(url);
-    return videoId ? `https://www.youtube.com/embed/${videoId}?autoplay=1&rel=0` : "";
-}
-
-function openVideoModal(embedUrl, title) {
-    if (!embedUrl) {
-        return;
-    }
-
-    videoModalTitle.textContent = title || "Nuestro capitulo";
-    videoModalFrame.src = embedUrl;
-    videoModal.classList.remove("hidden");
-    videoModal.setAttribute("aria-hidden", "false");
-    document.body.classList.add("modal-open");
-
-    requestAnimationFrame(() => {
-        videoModal.classList.add("visible");
-    });
-}
-
-function closeVideoModal() {
-    if (!videoModal || videoModal.classList.contains("hidden")) {
-        return;
-    }
-
-    videoModal.classList.remove("visible");
-    videoModal.setAttribute("aria-hidden", "true");
-    document.body.classList.remove("modal-open");
-
-    window.setTimeout(() => {
-        videoModal.classList.add("hidden");
-        videoModalFrame.src = "";
-    }, 220);
-}
-
 function renderMuseum(entries) {
     const museumConfig = getMuseumConfig();
+    const previewEntries = entries.slice(0, 6);
 
     document.getElementById("museumStats").innerHTML = [
         {
             value: entries.length || "0",
-            label: "Capitulos guardados",
-            note: entries.length ? "Cada uno puede abrirse desde aqui mismo." : "Cuando pegues links, esta cuenta sube sola."
+            label: "Capitulos archivados",
+            note: entries.length ? "La cartelera completa vive en su propia sala." : "Cuando agregues capitulos, esta cuenta sube sola."
         },
         {
             value: museumConfig.frequencyLabel || "Cada viernes",
             label: "Ritual",
-            note: museumConfig.frequencyNote || "Ideal para registrar ese acto fijo que ya es tan de ustedes."
+            note: museumConfig.frequencyNote || "Un plan fijo que ya es demasiado de ustedes."
         },
         {
             value: museumConfig.yearsLabel || "3 anos",
-            label: "Tiempo compartido",
-            note: museumConfig.yearsNote || "Perfecto para que se sienta como archivo vivo y no como lista suelta."
+            label: "Historia guardada",
+            note: museumConfig.yearsNote || "Suficiente tiempo para que esto se sintiera como una verdadera sala privada."
         }
     ]
         .map(
@@ -419,68 +318,34 @@ function renderMuseum(entries) {
 
     if (!entries.length) {
         museumGrid.innerHTML = `
-            <article class="museum-empty glass">
-                <p class="eyebrow">Archivo esperando</p>
-                <h3>Este museo queda listo para llenarlo con sus capitulos</h3>
-                <p>Pega enlaces de YouTube en <strong>config.js</strong> o en el archivo fuente del museo y cada tarjeta sacara su miniatura automaticamente. Tambien puedes anotar la fecha, una frase y cualquier recuerdo de ese viernes.</p>
+            <article class="museum-launch-panel glass">
+                <p class="eyebrow">Sala esperando</p>
+                <h3>La cartelera se activa apenas haya capitulos</h3>
+                <p>Deja los enlaces en el archivo del museo y esta entrada se convertira en la puerta hacia la sala completa.</p>
+                <a class="primary museum-panel-button" href="museum.html">Abrir sala privada</a>
             </article>
         `;
         return;
     }
 
-    museumGrid.innerHTML = entries
-        .map((entry) => {
-            const title = entry.title || "Capitulo compartido";
-            const embedUrl = getYouTubeEmbedUrl(entry.url);
-            const thumbnail = entry.coverImage || getYouTubeThumbnail(entry.url);
-            const series = entry.series || museumConfig.seriesLabel || "Archivo compartido";
-            const note = entry.note || "";
-            const thumbContent = thumbnail
-                ? `
-                    <img src="${escapeHtml(thumbnail)}" alt="Caratula de ${escapeHtml(title)}" loading="lazy">
-                    <span class="museum-play">${embedUrl ? "Ver aqui" : "Sin video"}</span>
-                `
-                : `
-                    <div class="museum-placeholder-copy">
-                        <strong>${escapeHtml(title)}</strong>
-                        <span>Pega un link de YouTube para que aparezca la caratula automaticamente.</span>
-                    </div>
-                `;
-            const thumbMarkup = embedUrl
-                ? `
-                    <button
-                        class="museum-thumb museum-thumb-button"
-                        type="button"
-                        data-video-embed="${escapeHtml(embedUrl)}"
-                        data-video-title="${escapeHtml(title)}"
-                    >
-                        ${thumbContent}
-                    </button>
-                `
-                : `
-                    <div class="museum-thumb museum-thumb-placeholder">
-                        ${thumbContent}
-                    </div>
-                `;
-
-            return `
-                <article class="museum-card">
-                    ${thumbMarkup}
-                    <div class="museum-card-body">
-                        <p class="museum-meta">
-                            <span>${escapeHtml(series)}</span>
-                            <span>${escapeHtml(formatMuseumDate(entry.date))}</span>
-                        </p>
-                        <h3>${escapeHtml(title)}</h3>
-                        <p class="museum-note">${escapeHtml(note)}</p>
-                        <div class="museum-actions">
-                            ${embedUrl ? `<button class="ghost museum-watch-button" type="button" data-video-embed="${escapeHtml(embedUrl)}" data-video-title="${escapeHtml(title)}">Ver dentro de la pagina</button>` : ""}
-                            ${entry.url ? `<a class="secondary museum-link" href="${escapeHtml(entry.url)}" target="_blank" rel="noreferrer noopener">Abrir enlace</a>` : ""}
-                        </div>
-                    </div>
+    museumGrid.innerHTML = `
+        <article class="museum-launch-panel glass">
+            <p class="eyebrow">Entrada reservada</p>
+            <h3>${escapeHtml(museumConfig.previewTitle || "La cartelera completa nos espera adentro")}</h3>
+            <p>${escapeHtml(museumConfig.previewMessage || "Quise que esto se sintiera mas como una puerta al recuerdo que como una lista infinita en la misma pantalla.")}</p>
+            <a class="primary museum-panel-button" href="museum.html">${escapeHtml(museumConfig.ctaLabel || "Entrar a la sala")}</a>
+        </article>
+    ` + previewEntries
+        .map(
+            (entry, index) => `
+                <article class="museum-preview-card">
+                    <span class="museum-preview-index">${padSequenceNumber(index + 1)}</span>
+                    <h3>${escapeHtml(entry.title || `Fucknews - archivo ${padSequenceNumber(index + 1)}`)}</h3>
+                    <p>${escapeHtml(entry.note || museumConfig.defaultNote || "Otro viernes guardado en nuestro museo.")}</p>
+                    <a class="museum-preview-link" href="museum.html">Ver en la sala</a>
                 </article>
-            `;
-        })
+            `
+        )
         .join("");
 }
 
@@ -496,10 +361,15 @@ async function renderStory() {
     document.getElementById("finalMessage").textContent = storyConfig.finalMessage || "";
 
     const museumConfig = getMuseumConfig();
+    const museumLaunchButton = document.getElementById("museumLaunchButton");
 
     document.getElementById("museumEyebrow").textContent = museumConfig.eyebrow || "Museo compartido";
     document.getElementById("museumTitle").textContent = museumConfig.title || "Los shows que hemos visto juntos";
     document.getElementById("museumMessage").textContent = museumConfig.message || "";
+
+    if (museumLaunchButton) {
+        museumLaunchButton.textContent = museumConfig.ctaLabel || "Entrar a la sala";
+    }
 
     const metricsSection = document.getElementById("metricsSection");
     const relationshipDays = daysBetween(storyConfig.relationshipStart);
@@ -776,6 +646,7 @@ async function captureAndVerify() {
 function grantAccess(message, welcomeContent = null, accessLabel = "") {
     setStatus(message, "ready");
     gateSection.classList.add("fade-out");
+    window.sessionStorage.setItem("girasolPortalUnlocked", "true");
 
     if (state.stream) {
         state.stream.getTracks().forEach((track) => track.stop());
@@ -810,24 +681,6 @@ function grantAccess(message, welcomeContent = null, accessLabel = "") {
 retryCameraButton.addEventListener("click", startCamera);
 captureButton.addEventListener("click", captureAndVerify);
 
-museumGrid.addEventListener("click", (event) => {
-    const trigger = event.target.closest("[data-video-embed]");
-
-    if (!trigger) {
-        return;
-    }
-
-    openVideoModal(trigger.dataset.videoEmbed, trigger.dataset.videoTitle || "Nuestro capitulo");
-});
-
-closeVideoModalButton.addEventListener("click", closeVideoModal);
-
-videoModal.addEventListener("click", (event) => {
-    if (event.target === videoModal || event.target.dataset.closeVideo === "true") {
-        closeVideoModal();
-    }
-});
-
 secretForm.addEventListener("submit", (event) => {
     event.preventDefault();
     const secretPhrase = normalizeText(portalConfig.secretPhrase);
@@ -848,13 +701,6 @@ secretForm.addEventListener("submit", (event) => {
 
 window.addEventListener("beforeunload", () => {
     stopSoundtrack(false);
-    closeVideoModal();
-});
-
-window.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-        closeVideoModal();
-    }
 });
 
 window.addEventListener("load", initializePortal);
