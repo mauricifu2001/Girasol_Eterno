@@ -1,7 +1,7 @@
 window.appConfig = {
     portal: {
         title: "Portal para mi Girasol Hermosa",
-        intro: "Valentina, si eres tu, mira a la camara y deja que este portal confirme que llegaste al lugar que prepare solo para ti. Si el reconocimiento no coopera, usa la clave secreta que solo nosotros entenderiamos.",
+        intro: "Mi vida, si eres tu, mira a la camara y deja que este portal confirme que llegaste al lugar que prepare solo para ti. Si el reconocimiento no coopera, usa la clave secreta que solo nosotros entenderiamos.",
         secretPhrases: [
             {
                 phrase: "girasol",
@@ -53,7 +53,7 @@ window.appConfig = {
     story: {
         eyebrow: "De mi para ti, mi Girasol Hermosa",
         title: "Un rincon hecho para ti, mi Girasol Hermosa",
-        message: "Valentina, queria regalarte algo distinto: un lugarcito hecho por mi, con codigo, carino y un poquito de locura bonita, para recordarte que incluso a distancia sigues siendo de las cosas mas hermosas que me han pasado.",
+        message: "Mi vida, queria regalarte algo distinto: un lugarcito hecho por mi, con codigo, carino y un poquito de locura bonita, para recordarte que incluso a distancia sigues siendo de las cosas mas hermosas que me han pasado.",
         relationshipStart: "2024-06-01",
         nextMeeting: "2026-07-15",
         distanceKm: 1260,
@@ -154,7 +154,7 @@ window.appConfig = {
             },
             {
                 title: "Para cuando me extranes",
-                body: "Yo tambien te extrano, Valentina. Muchisimo. Pero intento pensar que cada dia que pasa no es tiempo perdido, sino una cuenta regresiva hacia el proximo abrazo, la proxima mirada y ese momento en que por fin la pantalla deje de estorbar."
+                body: "Yo tambien te extrano, mi vida. Muchisimo. Pero intento pensar que cada dia que pasa no es tiempo perdido, sino una cuenta regresiva hacia el proximo abrazo, la proxima mirada y ese momento en que por fin la pantalla deje de estorbar."
             },
             {
                 title: "Para despues",
@@ -179,6 +179,6 @@ window.appConfig = {
             }
         ],
         finalTitle: "Siempre voy a encontrar una forma de llegar a ti",
-        finalMessage: "Gracias por existir en mi vida como existes, Valentina. Esta pagina no intenta competir con un abrazo tuyo, pero si queria recordarte que incluso en la distancia sigo pensando en ti con amor, admiracion y unas ganas inmensas de seguir construyendo contigo."
+        finalMessage: "Gracias por existir en mi vida como existes, mi vida. Esta pagina no intenta competir con un abrazo tuyo, pero si queria recordarte que incluso en la distancia sigo pensando en ti con amor, admiracion y unas ganas inmensas de seguir construyendo contigo."
     }
 };
