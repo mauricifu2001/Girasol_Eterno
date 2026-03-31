@@ -18,6 +18,7 @@
 
     <main class="cinema-shell">
         <section class="cinema-hero glass">
+            <div class="cinema-hero-lights" aria-hidden="true"></div>
             <p class="eyebrow" id="museumPageEyebrow">Cartelera privada</p>
             <h1 id="museumPageTitle">La sala de nuestros viernes con Fucknews</h1>
             <p class="cinema-copy" id="museumPageMessage"></p>
@@ -39,6 +40,19 @@
                 <p class="eyebrow">Titulares del archivo</p>
                 <h2>Los viernes que ya tienen nombre propio</h2>
                 <div class="cinema-chip-row" id="museumHeadlineRow"></div>
+            </article>
+
+            <article class="cinema-premiere" id="cinemaPremiere">
+                <div class="cinema-premiere-poster" id="cinemaPremierePoster"></div>
+                <div class="cinema-premiere-copy">
+                    <p class="eyebrow" id="cinemaPremiereEyebrow">Estreno mas reciente</p>
+                    <h2 id="cinemaPremiereTitle">Capitulo destacado</h2>
+                    <p class="cinema-premiere-note" id="cinemaPremiereNote"></p>
+                    <div class="poster-actions">
+                        <button class="primary poster-open-button" id="cinemaPremiereButton" type="button">Ver estreno en sala</button>
+                        <a class="secondary poster-link" id="cinemaPremiereExternalLink" href="#">Abrir en YouTube</a>
+                    </div>
+                </div>
             </article>
         </section>
 

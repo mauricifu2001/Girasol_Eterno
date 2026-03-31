@@ -62,6 +62,7 @@ window.appConfig = {
             eyebrow: "Sala de nuestros viernes",
             title: "La sala privada de Fucknews",
             message: "No quise dejar todos los capitulos tirados en la portada. Preferi abrir una entrada aparte, como si nuestros viernes merecieran su propia cartelera elegante.",
+            reverseOrder: true,
             frequencyLabel: "Todos los viernes",
             frequencyNote: "Como ritual fijo, no como lista cualquiera.",
             yearsLabel: "3 anos",
@@ -77,6 +78,9 @@ window.appConfig = {
             pageMessage: "Todos los capitulos que hemos visto juntos viven aqui, en orden, como una cartelera intima de todo lo que nos ha hecho reir a traves de estos anos.",
             pageStatLabel: "Capitulos en cartelera",
             pageStatNote: "Cada titulo sale del archivo que me compartiste.",
+            premiereEyebrow: "Estreno mas reciente",
+            premiereButtonLabel: "Ver estreno en sala",
+            premiereExternalLabel: "Abrir en YouTube",
             entries: [
                 // Ejemplo de tarjeta:
                 // {

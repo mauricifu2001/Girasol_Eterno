@@ -10,6 +10,12 @@ const archiveNote = document.getElementById("museumArchiveNote");
 const pageEyebrow = document.getElementById("museumPageEyebrow");
 const pageTitle = document.getElementById("museumPageTitle");
 const pageMessage = document.getElementById("museumPageMessage");
+const premierePoster = document.getElementById("cinemaPremierePoster");
+const premiereEyebrow = document.getElementById("cinemaPremiereEyebrow");
+const premiereTitle = document.getElementById("cinemaPremiereTitle");
+const premiereNote = document.getElementById("cinemaPremiereNote");
+const premiereButton = document.getElementById("cinemaPremiereButton");
+const premiereExternalLink = document.getElementById("cinemaPremiereExternalLink");
 const videoModal = document.getElementById("videoModal");
 const videoModalFrame = document.getElementById("videoModalFrame");
 const videoModalTitle = document.getElementById("videoModalTitle");
@@ -75,9 +81,13 @@ function parseMuseumEntriesFromText(sourceText, sourceConfig) {
 
 async function loadMuseumEntries() {
     const inlineEntries = Array.isArray(museumConfig.entries) ? museumConfig.entries : [];
+    const sortEntries = (entries) => {
+        const normalizedEntries = [...entries];
+        return museumConfig.reverseOrder === false ? normalizedEntries : normalizedEntries.reverse();
+    };
 
     if (!museumConfig.source) {
-        return inlineEntries;
+        return sortEntries(inlineEntries);
     }
 
     try {
@@ -89,10 +99,10 @@ async function loadMuseumEntries() {
 
         const sourceText = await response.text();
         const parsedEntries = parseMuseumEntriesFromText(sourceText, museumConfig);
-        return parsedEntries.length ? parsedEntries : inlineEntries;
+        return sortEntries(parsedEntries.length ? parsedEntries : inlineEntries);
     } catch (error) {
         console.warn("No pude cargar el archivo de capitulos. Uso las entradas del config como respaldo.", error);
-        return inlineEntries;
+        return sortEntries(inlineEntries);
     }
 }
 
@@ -167,6 +177,13 @@ function closeVideoModal() {
 }
 
 function renderEmptyState() {
+    premierePoster.innerHTML = "";
+    premiereEyebrow.textContent = museumConfig.premiereEyebrow || "Estreno mas reciente";
+    premiereTitle.textContent = "Todavia no hay estreno cargado";
+    premiereNote.textContent = "Apenas agregues episodios al archivo, este espacio resaltara automaticamente el mas reciente.";
+    premiereButton.disabled = true;
+    premiereExternalLink.removeAttribute("href");
+    premiereExternalLink.setAttribute("aria-disabled", "true");
     posterGrid.innerHTML = `
         <article class="cinema-empty">
             <p class="eyebrow">Sala esperando</p>
@@ -193,6 +210,25 @@ function renderMuseumPage(entries) {
         return;
     }
 
+    const latestEntry = entries[0];
+    const latestTitle = latestEntry.title || "Capitulo destacado";
+    const latestEmbedUrl = getYouTubeEmbedUrl(latestEntry.url);
+    const latestThumbnail = latestEntry.coverImage || getYouTubeThumbnail(latestEntry.url);
+
+    premiereEyebrow.textContent = museumConfig.premiereEyebrow || "Estreno mas reciente";
+    premiereTitle.textContent = latestTitle;
+    premiereNote.textContent = latestEntry.note || museumConfig.defaultNote || "Otro viernes guardado en nuestro museo.";
+    premiereButton.disabled = !latestEmbedUrl;
+    premiereButton.dataset.videoEmbed = latestEmbedUrl;
+    premiereButton.dataset.videoTitle = latestTitle;
+    premiereButton.textContent = museumConfig.premiereButtonLabel || "Ver estreno en sala";
+    premiereExternalLink.href = latestEntry.url || "#";
+    premiereExternalLink.textContent = museumConfig.premiereExternalLabel || "Abrir en YouTube";
+    premiereExternalLink.setAttribute("aria-disabled", latestEntry.url ? "false" : "true");
+    premierePoster.innerHTML = latestThumbnail
+        ? `<img src="${escapeHtml(latestThumbnail)}" alt="Caratula de ${escapeHtml(latestTitle)}" loading="lazy">`
+        : `<div class="cinema-premiere-fallback">${escapeHtml(latestTitle)}</div>`;
+
     posterGrid.innerHTML = entries
         .map((entry, index) => {
             const title = entry.title || `Fucknews - archivo ${padSequenceNumber(index + 1)}`;
@@ -203,6 +239,7 @@ function renderMuseumPage(entries) {
 
             return `
                 <article class="poster-card">
+                    ${index === 0 ? '<span class="poster-ribbon">Estreno</span>' : ""}
                     <button class="poster-thumb" type="button" data-video-embed="${escapeHtml(embedUrl)}" data-video-title="${escapeHtml(title)}">
                         ${thumbnail ? `<img src="${escapeHtml(thumbnail)}" alt="Caratula de ${escapeHtml(title)}" loading="lazy">` : ""}
                         <span class="poster-badge">Ver capitulo</span>
@@ -250,6 +287,16 @@ posterGrid.addEventListener("click", (event) => {
     }
 
     openVideoModal(trigger.dataset.videoEmbed, trigger.dataset.videoTitle || "Nuestro capitulo");
+});
+
+premiereButton.addEventListener("click", (event) => {
+    const embedUrl = event.currentTarget.dataset.videoEmbed;
+
+    if (!embedUrl) {
+        return;
+    }
+
+    openVideoModal(embedUrl, event.currentTarget.dataset.videoTitle || "Nuestro capitulo");
 });
 
 closeVideoModalButton.addEventListener("click", closeVideoModal);

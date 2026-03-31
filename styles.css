@@ -1187,6 +1187,34 @@ body.museum-route::after {
         radial-gradient(circle at top, rgba(240, 194, 123, 0.14), transparent 42%);
 }
 
+.cinema-hero-lights {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
+.cinema-hero-lights::before,
+.cinema-hero-lights::after {
+    content: "";
+    position: absolute;
+    left: 1rem;
+    right: 1rem;
+    height: 1.4rem;
+    background-image: radial-gradient(circle, rgba(255, 236, 197, 0.96) 0 28%, rgba(240, 194, 123, 0.72) 29% 46%, transparent 47%);
+    background-size: 1.5rem 1.4rem;
+    background-repeat: repeat-x;
+    filter: drop-shadow(0 0 8px rgba(240, 194, 123, 0.45));
+    opacity: 0.9;
+}
+
+.cinema-hero-lights::before {
+    top: 0.75rem;
+}
+
+.cinema-hero-lights::after {
+    bottom: 0.75rem;
+}
+
 .cinema-hero::before,
 .cinema-hero::after {
     content: "";
@@ -1242,7 +1270,7 @@ body.museum-route::after {
 
 .cinema-marquee {
     display: grid;
-    grid-template-columns: minmax(250px, 320px) minmax(0, 1fr);
+    grid-template-columns: minmax(240px, 290px) minmax(0, 1fr) minmax(300px, 380px);
     gap: 1rem;
     margin-top: 1rem;
     background:
@@ -1251,11 +1279,69 @@ body.museum-route::after {
 }
 
 .cinema-ticket,
-.cinema-strip {
+.cinema-strip,
+.cinema-premiere {
     border-radius: 28px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.04);
     padding: 1.2rem;
+}
+
+.cinema-premiere {
+    display: grid;
+    gap: 0.9rem;
+    background:
+        linear-gradient(180deg, rgba(53, 30, 34, 0.94), rgba(22, 15, 17, 0.94)),
+        radial-gradient(circle at top, rgba(240, 194, 123, 0.16), transparent 46%);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04), 0 24px 60px rgba(0, 0, 0, 0.24);
+}
+
+.cinema-premiere-poster {
+    position: relative;
+    overflow: hidden;
+    border-radius: 22px;
+    aspect-ratio: 16 / 9;
+    background: linear-gradient(135deg, rgba(240, 194, 123, 0.18), rgba(240, 159, 156, 0.14));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.cinema-premiere-poster img,
+.cinema-premiere-fallback {
+    width: 100%;
+    height: 100%;
+}
+
+.cinema-premiere-poster img {
+    object-fit: cover;
+    display: block;
+}
+
+.cinema-premiere-fallback {
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    text-align: center;
+    font-family: "Cormorant Garamond", serif;
+    font-size: 2rem;
+    color: var(--text);
+}
+
+.cinema-premiere-copy {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.cinema-premiere-copy h2 {
+    margin: 0;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(2.2rem, 4vw, 3.5rem);
+    line-height: 0.94;
+}
+
+.cinema-premiere-note {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.7;
 }
 
 .cinema-ticket-value,
@@ -1324,6 +1410,7 @@ body.museum-route::after {
 
 .poster-card,
 .cinema-empty {
+    position: relative;
     overflow: hidden;
     border-radius: 30px;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -1331,6 +1418,33 @@ body.museum-route::after {
         linear-gradient(180deg, rgba(31, 23, 26, 0.96), rgba(16, 12, 13, 0.96)),
         radial-gradient(circle at top, rgba(240, 194, 123, 0.12), transparent 48%);
     box-shadow: 0 22px 60px rgba(0, 0, 0, 0.28);
+}
+
+.poster-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(240, 194, 123, 0.12);
+    border-radius: 30px;
+    pointer-events: none;
+}
+
+.poster-ribbon {
+    position: absolute;
+    top: 1rem;
+    right: -2.7rem;
+    z-index: 2;
+    min-width: 10rem;
+    padding: 0.55rem 1rem;
+    text-align: center;
+    background: linear-gradient(135deg, var(--gold), #f2ab91);
+    color: #1d1416;
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    transform: rotate(32deg);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 .poster-thumb {
@@ -1503,6 +1617,14 @@ body.museum-route::after {
     }
 }
 
+
+    .poster-head h2,
+    .cinema-strip h2 {
+        margin: 0;
+        font-family: "Cormorant Garamond", serif;
+        font-size: clamp(2rem, 4vw, 3.2rem);
+        line-height: 0.96;
+    }
 @media (max-width: 720px) {
     .shell {
         width: min(100% - 1rem, 100%);

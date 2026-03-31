@@ -260,10 +260,14 @@ function parseMuseumEntriesFromText(sourceText, museumConfig) {
 async function loadMuseumEntries() {
     const museumConfig = getMuseumConfig();
     const inlineEntries = Array.isArray(museumConfig.entries) ? museumConfig.entries : [];
+    const sortEntries = (entries) => {
+        const normalizedEntries = [...entries];
+        return museumConfig.reverseOrder === false ? normalizedEntries : normalizedEntries.reverse();
+    };
 
     if (!museumConfig.source) {
-        state.museumEntries = inlineEntries;
-        return inlineEntries;
+        state.museumEntries = sortEntries(inlineEntries);
+        return state.museumEntries;
     }
 
     try {
@@ -275,12 +279,12 @@ async function loadMuseumEntries() {
 
         const sourceText = await response.text();
         const parsedEntries = parseMuseumEntriesFromText(sourceText, museumConfig);
-        state.museumEntries = parsedEntries.length ? parsedEntries : inlineEntries;
+        state.museumEntries = sortEntries(parsedEntries.length ? parsedEntries : inlineEntries);
         return state.museumEntries;
     } catch (error) {
         console.warn("No pude cargar el archivo del museo. Uso las entradas del config como respaldo.", error);
-        state.museumEntries = inlineEntries;
-        return inlineEntries;
+        state.museumEntries = sortEntries(inlineEntries);
+        return state.museumEntries;
     }
 }
 
