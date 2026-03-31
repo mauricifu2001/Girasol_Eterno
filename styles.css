@@ -1630,12 +1630,10 @@ body.museum-intro-opening .theater-illustration {
     position: relative;
     overflow: hidden;
     min-height: 52vh;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
     background:
-        linear-gradient(180deg, rgba(46, 25, 31, 0.94), rgba(20, 12, 15, 0.92)),
-        radial-gradient(circle at top, rgba(240, 194, 123, 0.14), transparent 42%);
+    linear-gradient(180deg, rgba(49, 22, 26, 0.96), rgba(22, 12, 15, 0.94)),
+    radial-gradient(circle at top right, rgba(240, 194, 123, 0.16), transparent 34%),
+    linear-gradient(135deg, rgba(120, 23, 29, 0.12), transparent 32%);
 }
 
 .cinema-hero-lights {
@@ -1697,19 +1695,340 @@ body.museum-intro-opening .theater-illustration {
     z-index: 1;
 }
 
+.cinema-hero-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+    gap: 1.5rem;
+    align-items: center;
+}
+
+.cinema-hero-copy {
+    display: grid;
+    align-content: center;
+}
+
+.cinema-hero-panel {
+    position: relative;
+    max-width: 620px;
+    padding: clamp(1.25rem, 2.6vw, 2rem);
+    border-radius: 30px;
+    background:
+        linear-gradient(180deg, rgba(45, 22, 24, 0.92), rgba(20, 12, 14, 0.9)),
+        radial-gradient(circle at top, rgba(240, 194, 123, 0.12), transparent 44%);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 227, 181, 0.08),
+        0 24px 60px rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+}
+
+.cinema-hero-panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: 30px;
+    padding: 1px;
+    background: linear-gradient(135deg, rgba(247, 222, 181, 0.38), rgba(247, 222, 181, 0.06), rgba(247, 222, 181, 0.22));
+    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+}
+
+.cinema-hero-panel::after {
+    content: "";
+    position: absolute;
+    inset: auto -10% -22% auto;
+    width: 16rem;
+    height: 16rem;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(240, 194, 123, 0.14), transparent 66%);
+    filter: blur(8px);
+    pointer-events: none;
+}
+
+.cinema-hero-panel-top {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    margin-bottom: 0.8rem;
+}
+
+.cinema-hero-panel-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.45rem 0.8rem;
+    border-radius: 999px;
+    border: 1px solid rgba(247, 222, 181, 0.18);
+    background: rgba(255, 240, 214, 0.06);
+    color: rgba(255, 240, 214, 0.86);
+    font-size: 0.72rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}
+
 .cinema-hero h1 {
     margin: 0;
-    max-width: 12ch;
+    max-width: 9ch;
     font-family: "Cormorant Garamond", serif;
-    font-size: clamp(3.5rem, 8vw, 6.6rem);
+    font-size: clamp(3.4rem, 8vw, 6.1rem);
     line-height: 0.92;
 }
 
 .cinema-copy {
-    max-width: 62ch;
+    max-width: 38ch;
     margin: 1.2rem 0 1.6rem;
     color: var(--muted);
     line-height: 1.8;
+}
+
+.cinema-hero-panel .cinema-copy,
+.cinema-hero-panel .cinema-actions,
+.cinema-hero-panel h1 {
+    position: relative;
+    z-index: 1;
+}
+
+.cinema-lobby {
+    position: relative;
+    min-height: 500px;
+    border-radius: 30px;
+    padding: 1.25rem;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: 0.88fr 1.2fr 0.88fr;
+    align-items: end;
+    background:
+        radial-gradient(circle at 50% 14%, rgba(247, 228, 188, 0.26), transparent 18%),
+        linear-gradient(180deg, #7f1317 0%, #6a1014 18%, #4e0d12 48%, #2b0b0f 100%);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 227, 181, 0.08),
+        0 28px 70px rgba(0, 0, 0, 0.3);
+}
+
+.cinema-lobby::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        linear-gradient(90deg, rgba(255, 255, 255, 0.04), transparent 12%, transparent 88%, rgba(255, 255, 255, 0.04)),
+        linear-gradient(180deg, rgba(255, 229, 184, 0.1), transparent 18%, transparent 80%, rgba(0, 0, 0, 0.26));
+    pointer-events: none;
+}
+
+.cinema-lobby::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 120%;
+    height: 34%;
+    transform: translateX(-50%);
+    background:
+        linear-gradient(180deg, rgba(255, 214, 155, 0.08), transparent 18%),
+        repeating-linear-gradient(90deg, rgba(248, 214, 162, 0.16) 0 2px, transparent 2px 68px),
+        linear-gradient(180deg, rgba(70, 17, 22, 0) 0%, rgba(31, 10, 13, 0.78) 100%);
+    clip-path: polygon(0 100%, 9% 42%, 22% 22%, 50% 0, 78% 22%, 91% 42%, 100% 100%);
+    pointer-events: none;
+}
+
+.cinema-lobby-arch {
+    position: absolute;
+    top: 0.8rem;
+    left: 50%;
+    width: min(470px, 88%);
+    height: 76%;
+    transform: translateX(-50%);
+    border-radius: 240px 240px 28px 28px;
+    border: 10px solid rgba(247, 225, 187, 0.96);
+    box-shadow:
+        0 0 0 10px rgba(85, 26, 21, 0.7),
+        0 0 0 18px rgba(236, 196, 129, 0.62);
+}
+
+.cinema-lobby-marquee {
+    position: absolute;
+    top: 1.4rem;
+    left: 50%;
+    z-index: 1;
+    width: min(250px, 62%);
+    transform: translateX(-50%);
+    display: grid;
+    gap: 0.25rem;
+    padding: 0.7rem 1rem 0.8rem;
+    text-align: center;
+    border-radius: 18px;
+    background:
+        linear-gradient(180deg, rgba(84, 16, 17, 0.98), rgba(53, 11, 13, 0.98));
+    box-shadow:
+        0 0 0 4px rgba(246, 219, 170, 0.86),
+        0 0 0 9px rgba(121, 33, 27, 0.95),
+        0 14px 24px rgba(0, 0, 0, 0.24);
+}
+
+.cinema-lobby-marquee-title,
+.cinema-lobby-marquee-copy,
+.cinema-lobby-desk-label,
+.cinema-lobby-poster-tag {
+    position: relative;
+    z-index: 1;
+}
+
+.cinema-lobby-marquee-title {
+    font-size: 1.05rem;
+    font-weight: 700;
+    letter-spacing: 0.28em;
+    color: #f7e6be;
+}
+
+.cinema-lobby-marquee-copy {
+    font-size: 0.78rem;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: rgba(247, 236, 213, 0.8);
+}
+
+.cinema-lobby-wall,
+.cinema-lobby-center {
+    position: relative;
+    z-index: 1;
+}
+
+.cinema-lobby-wall {
+    min-height: 310px;
+    display: grid;
+    place-items: center;
+}
+
+.cinema-lobby-center {
+    min-height: 420px;
+    display: grid;
+    align-content: end;
+    justify-items: center;
+    gap: 1.2rem;
+}
+
+.cinema-lobby-poster {
+    width: clamp(92px, 12vw, 122px);
+    aspect-ratio: 0.62;
+    border-radius: 16px;
+    padding: 0.75rem;
+    display: grid;
+    align-content: end;
+    justify-items: center;
+    background:
+        radial-gradient(circle at 50% 14%, rgba(247, 215, 153, 0.35), transparent 18%),
+        linear-gradient(180deg, rgba(105, 16, 20, 0.98), rgba(54, 10, 13, 0.98));
+    box-shadow:
+        0 0 0 4px rgba(245, 224, 190, 0.88),
+        0 0 0 9px rgba(97, 24, 21, 0.9),
+        0 16px 28px rgba(0, 0, 0, 0.22);
+}
+
+.cinema-lobby-poster::before {
+    content: "";
+    width: 100%;
+    flex: 1 1 auto;
+    min-height: 70%;
+    border-radius: 12px;
+    background:
+        linear-gradient(180deg, rgba(250, 231, 205, 0.16), transparent 20%),
+        linear-gradient(135deg, rgba(197, 48, 55, 0.7), rgba(92, 18, 21, 0.82));
+    box-shadow: inset 0 0 0 1px rgba(255, 232, 194, 0.16);
+}
+
+.cinema-lobby-poster-alt::before {
+    background:
+        linear-gradient(180deg, rgba(250, 231, 205, 0.16), transparent 20%),
+        linear-gradient(135deg, rgba(183, 124, 41, 0.72), rgba(94, 22, 18, 0.82));
+}
+
+.cinema-lobby-poster-tag {
+    font-size: 0.65rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: #f6e8cc;
+    margin-top: 0.8rem;
+}
+
+.cinema-lobby-doors {
+    position: relative;
+    width: min(280px, 82%);
+    aspect-ratio: 0.88;
+    border-radius: 26px 26px 18px 18px;
+    background:
+        linear-gradient(180deg, rgba(244, 222, 189, 0.98), rgba(206, 173, 118, 0.96));
+    box-shadow:
+        0 0 0 7px rgba(91, 22, 21, 0.86),
+        0 0 0 14px rgba(244, 222, 189, 0.78),
+        0 22px 36px rgba(0, 0, 0, 0.22);
+}
+
+.cinema-lobby-door {
+    position: absolute;
+    top: 14%;
+    bottom: 12%;
+    width: 36%;
+    border-radius: 12px;
+    background:
+        linear-gradient(180deg, rgba(88, 21, 21, 0.98), rgba(54, 13, 14, 0.98));
+    box-shadow: inset 0 0 0 4px rgba(247, 228, 193, 0.42);
+}
+
+.cinema-lobby-door-left {
+    left: 11%;
+}
+
+.cinema-lobby-door-right {
+    right: 11%;
+}
+
+.cinema-lobby-door-glow {
+    position: absolute;
+    left: 50%;
+    top: 22%;
+    width: 20%;
+    height: 44%;
+    transform: translateX(-50%);
+    background: radial-gradient(circle, rgba(249, 227, 175, 0.72), rgba(249, 227, 175, 0));
+    filter: blur(10px);
+}
+
+.cinema-lobby-desk {
+    width: min(250px, 80%);
+    padding: 1rem 1rem 0.95rem;
+    text-align: center;
+    border-radius: 16px 16px 26px 26px;
+    background:
+        linear-gradient(180deg, rgba(76, 19, 21, 0.98), rgba(48, 11, 13, 0.98));
+    box-shadow:
+        0 0 0 4px rgba(244, 219, 177, 0.72),
+        0 18px 28px rgba(0, 0, 0, 0.2);
+}
+
+.cinema-lobby-desk-label {
+    font-size: 0.84rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: #f8e5bd;
+}
+
+.cinema-lobby-floor {
+    position: absolute;
+    left: 50%;
+    bottom: 0.75rem;
+    width: 92%;
+    height: 28%;
+    transform: translateX(-50%);
+    background:
+        linear-gradient(180deg, rgba(255, 220, 164, 0.08), transparent 16%),
+        repeating-linear-gradient(90deg, rgba(255, 222, 170, 0.08) 0 1px, transparent 1px 58px),
+        linear-gradient(180deg, rgba(43, 8, 11, 0.1), rgba(20, 7, 10, 0.84));
+    clip-path: polygon(0 100%, 12% 34%, 50% 0, 88% 34%, 100% 100%);
+    pointer-events: none;
 }
 
 .cinema-actions,
@@ -2110,6 +2429,7 @@ body.museum-intro-opening .theater-illustration {
 }
 
 @media (max-width: 980px) {
+    .cinema-hero-layout,
     .cinema-intro-stage,
     .metrics,
     .museum-stats,
@@ -2124,6 +2444,22 @@ body.museum-intro-opening .theater-illustration {
     .poster-head,
     .poster-grid {
         grid-template-columns: 1fr;
+    }
+
+    .cinema-lobby {
+        min-height: 430px;
+    }
+
+    .cinema-hero-panel {
+        max-width: none;
+    }
+
+    .cinema-lobby-wall {
+        min-height: 250px;
+    }
+
+    .cinema-lobby-center {
+        min-height: 360px;
     }
 
     .cinema-intro-ticket {
@@ -2164,6 +2500,33 @@ body.museum-intro-opening .theater-illustration {
     .cinema-intro-copy h1,
     .cinema-hero h1 {
         max-width: none;
+    }
+
+    .cinema-hero-panel-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .cinema-lobby {
+        min-height: 360px;
+        grid-template-columns: 0.74fr 1.1fr 0.74fr;
+        padding: 1rem 0.8rem 1.2rem;
+    }
+
+    .cinema-lobby-marquee {
+        width: min(220px, 72%);
+    }
+
+    .cinema-lobby-poster {
+        width: 82px;
+    }
+
+    .cinema-lobby-doors {
+        width: min(220px, 82%);
+    }
+
+    .cinema-lobby-desk {
+        width: min(200px, 76%);
     }
 
     .cinema-seat-copy {
