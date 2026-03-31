@@ -1586,11 +1586,11 @@ body.museum-intro-complete .cinema-intro {
 }
 
 body.museum-intro-seating .cinema-intro-stage {
-    animation: introStageToSeat 0.95s ease forwards;
+    animation: introStageToSeat 1.6s ease forwards;
 }
 
 body.museum-intro-seating .cinema-seat-call {
-    animation: seatCallReveal 0.9s ease 0.3s forwards;
+    animation: seatCallReveal 1.4s ease 0.5s forwards;
 }
 
 body.museum-intro-seating .cinema-curtain-left {
@@ -1602,19 +1602,19 @@ body.museum-intro-seating .cinema-curtain-right {
 }
 
 body.museum-intro-opening .cinema-intro-stage {
-    animation: introStageLift 1.15s ease forwards;
+    animation: introStageLift 1.7s ease forwards;
 }
 
 body.museum-intro-opening .cinema-intro {
-    animation: introFadeOut 1.2s ease forwards;
+    animation: introFadeOut 1.8s ease forwards;
 }
 
 body.museum-intro-opening .cinema-seat-call {
-    animation: seatCallExit 1.05s ease forwards;
+    animation: seatCallExit 1.5s ease forwards;
 }
 
 body.museum-intro-opening .theater-illustration {
-    animation: theaterPushIn 1.05s ease forwards;
+    animation: theaterPushIn 1.6s ease forwards;
 }
 
 .cinema-hero,
