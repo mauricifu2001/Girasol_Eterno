@@ -41,7 +41,7 @@ const videoModalFrame = document.getElementById("videoModalFrame");
 const videoModalTitle = document.getElementById("videoModalTitle");
 const closeVideoModalButton = document.getElementById("closeVideoModalButton");
 const seatRevealDelay = 2400;
-const introRevealDelay = 6000;
+const introRevealDelay = 8000;
 
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => {
