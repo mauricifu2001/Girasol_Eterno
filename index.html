@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal para mi Girasol Hermosa</title>
+    <meta name="description" content="Portal privado que Mauricio hizo para Valentina, su Girasol Hermosa.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+    <script defer src="config.js"></script>
+    <script defer src="app.js"></script>
+</head>
+<body>
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+    <div class="welcome-screen hidden" id="welcomeScreen" aria-live="polite">
+        <div class="welcome-aura welcome-aura-one"></div>
+        <div class="welcome-aura welcome-aura-two"></div>
+        <div class="welcome-rings" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="welcome-sparks" aria-hidden="true">
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+            <span></span>
+        </div>
+        <div class="welcome-card glass">
+            <p class="eyebrow">Acceso concedido</p>
+            <p class="welcome-kicker">La luz correcta abrio el portal</p>
+            <h2 id="welcomeTitle">Bienvenida</h2>
+            <p id="welcomeMessage">El portal ya reconocio a la persona correcta.</p>
+            <div class="welcome-divider" aria-hidden="true"></div>
+        </div>
+    </div>
+
+    <main class="shell">
+        <section class="gate" id="gateSection">
+            <div class="gate-panel glass">
+                <p class="eyebrow">Portal privado</p>
+                <h1 id="gateTitle">Reconocimiento para personas especiales</h1>
+                <p class="gate-copy" id="gateCopy">
+                    Esta puerta solo se abre para las personas correctas. Mira a la camara y deja que el portal verifique tu entrada.
+                </p>
+
+                <div class="status-bar" id="statusBar">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Cargando interfaz...</span>
+                </div>
+
+                <div class="camera-frame">
+                    <video id="cameraVideo" autoplay playsinline muted></video>
+                    <canvas id="captureCanvas" width="720" height="540" hidden></canvas>
+                    <div class="scanner-line"></div>
+                    <div class="frame-corners">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                    </div>
+                    <div class="camera-overlay" id="cameraOverlay">
+                        <p>Esperando acceso a la camara</p>
+                    </div>
+                </div>
+
+                <div class="control-row">
+                    <button class="primary" id="retryCameraButton" type="button">Activar camara</button>
+                    <button class="secondary" id="captureButton" type="button" disabled>Tomar foto</button>
+                </div>
+
+                <div class="fallback-box">
+                    <p class="fallback-title">Plan B</p>
+                    <p class="fallback-copy">Si la luz no ayuda o la camara falla, escribe la clave secreta.</p>
+                    <form id="secretForm" class="secret-form">
+                        <input id="secretInput" type="password" placeholder="Clave secreta" autocomplete="off">
+                        <button class="ghost" type="submit">Entrar</button>
+                    </form>
+                    <p class="tiny" id="hintText"></p>
+                </div>
+            </div>
+        </section>
+
+        <section class="experience hidden" id="experienceSection">
+            <header class="hero glass">
+                <p class="eyebrow" id="heroEyebrow">Para nosotros</p>
+                <h1 id="heroTitle">Nuestro lugar secreto</h1>
+                <p class="hero-copy" id="heroMessage"></p>
+                <div class="hero-actions">
+                    <a class="primary" href="#timelineSection">Recorrer recuerdos</a>
+                    <a class="secondary" href="#lettersSection">Abrir cartas</a>
+                </div>
+            </header>
+
+            <section class="metrics" id="metricsSection"></section>
+
+            <section class="story glass" id="timelineSection">
+                <div class="section-head">
+                    <p class="eyebrow">Nuestra historia</p>
+                    <h2>Momentos que sostienen la distancia</h2>
+                </div>
+                <div class="timeline" id="timelineList"></div>
+            </section>
+
+            <section class="reasons glass" id="reasonsSection">
+                <div class="section-head">
+                    <p class="eyebrow">Lo que me recuerda a ti</p>
+                    <h2>Razones que no se me acaban</h2>
+                </div>
+                <div class="reason-grid" id="reasonGrid"></div>
+            </section>
+
+            <section class="letters glass" id="lettersSection">
+                <div class="section-head">
+                    <p class="eyebrow">Mensajes reservados</p>
+                    <h2>Cartas para abrir sin afan</h2>
+                </div>
+                <div class="letter-grid" id="letterGrid"></div>
+            </section>
+
+            <section class="playlist glass" id="playlistSection">
+                <div class="section-head">
+                    <p class="eyebrow">Banda sonora</p>
+                    <h2>Canciones para acortar kilometros</h2>
+                </div>
+                <div class="playlist-list" id="playlistList"></div>
+            </section>
+
+            <section class="final-note glass">
+                <p class="eyebrow">Cierre</p>
+                <h2 id="finalTitle">Hasta que la distancia se rinda</h2>
+                <p id="finalMessage"></p>
+            </section>
+        </section>
+    </main>
+</body>
+</html>
