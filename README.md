@@ -53,3 +53,24 @@ Si prefieres VS Code, tambien puedes usar una extension como Live Server.
 - Poner audios tuyos.
 - Incluir un mapa con sus ciudades.
 - Conectar una cuenta de Spotify o una galeria.
+
+## Publicarla con GitHub y Netlify
+
+El repositorio ya quedo inicializado y enlazado a GitHub. Si haces cambios en local, este es el flujo:
+
+```powershell
+git add .
+git commit -m "Describe tu cambio"
+git push
+```
+
+Para dejarla publica en internet con actualizacion por cada `git push`:
+
+1. Entra a Netlify y crea o inicia sesion en tu cuenta.
+2. Elige `Add new site` -> `Import an existing project`.
+3. Conecta GitHub y autoriza a Netlify si te lo pide.
+4. Selecciona el repo `mauricifu2001/Girasol_Eterno`.
+5. Netlify deberia detectar que es una web estatica. El proyecto ya incluye `netlify.toml`, asi que no necesitas comando de build.
+6. Publica el sitio.
+
+Despues de eso, cada vez que hagas `git push`, Netlify volvera a desplegar la pagina automaticamente.
