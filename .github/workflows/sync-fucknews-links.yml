@@ -3,8 +3,8 @@ name: Sync FucksNews Links
 on:
   workflow_dispatch:
   schedule:
-    # 10:00 UTC = 5:00 a. m. Colombia (UTC-5)
-    - cron: "0 10 * * 5"
+    # 23:00 UTC = 6:00 p. m. Colombia (UTC-5)
+    - cron: "0 23 * * 5"
 
 permissions:
   contents: write

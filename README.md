@@ -96,7 +96,7 @@ El proyecto ya incluye un workflow en `.github/workflows/sync-fucknews-links.yml
 2. Ve a `Settings` -> `Secrets and variables` -> `Actions`.
 3. Crea un secret llamado `YOUTUBE_API_KEY`.
 4. Usa una API key con acceso a YouTube Data API v3.
-5. El workflow quedara programado para correr cada viernes a las `10:00 UTC`, que equivale a `5:00 a. m.` hora de Colombia.
+5. El workflow quedara programado para correr cada viernes a las `23:00 UTC`, que equivale a `6:00 p. m.` hora de Colombia.
 
 ### Que hace ese workflow
 
