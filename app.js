@@ -218,6 +218,27 @@ function setupSoundtrackPlaylistPlayback() {
     });
 
     playlistList.addEventListener("click", (event) => {
+        const removeTrigger = event.target.closest('[data-soundtrack-action="remove"]');
+        if (removeTrigger) {
+            const card = removeTrigger.closest(".soundtrack-card");
+            const cardUrl = card?.dataset?.trackUrl || "";
+            const normalizedUrl = normalizeSpotifyTrackUrl(cardUrl);
+
+            if (normalizedUrl) {
+                const stored = getStoredSoundtrackPlaylist();
+                const nextStored = stored.filter(
+                    (song) => normalizeSpotifyTrackUrl(song?.url) !== normalizedUrl
+                );
+                setStoredSoundtrackPlaylist(nextStored);
+            }
+
+            stopSoundtrack();
+            stopPlayback();
+            stopOtherCards(null);
+            renderSoundtrackPlaylist();
+            return;
+        }
+
         const trigger = event.target.closest('[data-soundtrack-action="toggle"]');
         if (!trigger) {
             return;
@@ -396,9 +417,22 @@ async function resolveSpotifyTrack(rawUrl) {
     const endpoint = new URL("/.netlify/functions/spotify-track", window.location.origin);
     endpoint.searchParams.set("url", normalizedUrl);
 
-    const response = await fetch(endpoint.toString());
+    let response;
+
+    try {
+        response = await fetch(endpoint.toString());
+    } catch (error) {
+        throw new Error(
+            "No pude conectarme para leer la cancion. Abre esta pagina con el servidor local (serve.ps1) o despliegala en Netlify."
+        );
+    }
 
     if (!response.ok) {
+        if (response.status === 404) {
+            throw new Error(
+                "Aqui no esta disponible el servicio para leer canciones (404). Abre esta pagina con serve.ps1 o despliegala en Netlify para usar el boton +."
+            );
+        }
         const payload = await response.json().catch(() => null);
         throw new Error(payload?.error || `No pude leer la cancion (${response.status}).`);
     }
@@ -423,10 +457,13 @@ function renderSoundtrackPlaylist() {
         return;
     }
 
-    const songs = getCombinedSoundtrackPlaylist();
+    const baseSongs = Array.isArray(storyConfig.playlist) ? storyConfig.playlist : [];
+    const storedSongs = getStoredSoundtrackPlaylist();
+    const songs = [...baseSongs, ...storedSongs];
 
     playlistList.innerHTML = songs
         .map((song, index) => {
+            const isStoredSong = index >= baseSongs.length;
             const title = escapeHtml(song.title);
             const artist = escapeHtml(song.artist);
             const previewUrl = escapeHtml(song.previewUrl || "");
@@ -438,10 +475,16 @@ function renderSoundtrackPlaylist() {
             const titleHtml = trackUrl
                 ? `<a href="${trackUrl}" target="_blank" rel="noopener noreferrer">${title}</a>`
                 : title;
+            const removeButtonHtml = isStoredSong
+                ? `<button class="ghost soundtrack-remove" type="button" data-soundtrack-action="remove" aria-label="Quitar esta cancion">Quitar</button>`
+                : "";
 
             return `
-                <article class="soundtrack-card" data-preview-url="${previewUrl}">
-                    <p class="soundtrack-track">${escapeHtml(trackLabel)}</p>
+                <article class="soundtrack-card" data-preview-url="${previewUrl}" data-track-url="${trackUrl}">
+                    <div class="soundtrack-card-top">
+                        <p class="soundtrack-track">${escapeHtml(trackLabel)}</p>
+                        ${removeButtonHtml}
+                    </div>
                     <div class="soundtrack-meta">
                         <button class="soundtrack-play" type="button" data-soundtrack-action="toggle" aria-label="${playAriaLabel}" aria-pressed="false" ${disabled}>
                             <svg class="soundtrack-icon soundtrack-icon-play" viewBox="0 0 24 24" focusable="false" aria-hidden="true">

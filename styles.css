@@ -1518,6 +1518,20 @@ button:hover,
     color: rgba(240, 194, 123, 0.85);
 }
 
+.soundtrack-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+}
+
+.soundtrack-remove {
+    padding: 0.45rem 0.85rem;
+    font-size: 0.72rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
 .soundtrack-meta {
     display: flex;
     align-items: center;
