@@ -11,8 +11,12 @@ const state = {
     loadingStarted: false,
     soundtrack: null,
     soundtrackPrimed: false,
+    playlistAudio: null,
+    playlistActiveCard: null,
     museumEntries: []
 };
+
+const SOUNDTRACK_STORAGE_KEY = "girasolSoundtrackPlaylist";
 
 const gateSection = document.getElementById("gateSection");
 const experienceSection = document.getElementById("experienceSection");
@@ -42,6 +46,263 @@ function padSequenceNumber(value) {
     return String(value).padStart(3, "0");
 }
 
+function hashSeed(value) {
+    const text = String(value ?? "");
+    let hash = 0;
+    for (let index = 0; index < text.length; index += 1) {
+        hash = (hash * 31 + text.charCodeAt(index)) >>> 0;
+    }
+    return hash || 1;
+}
+
+function buildSoundtrackWaveBars(seedKey, barCount = 42) {
+    let seed = hashSeed(seedKey) % 2147483647;
+    if (seed <= 0) {
+        seed += 2147483646;
+    }
+
+    const next = () => {
+        seed = (seed * 16807) % 2147483647;
+        return (seed - 1) / 2147483646;
+    };
+
+    return Array.from({ length: barCount })
+        .map(() => {
+            const height = Math.round(24 + next() * 76);
+            const duration = (0.72 + next() * 0.88).toFixed(2);
+            const delay = (-next() * 1.1).toFixed(2);
+            return `<span class="soundtrack-bar" style="--h:${height}%;--dur:${duration}s;--delay:${delay}s"></span>`;
+        })
+        .join("");
+}
+
+function setupSoundtrackPlaylistPlayback() {
+    const playlistList = document.getElementById("playlistList");
+
+    if (!playlistList || playlistList.dataset.soundtrackBound === "true") {
+        return;
+    }
+
+    if (!state.playlistAudio) {
+        state.playlistAudio = new Audio();
+        state.playlistAudio.preload = "none";
+    }
+
+    const audio = state.playlistAudio;
+
+    const updateRangeFill = (range) => {
+        if (!range) {
+            return;
+        }
+
+        const max = Number(range.max) || 0;
+        const value = Number(range.value) || 0;
+        const percent = max > 0 ? clamp((value / max) * 100, 0, 100) : 0;
+        range.style.setProperty("--progress", `${percent}%`);
+    };
+
+    const resetCardProgress = (card, durationFallback = 30) => {
+        if (!card) {
+            return;
+        }
+
+        const range = card.querySelector(".soundtrack-seek");
+        const currentLabel = card.querySelector('[data-soundtrack-time="current"]');
+        const durationLabel = card.querySelector('[data-soundtrack-time="duration"]');
+
+        if (range) {
+            range.max = String(durationFallback);
+            range.value = "0";
+            updateRangeFill(range);
+        }
+
+        if (currentLabel) {
+            currentLabel.textContent = "0:00";
+        }
+
+        if (durationLabel) {
+            durationLabel.textContent = formatTimeSeconds(durationFallback);
+        }
+    };
+
+    const setCardPlayingState = (card, isPlaying) => {
+        if (!card) {
+            return;
+        }
+
+        const playButton = card.querySelector(".soundtrack-play");
+        card.classList.toggle("is-playing", isPlaying);
+
+        if (playButton) {
+            playButton.setAttribute("aria-pressed", isPlaying ? "true" : "false");
+        }
+    };
+
+    const stopPlayback = () => {
+        if (state.playlistActiveCard) {
+            setCardPlayingState(state.playlistActiveCard, false);
+            resetCardProgress(state.playlistActiveCard);
+        }
+
+        state.playlistActiveCard = null;
+        audio.pause();
+        audio.currentTime = 0;
+        audio.removeAttribute("src");
+    };
+
+    const stopOtherCards = (keepCard) => {
+        playlistList.querySelectorAll(".soundtrack-card.is-playing").forEach((card) => {
+            if (keepCard && card === keepCard) {
+                return;
+            }
+
+            setCardPlayingState(card, false);
+        });
+    };
+
+    audio.addEventListener("ended", () => {
+        stopPlayback();
+    });
+
+    audio.addEventListener("loadedmetadata", () => {
+        if (!state.playlistActiveCard) {
+            return;
+        }
+
+        const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : 30;
+        const range = state.playlistActiveCard.querySelector(".soundtrack-seek");
+        const durationLabel = state.playlistActiveCard.querySelector('[data-soundtrack-time="duration"]');
+
+        if (range) {
+            range.max = String(duration);
+            updateRangeFill(range);
+        }
+
+        if (durationLabel) {
+            durationLabel.textContent = formatTimeSeconds(duration);
+        }
+    });
+
+    audio.addEventListener("timeupdate", () => {
+        if (!state.playlistActiveCard) {
+            return;
+        }
+
+        const range = state.playlistActiveCard.querySelector(".soundtrack-seek");
+        const currentLabel = state.playlistActiveCard.querySelector('[data-soundtrack-time="current"]');
+
+        if (range) {
+            range.value = String(audio.currentTime || 0);
+            updateRangeFill(range);
+        }
+
+        if (currentLabel) {
+            currentLabel.textContent = formatTimeSeconds(audio.currentTime || 0);
+        }
+    });
+
+    audio.addEventListener("pause", () => {
+        if (!state.playlistActiveCard) {
+            return;
+        }
+
+        setCardPlayingState(state.playlistActiveCard, false);
+    });
+
+    audio.addEventListener("play", () => {
+        if (!state.playlistActiveCard) {
+            return;
+        }
+
+        setCardPlayingState(state.playlistActiveCard, true);
+    });
+
+    playlistList.addEventListener("click", (event) => {
+        const trigger = event.target.closest('[data-soundtrack-action="toggle"]');
+        if (!trigger) {
+            return;
+        }
+
+        const card = trigger.closest(".soundtrack-card");
+        if (!card) {
+            return;
+        }
+
+        const previewUrl = card.dataset.previewUrl || "";
+        if (!previewUrl) {
+            return;
+        }
+
+        stopSoundtrack();
+
+        const isSameCard = state.playlistActiveCard === card;
+
+        if (isSameCard) {
+            if (audio.paused) {
+                audio.play().catch((error) => {
+                    console.warn("No pude reanudar la previa.", error);
+                    stopPlayback();
+                });
+                return;
+            }
+
+            audio.pause();
+            return;
+        }
+
+        stopPlayback();
+        stopOtherCards(card);
+        resetCardProgress(card);
+
+        state.playlistActiveCard = card;
+        audio.src = previewUrl;
+        audio.currentTime = 0;
+
+        audio.play().catch((error) => {
+            console.warn("No pude reproducir la previa de Spotify.", error);
+            stopPlayback();
+        });
+    });
+
+    playlistList.addEventListener("input", (event) => {
+        const range = event.target.closest(".soundtrack-seek");
+        if (!range) {
+            return;
+        }
+
+        updateRangeFill(range);
+
+        const card = range.closest(".soundtrack-card");
+        if (!card) {
+            return;
+        }
+
+        const desiredTime = Number(range.value) || 0;
+        const currentLabel = card.querySelector('[data-soundtrack-time="current"]');
+        if (currentLabel) {
+            currentLabel.textContent = formatTimeSeconds(desiredTime);
+        }
+
+        const previewUrl = card.dataset.previewUrl || "";
+        if (!previewUrl) {
+            return;
+        }
+
+        if (state.playlistActiveCard !== card) {
+            stopSoundtrack();
+            stopPlayback();
+            stopOtherCards(card);
+
+            state.playlistActiveCard = card;
+            audio.src = previewUrl;
+        }
+
+        audio.currentTime = desiredTime;
+    });
+
+    playlistList.dataset.soundtrackBound = "true";
+}
+
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => {
         const entities = {
@@ -54,6 +315,299 @@ function escapeHtml(value) {
 
         return entities[character] || character;
     });
+}
+
+function formatTimeSeconds(seconds) {
+    const value = Number(seconds);
+    if (!Number.isFinite(value) || value < 0) {
+        return "0:00";
+    }
+
+    const whole = Math.floor(value);
+    const minutes = Math.floor(whole / 60);
+    const remainder = whole % 60;
+    return `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function getStoredSoundtrackPlaylist() {
+    try {
+        const raw = window.localStorage.getItem(SOUNDTRACK_STORAGE_KEY);
+        if (!raw) {
+            return [];
+        }
+
+        const parsed = JSON.parse(raw);
+        if (!Array.isArray(parsed)) {
+            return [];
+        }
+
+        return parsed
+            .filter((item) => item && typeof item === "object")
+            .map((item) => ({
+                title: String(item.title || "").trim(),
+                artist: String(item.artist || "").trim(),
+                previewUrl: String(item.previewUrl || "").trim(),
+                url: String(item.url || "").trim()
+            }))
+            .filter((item) => item.title && item.url);
+    } catch (error) {
+        return [];
+    }
+}
+
+function setStoredSoundtrackPlaylist(items) {
+    try {
+        window.localStorage.setItem(SOUNDTRACK_STORAGE_KEY, JSON.stringify(items || []));
+    } catch (error) {
+    }
+}
+
+function normalizeSpotifyTrackUrl(rawUrl) {
+    const text = String(rawUrl || "").trim();
+
+    if (!text) {
+        return null;
+    }
+
+    try {
+        const url = new URL(text);
+
+        if (!/spotify\.com$/i.test(url.hostname)) {
+            return null;
+        }
+
+        const match = url.pathname.match(/\/track\/([a-zA-Z0-9]+)/);
+        if (!match) {
+            return null;
+        }
+
+        return `https://open.spotify.com/track/${match[1]}`;
+    } catch (error) {
+        return null;
+    }
+}
+
+async function resolveSpotifyTrack(rawUrl) {
+    const normalizedUrl = normalizeSpotifyTrackUrl(rawUrl);
+    if (!normalizedUrl) {
+        throw new Error("El link no parece ser una cancion valida de Spotify.");
+    }
+
+    const endpoint = new URL("/.netlify/functions/spotify-track", window.location.origin);
+    endpoint.searchParams.set("url", normalizedUrl);
+
+    const response = await fetch(endpoint.toString());
+
+    if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.error || `No pude leer la cancion (${response.status}).`);
+    }
+
+    const payload = await response.json();
+
+    return {
+        title: String(payload?.title || "").trim(),
+        artist: String(payload?.artist || "").trim() || "Spotify",
+        previewUrl: String(payload?.previewUrl || "").trim(),
+        url: String(payload?.url || normalizedUrl).trim() || normalizedUrl
+    };
+}
+
+function getCombinedSoundtrackPlaylist() {
+    return [...(storyConfig.playlist || []), ...getStoredSoundtrackPlaylist()];
+}
+
+function renderSoundtrackPlaylist() {
+    const playlistList = document.getElementById("playlistList");
+    if (!playlistList) {
+        return;
+    }
+
+    const songs = getCombinedSoundtrackPlaylist();
+
+    playlistList.innerHTML = songs
+        .map((song, index) => {
+            const title = escapeHtml(song.title);
+            const artist = escapeHtml(song.artist);
+            const previewUrl = escapeHtml(song.previewUrl || "");
+            const trackUrl = escapeHtml(song.url || "");
+            const trackLabel = `Track ${String(index + 1).padStart(2, "0")}`;
+            const waveBars = buildSoundtrackWaveBars(`${song.url || title}-${index}`);
+            const playAriaLabel = escapeHtml(`Reproducir ${song.title || ""}`.trim());
+            const disabled = previewUrl ? "" : "disabled";
+            const titleHtml = trackUrl
+                ? `<a href="${trackUrl}" target="_blank" rel="noopener noreferrer">${title}</a>`
+                : title;
+
+            return `
+                <article class="soundtrack-card" data-preview-url="${previewUrl}">
+                    <p class="soundtrack-track">${escapeHtml(trackLabel)}</p>
+                    <div class="soundtrack-meta">
+                        <button class="soundtrack-play" type="button" data-soundtrack-action="toggle" aria-label="${playAriaLabel}" aria-pressed="false" ${disabled}>
+                            <svg class="soundtrack-icon soundtrack-icon-play" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                <path d="M8 5v14l11-7z" />
+                            </svg>
+                            <svg class="soundtrack-icon soundtrack-icon-pause" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                <path d="M6 5h4v14H6zM14 5h4v14h-4z" />
+                            </svg>
+                        </button>
+                        <div class="soundtrack-text">
+                            <p class="soundtrack-title">${titleHtml}</p>
+                            <p class="soundtrack-artist">${artist}</p>
+                        </div>
+                    </div>
+                    <div class="soundtrack-divider" aria-hidden="true"></div>
+                    <div class="soundtrack-wave" aria-hidden="true">${waveBars}</div>
+                    <div class="soundtrack-progress">
+                        <div class="soundtrack-progress-top">
+                            <span class="soundtrack-time" data-soundtrack-time="current">0:00</span>
+                            <span class="soundtrack-time" data-soundtrack-time="duration">0:30</span>
+                        </div>
+                        <input class="soundtrack-seek" type="range" min="0" max="30" step="0.1" value="0" data-soundtrack-action="seek" aria-label="Progreso de la cancion" style="--progress:0%" ${disabled}>
+                    </div>
+                    <p class="soundtrack-caption">Guardada en nuestra historia</p>
+                    <button class="primary soundtrack-cta" type="button" data-soundtrack-action="toggle" ${disabled}>Escuchar</button>
+                </article>
+            `;
+        })
+        .join("");
+}
+
+function setupSoundtrackAddSongModal() {
+    const openButton = document.getElementById("soundtrackAddButton");
+    const modal = document.getElementById("songModal");
+    const closeButton = document.getElementById("closeSongModalButton");
+    const cancelButton = document.getElementById("cancelSongButton");
+    const form = document.getElementById("songModalForm");
+    const input = document.getElementById("songUrlInput");
+    const status = document.getElementById("songModalStatus");
+    const saveButton = document.getElementById("saveSongButton");
+
+    if (!openButton || !modal || !form || !input || !status || !saveButton || modal.dataset.bound === "true") {
+        return;
+    }
+
+    const openModal = () => {
+        modal.classList.remove("hidden");
+        modal.setAttribute("aria-hidden", "false");
+        document.body.classList.add("modal-open");
+        status.textContent = "";
+        input.value = "";
+        input.disabled = false;
+        saveButton.disabled = false;
+
+        requestAnimationFrame(() => {
+            modal.classList.add("visible");
+            input.focus();
+        });
+    };
+
+    const closeModal = () => {
+        if (modal.classList.contains("hidden")) {
+            return;
+        }
+
+        modal.classList.remove("visible");
+        modal.setAttribute("aria-hidden", "true");
+        document.body.classList.remove("modal-open");
+
+        window.setTimeout(() => {
+            modal.classList.add("hidden");
+        }, 220);
+    };
+
+    openButton.addEventListener("click", openModal);
+    closeButton?.addEventListener("click", closeModal);
+    cancelButton?.addEventListener("click", closeModal);
+
+    modal.addEventListener("click", (event) => {
+        if (event.target === modal || event.target.dataset.closeSong === "true") {
+            closeModal();
+        }
+    });
+
+    window.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+            closeModal();
+        }
+    });
+
+    form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+
+        const rawUrl = String(input.value || "").trim();
+        if (!rawUrl) {
+            status.textContent = "Pega un link de Spotify.";
+            return;
+        }
+
+        status.textContent = "Buscando la cancion...";
+        input.disabled = true;
+        saveButton.disabled = true;
+
+        try {
+            const resolved = await resolveSpotifyTrack(rawUrl);
+
+            if (!resolved.title || !resolved.url) {
+                throw new Error("No pude leer esa cancion.");
+            }
+
+            if (!resolved.previewUrl) {
+                throw new Error("Esa cancion no tiene previa disponible para reproducir aqui.");
+            }
+
+            const normalizedResolvedUrl = normalizeSpotifyTrackUrl(resolved.url);
+            const stored = getStoredSoundtrackPlaylist();
+            const storedHas = stored.some((song) => normalizeSpotifyTrackUrl(song?.url) === normalizedResolvedUrl);
+            const baseHas = (storyConfig.playlist || []).some((song) => normalizeSpotifyTrackUrl(song?.url) === normalizedResolvedUrl);
+
+            if (storedHas || baseHas) {
+                status.textContent = "Esa cancion ya estaba en la lista.";
+                return;
+            }
+
+            stored.push(resolved);
+            setStoredSoundtrackPlaylist(stored);
+
+            stopSoundtrack();
+            if (state.playlistAudio) {
+                state.playlistAudio.pause();
+                state.playlistAudio.currentTime = 0;
+                state.playlistAudio.removeAttribute("src");
+            }
+            state.playlistActiveCard = null;
+
+            renderSoundtrackPlaylist();
+            closeModal();
+        } catch (error) {
+            status.textContent = error?.message || "No pude agregar la cancion.";
+        } finally {
+            input.disabled = false;
+            saveButton.disabled = false;
+        }
+    });
+
+    modal.dataset.bound = "true";
+}
+
+function buildHeroTitleHtml(titleText) {
+    const rawTitle = String(titleText || "");
+    const highlightTarget = "Girasol Hermosa";
+    const normalizedTitle = rawTitle.toLowerCase();
+    const normalizedTarget = highlightTarget.toLowerCase();
+    const index = normalizedTitle.lastIndexOf(normalizedTarget);
+
+    const escapeWithLineBreaks = (value) => escapeHtml(value).replace(/\r?\n/g, "<br>");
+
+    if (index < 0) {
+        return escapeWithLineBreaks(rawTitle);
+    }
+
+    const before = rawTitle.slice(0, index);
+    const match = rawTitle.slice(index, index + highlightTarget.length);
+    const after = rawTitle.slice(index + highlightTarget.length);
+
+    return `${escapeWithLineBreaks(before)}<span class="hero-title-accent">${escapeWithLineBreaks(match)}</span>${escapeWithLineBreaks(after)}`;
 }
 
 function shouldPlaySoundtrackForLabel(label) {
@@ -188,10 +742,473 @@ function daysBetween(dateString) {
         return null;
     }
 
+    const msPerDay = 1000 * 60 * 60 * 24;
+    const normalizedValue = String(dateString).trim();
+    const isoMatch = /^(\d{4})-(\d{2})-(\d{2})$/.exec(normalizedValue);
+
+    let targetDayNumber = null;
+
+    if (isoMatch) {
+        const year = Number(isoMatch[1]);
+        const monthIndex = Number(isoMatch[2]) - 1;
+        const day = Number(isoMatch[3]);
+        targetDayNumber = Math.floor(Date.UTC(year, monthIndex, day) / msPerDay);
+    } else {
+        const targetDate = new Date(normalizedValue);
+        if (!Number.isFinite(targetDate.getTime())) {
+            return null;
+        }
+
+        targetDayNumber = Math.floor(
+            Date.UTC(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate()) / msPerDay
+        );
+    }
+
     const now = new Date();
-    const target = new Date(dateString);
-    const diff = target.getTime() - now.getTime();
-    return Math.ceil(diff / (1000 * 60 * 60 * 24));
+    const todayDayNumber = Math.floor(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / msPerDay);
+    return targetDayNumber - todayDayNumber;
+}
+
+function toFiniteNumber(value) {
+    const numberValue = Number(value);
+    return Number.isFinite(numberValue) ? numberValue : null;
+}
+
+function getValidCoordinates(candidate) {
+    if (!candidate || typeof candidate !== "object") {
+        return null;
+    }
+
+    const lat = toFiniteNumber(candidate.lat);
+    const lon = toFiniteNumber(candidate.lon ?? candidate.lng);
+
+    if (lat === null || lon === null) {
+        return null;
+    }
+
+    if (lat < -90 || lat > 90 || lon < -180 || lon > 180) {
+        return null;
+    }
+
+    return { lat, lon };
+}
+
+function haversineDistanceKm(origin, destination) {
+    const earthRadiusKm = 6371;
+    const dLat = ((destination.lat - origin.lat) * Math.PI) / 180;
+    const dLon = ((destination.lon - origin.lon) * Math.PI) / 180;
+    const originLatRad = (origin.lat * Math.PI) / 180;
+    const destinationLatRad = (destination.lat * Math.PI) / 180;
+
+    const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(originLatRad) * Math.cos(destinationLatRad) * Math.sin(dLon / 2) ** 2;
+
+    return earthRadiusKm * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a)));
+}
+
+function formatDistanceKm(distanceKm, decimals = null) {
+    const numberValue = toFiniteNumber(distanceKm);
+
+    if (numberValue === null) {
+        return "";
+    }
+
+    if (Number.isInteger(decimals) && decimals >= 0) {
+        const safeDecimals = clamp(decimals, 0, 4);
+        const factor = 10 ** safeDecimals;
+        const rounded = Math.round(numberValue * factor) / factor;
+        return rounded.toLocaleString("es-CO", {
+            minimumFractionDigits: safeDecimals,
+            maximumFractionDigits: safeDecimals
+        });
+    }
+
+    const rounded = numberValue < 10 ? Math.round(numberValue * 10) / 10 : Math.round(numberValue);
+    return rounded.toLocaleString("es-CO");
+}
+
+const distanceMetricState = {
+    initialized: false,
+    watchId: null,
+    maxKm: 2000,
+    targetCoords: null,
+    elements: null
+};
+
+const timeMetricsState = {
+    intervalId: null
+};
+
+function updateTimeMetrics() {
+    const relationshipValue = document.getElementById("relationshipDaysValue");
+    const nextMeetingValue = document.getElementById("nextMeetingDaysValue");
+    const nextMeetingNote = document.getElementById("nextMeetingDaysNote");
+    const heroCountdownValue = document.getElementById("heroCountdownValue");
+    const heroCountdownUnit = document.getElementById("heroCountdownUnit");
+
+    const relationshipDays = daysBetween(storyConfig.relationshipStart);
+    const nextMeetingDays = daysBetween(storyConfig.nextMeeting);
+
+    if (relationshipValue) {
+        if (relationshipDays !== null) {
+            relationshipValue.textContent = String(Math.abs(relationshipDays));
+        }
+    }
+
+    if (nextMeetingValue) {
+        if (nextMeetingDays !== null) {
+            nextMeetingValue.textContent = nextMeetingDays > 0 ? String(nextMeetingDays) : "Hoy";
+
+            if (nextMeetingNote) {
+                nextMeetingNote.textContent =
+                    nextMeetingDays > 0 ? "Cada dia que pasa nos acerca." : "Si ya llego este dia, corre a abrazarla.";
+            }
+        }
+    }
+
+    if (heroCountdownValue && heroCountdownUnit) {
+        if (nextMeetingDays === null) {
+            heroCountdownValue.textContent = "--";
+            heroCountdownUnit.textContent = "dias";
+        } else if (nextMeetingDays > 0) {
+            heroCountdownValue.textContent = String(nextMeetingDays);
+            heroCountdownUnit.textContent = nextMeetingDays === 1 ? "dia" : "dias";
+        } else {
+            heroCountdownValue.textContent = "Hoy";
+            heroCountdownUnit.textContent = "";
+        }
+    }
+}
+
+function startTimeMetricsTicker() {
+    updateTimeMetrics();
+
+    if (timeMetricsState.intervalId !== null) {
+        return;
+    }
+
+    timeMetricsState.intervalId = window.setInterval(updateTimeMetrics, 60 * 1000);
+}
+
+function stopTimeMetricsTicker() {
+    if (timeMetricsState.intervalId === null) {
+        return;
+    }
+
+    window.clearInterval(timeMetricsState.intervalId);
+    timeMetricsState.intervalId = null;
+}
+
+function getDistanceFeatureConfig() {
+    const distanceConfig = storyConfig.distance;
+    return distanceConfig && typeof distanceConfig === "object" ? distanceConfig : {};
+}
+
+function getDistanceAccessLabel() {
+    return window.sessionStorage.getItem("girasolPortalAccessLabel") || "";
+}
+
+function resolveDistancePair(accessLabel, distanceConfig) {
+    const locations = distanceConfig?.locations && typeof distanceConfig.locations === "object" ? distanceConfig.locations : {};
+    const labels = Object.keys(locations).filter(Boolean);
+
+    if (!labels.length) {
+        return {
+            fromLabel: "",
+            toLabel: "",
+            fromCoords: null,
+            toCoords: null
+        };
+    }
+
+    const resolvedFromLabel = accessLabel && locations[accessLabel] ? accessLabel : locations.Mauricio ? "Mauricio" : labels[0];
+    const resolvedToLabel = labels.find((label) => label !== resolvedFromLabel) || "";
+
+    return {
+        fromLabel: resolvedFromLabel,
+        toLabel: resolvedToLabel,
+        fromCoords: getValidCoordinates(locations[resolvedFromLabel]),
+        toCoords: resolvedToLabel ? getValidCoordinates(locations[resolvedToLabel]) : null
+    };
+}
+
+function setupDistanceMetricCard() {
+    if (distanceMetricState.initialized) {
+        return;
+    }
+
+    const card = document.querySelector("[data-metric='distance']");
+    const value = document.getElementById("distanceMetricValue");
+    const bar = document.getElementById("distanceMetricBar");
+    const fill = document.getElementById("distanceMetricFill");
+    const marker = document.getElementById("distanceMetricMarker");
+    const fromLabel = document.getElementById("distanceMetricFrom");
+    const toLabel = document.getElementById("distanceMetricTo");
+    const button = document.getElementById("distanceLiveButton");
+    const status = document.getElementById("distanceLiveStatus");
+
+    if (!card || !value || !bar || !fill || !marker || !fromLabel || !toLabel || !button || !status) {
+        return;
+    }
+
+    distanceMetricState.elements = {
+        card,
+        value,
+        bar,
+        fill,
+        marker,
+        fromLabel,
+        toLabel,
+        button,
+        status
+    };
+
+    button.addEventListener("click", () => {
+        if (distanceMetricState.watchId !== null) {
+            stopLiveDistanceMetric();
+            refreshDistanceMetricCard();
+            return;
+        }
+
+        startLiveDistanceMetric();
+    });
+
+    distanceMetricState.initialized = true;
+    refreshDistanceMetricCard();
+}
+
+function updateDistanceMetricBar(distanceKm, maxKm) {
+    const elements = distanceMetricState.elements;
+    const safeDistance = toFiniteNumber(distanceKm);
+
+    if (!elements || safeDistance === null) {
+        return;
+    }
+
+    const safeMax = Math.max(toFiniteNumber(maxKm) ?? 0, 1);
+    const progressRatio = clamp(1 - safeDistance / safeMax, 0, 1);
+    const percentage = progressRatio * 100;
+
+    const isLive = distanceMetricState.watchId !== null;
+    elements.value.textContent = isLive ? formatDistanceKm(safeDistance, 1) : formatDistanceKm(safeDistance);
+    elements.bar.setAttribute("aria-valuemin", "0");
+    elements.bar.setAttribute("aria-valuemax", String(Math.round(safeMax)));
+    elements.bar.setAttribute("aria-valuenow", String(Math.round(safeDistance)));
+    elements.fill.style.width = `${percentage}%`;
+    elements.marker.style.left = `${percentage}%`;
+
+    const markerTranslateY = "-90%";
+
+    if (percentage <= 0.5) {
+        elements.marker.style.transform = `translate(0, ${markerTranslateY})`;
+    } else if (percentage >= 99.5) {
+        elements.marker.style.transform = `translate(-100%, ${markerTranslateY})`;
+    } else {
+        elements.marker.style.transform = `translate(-50%, ${markerTranslateY})`;
+    }
+}
+
+function refreshDistanceMetricCard(accessLabelOverride = "") {
+    const elements = distanceMetricState.elements;
+
+    if (!elements) {
+        return;
+    }
+
+    const distanceConfig = getDistanceFeatureConfig();
+    const distanceEnabled = distanceConfig.enabled !== false;
+    const accessLabel = accessLabelOverride || getDistanceAccessLabel();
+    const { fromLabel, toLabel, fromCoords, toCoords } = resolveDistancePair(accessLabel, distanceConfig);
+    const fallbackDistance = toFiniteNumber(storyConfig.distanceKm);
+
+    elements.fromLabel.textContent = "Yo";
+    if (toLabel === "Valentina") {
+        elements.toLabel.textContent = "Ella";
+    } else if (toLabel === "Mauricio") {
+        elements.toLabel.textContent = "Él";
+    } else {
+        elements.toLabel.textContent = "Tu";
+    }
+
+    const configuredMaxKm = toFiniteNumber(distanceConfig.maxKm);
+    const resolvedMaxKm = Math.max(configuredMaxKm ?? 2000, fallbackDistance ?? 0, 50);
+    distanceMetricState.maxKm = resolvedMaxKm;
+    elements.bar.setAttribute("aria-label", "Distancia entre nosotros");
+
+    const canUseGeo = Boolean(navigator.geolocation);
+    const canStartLive = distanceEnabled && canUseGeo && Boolean(toLabel) && Boolean(toCoords);
+
+    elements.button.disabled = !canStartLive;
+    elements.button.textContent = distanceMetricState.watchId !== null ? "Detener ubicacion en vivo" : "Ubicacion en vivo";
+
+    if (!distanceEnabled) {
+        elements.status.textContent = "";
+        return;
+    }
+
+    if (!canUseGeo) {
+        elements.status.textContent = "Tu navegador no soporta ubicacion en vivo.";
+    } else if (!toCoords) {
+        elements.status.textContent = "Para activarlo, llena las coordenadas en config.js.";
+    } else {
+        elements.status.textContent = "Si quieres, lo puedo actualizar en vivo con tu ubicacion.";
+    }
+
+    if (distanceMetricState.watchId !== null) {
+        return;
+    }
+
+    if (fromCoords && toCoords) {
+        const computedDistance = haversineDistanceKm(fromCoords, toCoords);
+        updateDistanceMetricBar(computedDistance, resolvedMaxKm);
+        return;
+    }
+
+    if (fallbackDistance !== null) {
+        updateDistanceMetricBar(fallbackDistance, resolvedMaxKm);
+    }
+}
+
+function shouldAutoStartLiveDistanceOnEnter() {
+    const distanceConfig = getDistanceFeatureConfig();
+    return distanceConfig.autoStartLiveOnEnter === true;
+}
+
+function maybeAutoStartLiveDistance(accessLabelOverride = "") {
+    if (!shouldAutoStartLiveDistanceOnEnter()) {
+        return;
+    }
+
+    setupDistanceMetricCard();
+    refreshDistanceMetricCard(accessLabelOverride);
+
+    if (distanceMetricState.watchId !== null) {
+        return;
+    }
+
+    const distanceConfig = getDistanceFeatureConfig();
+    const distanceEnabled = distanceConfig.enabled !== false;
+
+    if (!distanceEnabled) {
+        return;
+    }
+
+    const { toCoords } = resolveDistancePair(accessLabelOverride || getDistanceAccessLabel(), distanceConfig);
+
+    if (!toCoords || !navigator.geolocation) {
+        return;
+    }
+
+    startLiveDistanceMetric();
+}
+
+function startLiveDistanceMetric() {
+    const elements = distanceMetricState.elements;
+
+    if (!elements) {
+        return;
+    }
+
+    const distanceConfig = getDistanceFeatureConfig();
+    const distanceEnabled = distanceConfig.enabled !== false;
+
+    if (!distanceEnabled) {
+        return;
+    }
+
+    if (!navigator.geolocation) {
+        elements.status.textContent = "Tu navegador no soporta ubicacion en vivo.";
+        return;
+    }
+
+    const accessLabel = getDistanceAccessLabel();
+    const { toCoords } = resolveDistancePair(accessLabel, distanceConfig);
+
+    if (!toCoords) {
+        elements.status.textContent = "Para activarlo, llena las coordenadas en config.js.";
+        return;
+    }
+
+    stopLiveDistanceMetric();
+
+    distanceMetricState.targetCoords = toCoords;
+    elements.card.classList.add("is-live");
+    elements.button.textContent = "Detener ubicacion en vivo";
+    elements.status.textContent = "Buscando tu ubicacion...";
+
+    const watchOptions = {
+        enableHighAccuracy: false,
+        maximumAge: 15000,
+        timeout: 15000
+    };
+
+    distanceMetricState.watchId = navigator.geolocation.watchPosition(
+        (position) => {
+            if (!distanceMetricState.targetCoords) {
+                return;
+            }
+
+            const coords = position?.coords;
+            const origin = coords
+                ? {
+                    lat: toFiniteNumber(coords.latitude),
+                    lon: toFiniteNumber(coords.longitude)
+                }
+                : null;
+
+            if (!origin || origin.lat === null || origin.lon === null) {
+                return;
+            }
+
+            const distanceKm = haversineDistanceKm(
+                { lat: origin.lat, lon: origin.lon },
+                distanceMetricState.targetCoords
+            );
+
+            updateDistanceMetricBar(distanceKm, distanceMetricState.maxKm);
+
+            const accuracyMeters = toFiniteNumber(coords.accuracy);
+            elements.status.textContent = accuracyMeters !== null ? `En vivo · ±${Math.round(accuracyMeters)}m` : "En vivo";
+        },
+        (error) => {
+            stopLiveDistanceMetric();
+
+            if (error?.code === 1) {
+                elements.status.textContent = "Permiso de ubicacion denegado.";
+                return;
+            }
+
+            if (error?.code === 2) {
+                elements.status.textContent = "No pude obtener tu ubicacion.";
+                return;
+            }
+
+            if (error?.code === 3) {
+                elements.status.textContent = "La ubicacion tardo demasiado.";
+                return;
+            }
+
+            elements.status.textContent = "No pude activar la ubicacion en vivo.";
+        },
+        watchOptions
+    );
+}
+
+function stopLiveDistanceMetric() {
+    const elements = distanceMetricState.elements;
+
+    if (distanceMetricState.watchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(distanceMetricState.watchId);
+    }
+
+    distanceMetricState.watchId = null;
+    distanceMetricState.targetCoords = null;
+
+    if (elements) {
+        elements.card.classList.remove("is-live");
+        elements.button.textContent = "Ubicacion en vivo";
+    }
 }
 
 function getAuthorizedProfile(label) {
@@ -443,7 +1460,12 @@ async function renderStory() {
     hintText.textContent = portalConfig.secretHint || "";
 
     document.getElementById("heroEyebrow").textContent = storyConfig.eyebrow || "";
-    document.getElementById("heroTitle").textContent = storyConfig.title || "";
+
+    const heroTitle = document.getElementById("heroTitle");
+    if (heroTitle) {
+        heroTitle.innerHTML = buildHeroTitleHtml(storyConfig.title || "");
+    }
+
     document.getElementById("heroMessage").textContent = storyConfig.message || "";
     document.getElementById("finalTitle").textContent = storyConfig.finalTitle || "";
     document.getElementById("finalMessage").textContent = storyConfig.finalMessage || "";
@@ -464,8 +1486,39 @@ async function renderStory() {
     const nextMeetingDays = daysBetween(storyConfig.nextMeeting);
     const metricCards = [];
 
+    const heroFridaysValue = document.getElementById("heroFridaysValue");
+    const heroFridaysNote = document.getElementById("heroFridaysNote");
+    const heroEffectValue = document.getElementById("heroEffectValue");
+    const heroEffectNote = document.getElementById("heroEffectNote");
+
+    if (heroFridaysValue) {
+        const wantsFucknews = /fucknews/i.test(`${museumConfig.title || ""} ${museumConfig.pageTitle || ""} ${museumConfig.previewTitle || ""}`);
+        heroFridaysValue.textContent = wantsFucknews ? "F*cknews" : (museumConfig.seriesLabel || "Nuestros viernes");
+    }
+
+    if (heroFridaysNote) {
+        heroFridaysNote.textContent = museumConfig.frequencyNote || "Ya se siente tradicion";
+    }
+
+    const effectMetric = Array.isArray(storyConfig.metrics)
+        ? storyConfig.metrics.find((item) => item && (item.value ?? "") !== "" && (item.label ?? "") !== "")
+        : null;
+
+    if (heroEffectValue) {
+        if (effectMetric?.value) {
+            heroEffectValue.textContent = effectMetric.value;
+        }
+    }
+
+    if (heroEffectNote) {
+        if (effectMetric?.label) {
+            heroEffectNote.textContent = effectMetric.label;
+        }
+    }
+
     if (relationshipDays !== null) {
         metricCards.push({
+            type: "relationshipDays",
             label: "Dias desde que comenzo lo nuestro",
             value: Math.abs(relationshipDays),
             note: "Y todavia me sigues pareciendo una casualidad hermosa."
@@ -474,6 +1527,7 @@ async function renderStory() {
 
     if (nextMeetingDays !== null) {
         metricCards.push({
+            type: "nextMeetingDays",
             label: "Dias para volvernos a ver",
             value: nextMeetingDays > 0 ? nextMeetingDays : "Hoy",
             note: nextMeetingDays > 0 ? "Cada dia que pasa nos acerca." : "Si ya llego este dia, corre a abrazarla."
@@ -482,6 +1536,7 @@ async function renderStory() {
 
     if (storyConfig.distanceKm) {
         metricCards.push({
+            type: "distance",
             label: "Kilometros entre nosotros",
             value: storyConfig.distanceKm,
             note: "No son pocos, pero tampoco suficientes para apagar esto."
@@ -491,16 +1546,69 @@ async function renderStory() {
     (storyConfig.metrics || []).forEach((item) => metricCards.push(item));
 
     metricsSection.innerHTML = metricCards
-        .map(
-            (item) => `
+        .map((item) => {
+            if (item.type === "relationshipDays") {
+                return `
+                    <article class="metric-card glass" data-metric="relationship-days">
+                        <p class="metric-value" id="relationshipDaysValue">${escapeHtml(item.value)}</p>
+                        <p class="metric-label">${escapeHtml(item.label)}</p>
+                        <p class="metric-note">${escapeHtml(item.note || "")}</p>
+                    </article>
+                `;
+            }
+
+            if (item.type === "nextMeetingDays") {
+                return `
+                    <article class="metric-card glass" data-metric="next-meeting-days">
+                        <p class="metric-value" id="nextMeetingDaysValue">${escapeHtml(item.value)}</p>
+                        <p class="metric-label">${escapeHtml(item.label)}</p>
+                        <p class="metric-note" id="nextMeetingDaysNote">${escapeHtml(item.note || "")}</p>
+                    </article>
+                `;
+            }
+
+            if (item.type === "distance") {
+                const rawValue = toFiniteNumber(item.value) ?? 0;
+
+                return `
+                    <article class="metric-card glass metric-distance" data-metric="distance">
+                        <p class="metric-value"><span id="distanceMetricValue">${escapeHtml(formatDistanceKm(rawValue) || rawValue)}</span><span class="metric-unit">km</span></p>
+                        <p class="metric-label">${escapeHtml(item.label)}</p>
+                        <div class="metric-distance-bar" id="distanceMetricBar" role="progressbar" aria-valuemin="0" aria-valuenow="${escapeHtml(String(Math.round(rawValue)))}" aria-valuemax="${escapeHtml(String(Math.max(rawValue, 2000)))}">
+                            <div class="metric-distance-track">
+                                <div class="metric-distance-fill" id="distanceMetricFill"></div>
+                                <div class="metric-distance-marker" id="distanceMetricMarker" aria-hidden="true">
+                                    <svg class="metric-distance-marker-icon" viewBox="0 0 24 24" focusable="false" aria-hidden="true">
+                                        <path d="M2.4 13.2L21.6 3.4 14.4 21.4 11.3 14.7 2.4 13.2Z" fill="currentColor" />
+                                    </svg>
+                                </div>
+                            </div>
+                            <div class="metric-distance-legend">
+                                <span id="distanceMetricFrom">Yo</span>
+                                <span id="distanceMetricTo">Tu</span>
+                            </div>
+                        </div>
+                        <div class="metric-distance-actions">
+                            <button class="ghost metric-action" id="distanceLiveButton" type="button">Ubicacion en vivo</button>
+                            <p class="tiny metric-distance-status" id="distanceLiveStatus"></p>
+                        </div>
+                        <p class="metric-note">${escapeHtml(item.note || "")}</p>
+                    </article>
+                `;
+            }
+
+            return `
                 <article class="metric-card glass">
-                    <p class="metric-value">${item.value}</p>
-                    <p class="metric-label">${item.label}</p>
-                    <p class="metric-note">${item.note || ""}</p>
+                    <p class="metric-value">${escapeHtml(item.value)}</p>
+                    <p class="metric-label">${escapeHtml(item.label)}</p>
+                    <p class="metric-note">${escapeHtml(item.note || "")}</p>
                 </article>
-            `
-        )
+            `;
+        })
         .join("");
+
+    setupDistanceMetricCard();
+    startTimeMetricsTicker();
 
     document.getElementById("timelineList").innerHTML = (storyConfig.timeline || [])
         .map(
@@ -539,19 +1647,9 @@ async function renderStory() {
         )
         .join("");
 
-    document.getElementById("playlistList").innerHTML = (storyConfig.playlist || [])
-        .map(
-            (song) => `
-                <a class="song-card" href="${song.url}" target="_blank" rel="noreferrer noopener">
-                    <div>
-                        <p class="song-title">${song.title}</p>
-                        <p class="song-artist">${song.artist}</p>
-                    </div>
-                    <span>Escuchar</span>
-                </a>
-            `
-        )
-        .join("");
+    renderSoundtrackPlaylist();
+    setupSoundtrackPlaylistPlayback();
+    setupSoundtrackAddSongModal();
 
     renderMuseum(await loadMuseumEntries());
 }
@@ -739,6 +1837,15 @@ function grantAccess(message, welcomeContent = null, accessLabel = "") {
     window.sessionStorage.setItem("girasolPortalUnlocked", "true");
     window.sessionStorage.setItem("girasolPortalAccessLabel", resolvedAccessLabel);
 
+    refreshDistanceMetricCard(resolvedAccessLabel);
+
+    window.setTimeout(
+        () => {
+            maybeAutoStartLiveDistance(resolvedAccessLabel);
+        },
+        welcomeContent ? welcomeRevealDelay + 450 : 950
+    );
+
     if (state.stream) {
         state.stream.getTracks().forEach((track) => track.stop());
     }
@@ -797,6 +1904,8 @@ secretForm.addEventListener("submit", (event) => {
 
 window.addEventListener("beforeunload", () => {
     stopSoundtrack(false);
+    stopLiveDistanceMetric();
+    stopTimeMetricsTicker();
 });
 
 window.addEventListener("load", initializePortal);

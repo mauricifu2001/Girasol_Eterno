@@ -54,9 +54,22 @@ window.appConfig = {
         eyebrow: "De mi para ti, mi Girasol Hermosa",
         title: "Un rincon hecho para ti, mi Girasol Hermosa",
         message: "Mi vida, queria regalarte algo distinto: un lugarcito hecho por mi, con codigo, carino y un poquito de locura bonita, para recordarte que incluso a distancia sigues siendo de las cosas mas hermosas que me han pasado.",
-        relationshipStart: "2024-06-01",
-        nextMeeting: "2026-07-15",
-        distanceKm: 1260,
+        relationshipStart: "2022-10-08",
+        nextMeeting: "2026-07-20",
+        distanceKm: 4485,
+        distance: {
+            enabled: true,
+            autoStartLiveOnEnter: true,
+            // Para que la distancia se actualice en vivo con tu ubicacion, llena estas coordenadas.
+            // Tip: puedes buscar "lat lon" de la ciudad en Google (o usar Maps y copiar coordenadas).
+            // Ejemplo: { lat: 4.7110, lon: -74.0721 }
+            locations: {
+                Mauricio: { lat: 43.1378386, lon: -79.2669425 },
+                Valentina: { lat: 2.9557259, lon: -75.2817178 }
+            },
+            // Escala de la barra (en km). Si tu distancia es mayor, la barra se "llena".
+            maxKm: 7000
+        },
         metrics: [
             {
                 label: "Videollamadas que me arreglan el alma",
@@ -166,19 +179,22 @@ window.appConfig = {
         ],
         playlist: [
             {
-                title: "Una cancion para mi Girasol Hermosa",
-                artist: "Pon aqui el artista",
-                url: "https://open.spotify.com/"
+                title: "Compartir",
+                artist: "Carla Morrison",
+                previewUrl: "https://p.scdn.co/mp3-preview/2bd916ddba2490b1a4de17701479f6046e65dc2a",
+                url: "https://open.spotify.com/intl-es/track/50Jd7tX7dMu79Oknn7sXSW"
             },
             {
-                title: "La que te dedicaria hoy",
-                artist: "Pon aqui el artista",
-                url: "https://open.spotify.com/"
+                title: "Mujer Amante",
+                artist: "Rata Blanca",
+                previewUrl: "https://p.scdn.co/mp3-preview/310ec511ffbb40bf03dd8058540a837f122facf8",
+                url: "https://open.spotify.com/intl-es/track/4eCrF1FgVL4se3AkHOnLDL"
             },
             {
-                title: "La que quiero escuchar contigo en persona",
-                artist: "Pon aqui el artista",
-                url: "https://open.spotify.com/"
+                title: "Mi Bello Ángel",
+                artist: "Los Primos MX",
+                previewUrl: "https://p.scdn.co/mp3-preview/945220fee1f4b22d2c86397d8506664e69633d62",
+                url: "https://open.spotify.com/intl-es/track/0DKoET2reNpTGpQMS0VXI0"
             }
         ],
         finalTitle: "Siempre voy a encontrar una forma de llegar a ti",
