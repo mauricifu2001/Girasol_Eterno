@@ -17,6 +17,8 @@ const state = {
 };
 
 const SOUNDTRACK_STORAGE_KEY = "girasolSoundtrackPlaylist";
+const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
+const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
 
 const gateSection = document.getElementById("gateSection");
 const experienceSection = document.getElementById("experienceSection");
@@ -31,6 +33,7 @@ const cameraOverlay = document.getElementById("cameraOverlay");
 const secretForm = document.getElementById("secretForm");
 const secretInput = document.getElementById("secretInput");
 const hintText = document.getElementById("hintText");
+const logoutButton = document.getElementById("logoutButton");
 const welcomeScreen = document.getElementById("welcomeScreen");
 const welcomeTitle = document.getElementById("welcomeTitle");
 const welcomeMessage = document.getElementById("welcomeMessage");
@@ -949,7 +952,56 @@ function getDistanceFeatureConfig() {
 }
 
 function getDistanceAccessLabel() {
-    return window.sessionStorage.getItem("girasolPortalAccessLabel") || "";
+    return window.sessionStorage.getItem(PORTAL_ACCESS_LABEL_STORAGE_KEY) || "";
+}
+
+function getStoredPortalAccessLabel() {
+    const unlocked = window.sessionStorage.getItem(PORTAL_UNLOCK_STORAGE_KEY) === "true";
+
+    if (!unlocked) {
+        return "";
+    }
+
+    return (
+        window.sessionStorage.getItem(PORTAL_ACCESS_LABEL_STORAGE_KEY)
+        || portalConfig.secretAccessLabel
+        || ""
+    );
+}
+
+function restorePortalSessionIfAvailable() {
+    const unlocked = window.sessionStorage.getItem(PORTAL_UNLOCK_STORAGE_KEY) === "true";
+
+    if (!unlocked) {
+        return false;
+    }
+
+    const storedAccessLabel = getStoredPortalAccessLabel();
+
+    applyExperienceMode(storedAccessLabel);
+    refreshDistanceMetricCard(storedAccessLabel);
+    maybeAutoStartLiveDistance(storedAccessLabel);
+    playSoundtrackForLabel(storedAccessLabel);
+
+    gateSection.classList.add("hidden");
+    experienceSection.classList.remove("hidden");
+    document.body.classList.add("unlocked");
+
+    setStatus("Sesion activa. Portal desbloqueado.", "ready");
+    return true;
+}
+
+function clearPortalSession() {
+    window.sessionStorage.removeItem(PORTAL_UNLOCK_STORAGE_KEY);
+    window.sessionStorage.removeItem(PORTAL_ACCESS_LABEL_STORAGE_KEY);
+}
+
+function logoutPortal() {
+    clearPortalSession();
+    stopSoundtrack(false);
+    stopLiveDistanceMetric();
+    stopTimeMetricsTicker();
+    window.location.reload();
 }
 
 function resolveDistancePair(accessLabel, distanceConfig) {
@@ -1870,6 +1922,10 @@ async function initializePortal() {
     ensureSoundtrack();
     stopSoundtrack();
 
+    if (restorePortalSessionIfAvailable()) {
+        return;
+    }
+
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
         setStatus("Este navegador no soporta acceso a la camara.", "error");
         return;
@@ -1936,8 +1992,8 @@ function grantAccess(message, welcomeContent = null, accessLabel = "") {
 
     setStatus(message, "ready");
     gateSection.classList.add("fade-out");
-    window.sessionStorage.setItem("girasolPortalUnlocked", "true");
-    window.sessionStorage.setItem("girasolPortalAccessLabel", resolvedAccessLabel);
+    window.sessionStorage.setItem(PORTAL_UNLOCK_STORAGE_KEY, "true");
+    window.sessionStorage.setItem(PORTAL_ACCESS_LABEL_STORAGE_KEY, resolvedAccessLabel);
 
     refreshDistanceMetricCard(resolvedAccessLabel);
 
@@ -1981,6 +2037,10 @@ function grantAccess(message, welcomeContent = null, accessLabel = "") {
 
 retryCameraButton.addEventListener("click", startCamera);
 captureButton.addEventListener("click", captureAndVerify);
+
+if (logoutButton) {
+    logoutButton.addEventListener("click", logoutPortal);
+}
 
 secretForm.addEventListener("submit", (event) => {
     event.preventDefault();

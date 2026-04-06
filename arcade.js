@@ -10,6 +10,64 @@ const stage = document.getElementById("arcadeStage");
 const grid = document.getElementById("arcadeGrid");
 const emptyState = document.getElementById("arcadeEmpty");
 
+const ROOM_SOUNDTRACK_SRC = "assets/audio/Mario_Kart_Music.mp3";
+const ROOM_SOUNDTRACK_VOLUME = 0.16;
+
+let roomSoundtrack = null;
+
+function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}
+
+function ensureRoomSoundtrack() {
+    if (!roomSoundtrack) {
+        const audio = new Audio(ROOM_SOUNDTRACK_SRC);
+        audio.preload = "auto";
+        audio.loop = true;
+        audio.volume = clamp(Number(ROOM_SOUNDTRACK_VOLUME), 0, 1);
+        roomSoundtrack = audio;
+    }
+
+    return roomSoundtrack;
+}
+
+async function playRoomSoundtrack() {
+    const audio = ensureRoomSoundtrack();
+
+    try {
+        await audio.play();
+        return true;
+    } catch (error) {
+        console.warn("No pude reproducir la musica de la sala.", error);
+        return false;
+    }
+}
+
+function pauseRoomSoundtrack() {
+    if (!roomSoundtrack) {
+        return;
+    }
+
+    roomSoundtrack.pause();
+}
+
+function bindRoomSoundtrackAutoplay() {
+    const attempt = () => {
+        playRoomSoundtrack().then((played) => {
+            if (!played) {
+                return;
+            }
+
+            window.removeEventListener("pointerdown", attempt);
+            window.removeEventListener("keydown", attempt);
+        });
+    };
+
+    window.addEventListener("pointerdown", attempt, { passive: true });
+    window.addEventListener("keydown", attempt);
+    attempt();
+}
+
 function escapeHtml(value) {
     return String(value ?? "").replace(/[&<>"']/g, (character) => {
         const entities = {
@@ -124,4 +182,10 @@ function renderArcade() {
     renderGames(games);
 }
 
-window.addEventListener("load", renderArcade);
+function initializeArcadePage() {
+    bindRoomSoundtrackAutoplay();
+    renderArcade();
+}
+
+window.addEventListener("beforeunload", pauseRoomSoundtrack);
+window.addEventListener("load", initializeArcadePage);
