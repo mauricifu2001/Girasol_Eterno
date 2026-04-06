@@ -227,6 +227,12 @@ function setupSoundtrackPlaylistPlayback() {
             const cardUrl = card?.dataset?.trackUrl || "";
             const normalizedUrl = normalizeSpotifyTrackUrl(cardUrl);
 
+            const trackTitle = card?.querySelector(".soundtrack-title")?.textContent?.trim() || "esta cancion";
+
+            if (!window.confirm(`¿Seguro que quieres quitar "${trackTitle}"?`)) {
+                return;
+            }
+
             if (normalizedUrl) {
                 const stored = getStoredSoundtrackPlaylist();
                 const nextStored = stored.filter(

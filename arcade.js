@@ -524,9 +524,16 @@ function setupArcadeEditor() {
 
             event.preventDefault();
 
+            const gameTitle = card.querySelector(".arcade-mini-title")?.textContent?.trim() || "este juego";
+            const source = card.dataset.arcadeSource || "base";
+
+            if (!window.confirm(`¿Seguro que quieres quitar "${gameTitle}"?`)) {
+                return;
+            }
+
             removeGameFromStorage({
                 key: card.dataset.arcadeKey || "",
-                source: card.dataset.arcadeSource || "base"
+                source
             });
 
             renderArcade();

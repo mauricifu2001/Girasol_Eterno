@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Banda sonora</title>
+    <meta name="description" content="Nuestra banda sonora: canciones para acortar kilometros.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="shortcut icon" href="favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="config.js"></script>
+    <script defer src="soundtrack.js"></script>
+</head>
+<body class="soundtrack-route">
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="shell">
+        <section class="playlist glass" id="soundtrackRoom">
+            <div class="section-head soundtrack-head">
+                <div class="soundtrack-head-main">
+                    <p class="eyebrow" id="soundtrackPageEyebrow">Banda sonora</p>
+                    <h2 id="soundtrackPageTitle">Canciones para acortar kilometros</h2>
+                    <div class="soundtrack-underline" aria-hidden="true"></div>
+                </div>
+                <div class="soundtrack-head-actions">
+                    <a class="secondary" href="index.html" id="soundtrackBackLink">Volver</a>
+                    <button class="ghost soundtrack-add" id="soundtrackAddButton" type="button" aria-label="Agregar una cancion">+</button>
+                </div>
+            </div>
+
+            <div class="playlist-list soundtrack-list" id="playlistList"></div>
+        </section>
+    </main>
+
+    <div class="video-modal hidden" id="songModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="songModalTitle">
+        <div class="video-modal-backdrop" data-close-song="true"></div>
+        <div class="video-modal-card glass soundtrack-modal-card">
+            <div class="video-modal-top">
+                <div class="video-modal-copy">
+                    <p class="eyebrow">Banda sonora</p>
+                    <h3 id="songModalTitle">Agregar una cancion</h3>
+                </div>
+                <button class="ghost video-modal-close" id="closeSongModalButton" type="button" aria-label="Cerrar">Cerrar</button>
+            </div>
+
+            <form class="soundtrack-modal-form" id="songModalForm">
+                <label class="soundtrack-modal-label" for="songUrlInput">Link de Spotify</label>
+                <input
+                    id="songUrlInput"
+                    type="url"
+                    inputmode="url"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="https://open.spotify.com/track/..."
+                    required
+                >
+                <p class="tiny" id="songModalStatus"></p>
+                <div class="soundtrack-modal-actions">
+                    <button class="secondary" id="cancelSongButton" type="button">Cancelar</button>
+                    <button class="primary" id="saveSongButton" type="submit">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

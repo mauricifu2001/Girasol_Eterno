@@ -11,6 +11,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <script>
+        (() => {
+            try {
+                if (window.sessionStorage.getItem("girasolPortalUnlocked") === "true") {
+                    document.documentElement.classList.add("portal-unlocked");
+                }
+            } catch (error) {
+            }
+        })();
+    </script>
     <script defer src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
     <script defer src="config.js"></script>
     <script defer src="app.js"></script>
@@ -284,10 +294,10 @@
                     </div>
                     <div class="soundtrack-head-actions">
                         <div class="soundtrack-pill">Audio · memoria compartida</div>
-                        <button class="ghost soundtrack-add" id="soundtrackAddButton" type="button" aria-label="Agregar una cancion">+</button>
+                        <a class="primary" href="soundtrack.html" id="soundtrackLaunchButton">Entrar</a>
                     </div>
                 </div>
-                <div class="playlist-list soundtrack-list" id="playlistList"></div>
+                <p class="museum-copy">Entra para ver todas las canciones, agregar nuevas y quitar las que ya no quieras.</p>
             </section>
 
             <section class="final-note glass" data-experience-scope="full">
@@ -298,35 +308,5 @@
         </section>
     </main>
 
-    <div class="video-modal hidden" id="songModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="songModalTitle">
-        <div class="video-modal-backdrop" data-close-song="true"></div>
-        <div class="video-modal-card glass soundtrack-modal-card">
-            <div class="video-modal-top">
-                <div class="video-modal-copy">
-                    <p class="eyebrow">Banda sonora</p>
-                    <h3 id="songModalTitle">Agregar una cancion</h3>
-                </div>
-                <button class="ghost video-modal-close" id="closeSongModalButton" type="button" aria-label="Cerrar">Cerrar</button>
-            </div>
-
-            <form class="soundtrack-modal-form" id="songModalForm">
-                <label class="soundtrack-modal-label" for="songUrlInput">Link de Spotify</label>
-                <input
-                    id="songUrlInput"
-                    type="url"
-                    inputmode="url"
-                    autocomplete="off"
-                    spellcheck="false"
-                    placeholder="https://open.spotify.com/track/..."
-                    required
-                >
-                <p class="tiny" id="songModalStatus"></p>
-                <div class="soundtrack-modal-actions">
-                    <button class="secondary" id="cancelSongButton" type="button">Cancelar</button>
-                    <button class="primary" id="saveSongButton" type="submit">Guardar</button>
-                </div>
-            </form>
-        </div>
-    </div>
 </body>
 </html>

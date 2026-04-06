@@ -644,6 +644,16 @@ button:hover,
     visibility: hidden !important;
 }
 
+html.portal-unlocked #gateSection {
+    display: none !important;
+    visibility: hidden !important;
+}
+
+html.portal-unlocked #experienceSection.hidden {
+    display: grid !important;
+    visibility: visible !important;
+}
+
 .experience {
     display: grid;
     gap: 1.3rem;
