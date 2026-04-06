@@ -19,7 +19,7 @@
     <div class="ambient ambient-two"></div>
 
     <main class="shell arcade-shell">
-        <section class="arcade-hero glass">
+        <section class="arcade-hero glass arcade-panel">
             <div class="arcade-hero-glow" aria-hidden="true"></div>
             <div class="arcade-hero-top">
                 <div class="arcade-hero-copy">
@@ -28,12 +28,13 @@
                     <p class="arcade-copy" id="arcadePageMessage"></p>
                 </div>
                 <div class="arcade-hero-actions">
-                    <a class="secondary" href="index.html" id="arcadeBackLink">Volver</a>
+                    <a class="secondary arcade-back" href="index.html" id="arcadeBackLink">Volver</a>
                 </div>
             </div>
         </section>
 
-        <section class="arcade-gallery glass" id="arcadeGallery">
+        <section class="arcade-gallery glass arcade-panel" id="arcadeGallery">
+            <div class="arcade-ornaments" aria-hidden="true"></div>
             <div class="section-head arcade-gallery-head">
                 <div>
                     <p class="eyebrow">Juegos</p>
@@ -41,7 +42,9 @@
                 </div>
             </div>
 
-            <div class="arcade-grid" id="arcadeGrid"></div>
+            <div class="arcade-stage" id="arcadeStage">
+                <div class="arcade-grid" id="arcadeGrid"></div>
+            </div>
 
             <div class="arcade-empty hidden" id="arcadeEmpty">
                 <h3>No hay juegos todavia</h3>

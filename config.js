@@ -213,6 +213,12 @@ window.appConfig = {
                             note: "Para jugar juntos en vivo cuando se nos antoje.",
                             tag: "Multiplayer",
                             url: "https://jklm.fun/GGAG"
+                        },
+                        {
+                            title: "Bloob.io · Blomber",
+                            note: "Para echarnos unas partidas rapidas.",
+                            tag: "Multiplayer",
+                            url: "https://bloob.io/blomber/2521"
                         }
                     ]
                 },

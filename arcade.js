@@ -6,6 +6,7 @@ const pageEyebrow = document.getElementById("arcadePageEyebrow");
 const pageTitle = document.getElementById("arcadePageTitle");
 const pageMessage = document.getElementById("arcadePageMessage");
 const backLink = document.getElementById("arcadeBackLink");
+const stage = document.getElementById("arcadeStage");
 const grid = document.getElementById("arcadeGrid");
 const emptyState = document.getElementById("arcadeEmpty");
 
@@ -42,6 +43,41 @@ function normalizeGames(value) {
         .filter((item) => item.title && item.url);
 }
 
+function renderGames(games) {
+    if (!grid) {
+        return;
+    }
+
+    if (!games.length) {
+        grid.innerHTML = "";
+        grid.classList.add("hidden");
+        return;
+    }
+
+    grid.classList.remove("hidden");
+    grid.innerHTML = games
+        .map((game) => {
+            const safeTitle = escapeHtml(game.title);
+            const safeNote = escapeHtml(game.note);
+            const safeTag = escapeHtml(game.tag);
+            const safeUrl = escapeHtml(game.url);
+
+            return `
+                <a class="arcade-mini-card glass" href="${safeUrl}" target="_blank" rel="noopener">
+                    <div class="arcade-mini-top">
+                        <div class="arcade-mini-copy">
+                            <h3 class="arcade-mini-title">${safeTitle}</h3>
+                            ${safeNote ? `<p class="arcade-mini-note">${safeNote}</p>` : ""}
+                        </div>
+                        <span class="arcade-mini-icon" aria-hidden="true"></span>
+                    </div>
+                    ${safeTag ? `<span class="arcade-mini-badge">${safeTag}</span>` : ""}
+                </a>
+            `;
+        })
+        .join("");
+}
+
 function renderArcade() {
     if (pageEyebrow) {
         pageEyebrow.textContent = arcadeConfig.pageEyebrow || arcadeConfig.eyebrow || "Sala de juegos";
@@ -61,12 +97,17 @@ function renderArcade() {
 
     const games = normalizeGames(arcadeConfig.games);
 
-    if (!grid) {
+    if (!stage) {
         return;
     }
 
     if (!games.length) {
-        grid.innerHTML = "";
+        if (grid) {
+            grid.innerHTML = "";
+            grid.classList.remove("hidden");
+        }
+
+        stage.classList.add("hidden");
         if (emptyState) {
             emptyState.classList.remove("hidden");
         }
@@ -77,27 +118,10 @@ function renderArcade() {
         emptyState.classList.add("hidden");
     }
 
-    grid.innerHTML = games
-        .map((game) => {
-            const safeTitle = escapeHtml(game.title);
-            const safeNote = escapeHtml(game.note);
-            const safeTag = escapeHtml(game.tag);
-            const safeUrl = escapeHtml(game.url);
+    stage.classList.remove("hidden");
+    stage.classList.toggle("is-solo", games.length === 1);
 
-            return `
-                <article class="arcade-card glass">
-                    <div class="arcade-card-top">
-                        <div class="arcade-card-head">
-                            ${safeTag ? `<span class="arcade-tag">${safeTag}</span>` : ""}
-                            <h3 class="arcade-title">${safeTitle}</h3>
-                        </div>
-                        <a class="primary arcade-open" href="${safeUrl}" target="_blank" rel="noopener">Abrir</a>
-                    </div>
-                    ${safeNote ? `<p class="arcade-note">${safeNote}</p>` : ""}
-                </article>
-            `;
-        })
-        .join("");
+    renderGames(games);
 }
 
 window.addEventListener("load", renderArcade);
