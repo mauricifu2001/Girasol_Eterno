@@ -209,10 +209,10 @@ window.appConfig = {
                     backLabel: "Volver",
                     games: [
                         {
-                            title: "JKLM.fun · Sala GGAG",
+                            title: "JKLM.fun",
                             note: "Para jugar juntos en vivo cuando se nos antoje.",
                             tag: "Multiplayer",
-                            url: "https://jklm.fun/GGAG"
+                            url: "https://jklm.fun/"
                         },
                         {
                             title: "Bloob.io · Blomber",

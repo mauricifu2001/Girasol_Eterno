@@ -571,6 +571,46 @@ button:hover,
     border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.room-volume {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.55rem 0.85rem;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 240, 214, 0.14);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+    max-width: 100%;
+}
+
+.room-volume-label {
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: rgba(214, 187, 165, 0.92);
+    white-space: nowrap;
+}
+
+.room-volume-slider.soundtrack-seek {
+    width: min(220px, 44vw);
+    min-width: 120px;
+    height: 6px;
+}
+
+.room-volume-slider.soundtrack-seek::-webkit-slider-thumb {
+    width: 14px;
+    height: 14px;
+}
+
+.room-volume-slider.soundtrack-seek::-moz-range-thumb {
+    width: 14px;
+    height: 14px;
+}
+
+.room-volume-compact {
+    padding: 0.5rem 0.75rem;
+}
+
 .fallback-box {
     margin-top: 1.2rem;
     padding: 1.1rem;
@@ -612,6 +652,7 @@ button:hover,
 
 .hero,
 .museum-teaser,
+.arcade-teaser,
 .story,
 .reasons,
 .letters,
@@ -1338,6 +1379,12 @@ body.arcade-route::after {
 .arcade-teaser {
     position: relative;
     overflow: hidden;
+    border-radius: 30px;
+    background:
+        radial-gradient(circle at 14% 22%, rgba(240, 159, 156, 0.14), transparent 58%),
+        radial-gradient(circle at 82% 70%, rgba(240, 194, 123, 0.18), transparent 62%),
+        linear-gradient(180deg, rgba(18, 13, 14, 0.82), rgba(9, 7, 8, 0.92));
+    border: 1px solid rgba(240, 194, 123, 0.22);
 }
 
 .arcade-teaser::before {
@@ -1345,10 +1392,9 @@ body.arcade-route::after {
     position: absolute;
     inset: 0;
     background:
-        radial-gradient(circle at 14% 22%, rgba(240, 159, 156, 0.11), transparent 52%),
-        radial-gradient(circle at 82% 70%, rgba(240, 194, 123, 0.14), transparent 58%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 55%);
-    opacity: 0.95;
+        radial-gradient(circle at 22% 34%, rgba(255, 240, 214, 0.07), transparent 52%),
+        radial-gradient(circle at 76% 64%, rgba(255, 240, 214, 0.06), transparent 56%);
+    opacity: 0.85;
     pointer-events: none;
 }
 
@@ -1356,15 +1402,120 @@ body.arcade-route::after {
     content: "";
     position: absolute;
     inset: 0;
-    background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 6px);
-    opacity: 0.12;
+    background: none;
+    opacity: 0;
     pointer-events: none;
     mix-blend-mode: overlay;
 }
 
-.arcade-teaser > * {
+.arcade-teaser-ornaments {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0.62;
+    mix-blend-mode: overlay;
+}
+
+.arcade-teaser-ornaments::before,
+.arcade-teaser-ornaments::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 240, 214, 0.12);
+    background:
+        radial-gradient(circle, rgba(255, 240, 214, 0.08) 0 2px, transparent 3px),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0));
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.02);
+}
+
+.arcade-teaser-ornaments::before {
+    width: min(460px, 60vw);
+    height: min(260px, 32vw);
+    right: -210px;
+    top: -150px;
+    transform: rotate(12deg);
+    opacity: 0.68;
+    background:
+        linear-gradient(rgba(255, 240, 214, 0.12), rgba(255, 240, 214, 0.12)) 26% 56% / 72px 10px no-repeat,
+        linear-gradient(rgba(255, 240, 214, 0.12), rgba(255, 240, 214, 0.12)) 26% 56% / 10px 72px no-repeat,
+        radial-gradient(circle, rgba(240, 159, 156, 0.18) 0 8px, transparent 9px) 76% 46% / 26px 26px no-repeat,
+        radial-gradient(circle, rgba(240, 194, 123, 0.16) 0 7px, transparent 8px) 81% 54% / 24px 24px no-repeat,
+        radial-gradient(circle, rgba(240, 194, 123, 0.14) 0 7px, transparent 8px) 72% 54% / 24px 24px no-repeat,
+        radial-gradient(circle, rgba(255, 240, 214, 0.11) 0 6px, transparent 7px) 76% 62% / 22px 22px no-repeat,
+        radial-gradient(circle at 22% 58%, rgba(240, 194, 123, 0.12), transparent 40%),
+        radial-gradient(circle at 78% 48%, rgba(240, 159, 156, 0.1), transparent 42%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0));
+}
+
+.arcade-teaser-ornaments::after {
+    width: min(380px, 52vw);
+    height: min(220px, 28vw);
+    left: -180px;
+    bottom: -140px;
+    transform: rotate(-10deg);
+    opacity: 0.52;
+    background:
+        linear-gradient(rgba(255, 240, 214, 0.1), rgba(255, 240, 214, 0.1)) 28% 54% / 58px 9px no-repeat,
+        linear-gradient(rgba(255, 240, 214, 0.1), rgba(255, 240, 214, 0.1)) 28% 54% / 9px 58px no-repeat,
+        radial-gradient(circle, rgba(240, 194, 123, 0.14) 0 7px, transparent 8px) 74% 52% / 22px 22px no-repeat,
+        radial-gradient(circle, rgba(240, 159, 156, 0.14) 0 7px, transparent 8px) 79% 60% / 22px 22px no-repeat,
+        radial-gradient(circle, rgba(255, 240, 214, 0.1) 0 6px, transparent 7px) 69% 60% / 20px 20px no-repeat,
+        radial-gradient(circle at 28% 56%, rgba(240, 194, 123, 0.1), transparent 44%),
+        radial-gradient(circle at 76% 52%, rgba(240, 159, 156, 0.08), transparent 46%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0));
+}
+
+.arcade-teaser > :not(.arcade-teaser-ornaments) {
     position: relative;
     z-index: 1;
+}
+
+.arcade-teaser .museum-head-main h2 {
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    letter-spacing: normal;
+    text-transform: none;
+    line-height: 0.96;
+    text-shadow: none;
+}
+
+.arcade-teaser .arcade-pill {
+    position: relative;
+    padding-left: 2.35rem;
+    background: rgba(18, 13, 14, 0.62);
+    border-color: rgba(255, 240, 214, 0.16);
+}
+
+.arcade-teaser .arcade-pill::before {
+    content: "";
+    position: absolute;
+    left: 0.85rem;
+    top: 50%;
+    width: 14px;
+    height: 14px;
+    transform: translateY(-50%);
+    border-radius: 5px;
+    background:
+        linear-gradient(90deg, transparent 5px, rgba(255, 240, 214, 0.56) 5px 9px, transparent 9px),
+        linear-gradient(transparent 5px, rgba(255, 240, 214, 0.56) 5px 9px, transparent 9px);
+    box-shadow: 0 0 0 1px rgba(240, 194, 123, 0.22);
+    opacity: 0.95;
+}
+
+.arcade-teaser .arcade-launch-button {
+    position: relative;
+    overflow: hidden;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.34), 0 0 0 4px rgba(240, 194, 123, 0.1);
+}
+
+.arcade-teaser .arcade-launch-button::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(90deg, rgba(28, 20, 22, 0.32) 0 1px, transparent 1px 12px);
+    opacity: 0.12;
+    pointer-events: none;
 }
 
 .arcade-shell {
@@ -1502,6 +1653,8 @@ body.arcade-route::after {
 .arcade-hero-actions {
     display: flex;
     gap: 0.85rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
     flex: 0 0 auto;
 }
 
@@ -1604,6 +1757,23 @@ body.arcade-route::after {
     justify-content: space-between;
     gap: 0.9rem;
     align-items: flex-start;
+}
+
+.arcade-mini-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+}
+
+.arcade-game-remove {
+    padding: 0.35rem 0.75rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    border-color: rgba(255, 240, 214, 0.14);
+    background: rgba(255, 255, 255, 0.04);
+    flex: 0 0 auto;
 }
 
 .arcade-mini-title {

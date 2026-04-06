@@ -29,6 +29,10 @@
                 </div>
                 <div class="arcade-hero-actions">
                     <a class="secondary arcade-back" href="index.html" id="arcadeBackLink">Volver</a>
+                    <label class="room-volume room-volume-compact" for="roomVolumeSlider">
+                        <span class="room-volume-label">Volumen</span>
+                        <input class="soundtrack-seek room-volume-slider" id="roomVolumeSlider" type="range" min="0" max="100" step="1" value="16" aria-label="Volumen de la musica">
+                    </label>
                 </div>
             </div>
         </section>
@@ -39,6 +43,9 @@
                 <div>
                     <p class="eyebrow">Juegos</p>
                     <h2>Elige el que se nos antoje</h2>
+                </div>
+                <div class="soundtrack-head-actions">
+                    <button class="ghost soundtrack-add" id="arcadeAddButton" type="button" aria-label="Agregar un juego">+</button>
                 </div>
             </div>
 
@@ -52,5 +59,65 @@
             </div>
         </section>
     </main>
+
+    <div class="video-modal hidden" id="gameModal" aria-hidden="true" role="dialog" aria-modal="true" aria-labelledby="gameModalTitle">
+        <div class="video-modal-backdrop" data-close-game="true"></div>
+        <div class="video-modal-card glass soundtrack-modal-card">
+            <div class="video-modal-top">
+                <div class="video-modal-copy">
+                    <p class="eyebrow">Sala de juegos</p>
+                    <h3 id="gameModalTitle">Agregar un juego</h3>
+                </div>
+                <button class="ghost video-modal-close" id="closeGameModalButton" type="button" aria-label="Cerrar">Cerrar</button>
+            </div>
+
+            <form class="soundtrack-modal-form" id="gameModalForm">
+                <label class="soundtrack-modal-label" for="gameTitleInput">Nombre</label>
+                <input
+                    id="gameTitleInput"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Ej: Gartic Phone"
+                    required
+                >
+
+                <label class="soundtrack-modal-label" for="gameUrlInput">Link</label>
+                <input
+                    id="gameUrlInput"
+                    type="url"
+                    inputmode="url"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="https://..."
+                    required
+                >
+
+                <label class="soundtrack-modal-label" for="gameTagInput">Etiqueta (opcional)</label>
+                <input
+                    id="gameTagInput"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Ej: Multiplayer"
+                >
+
+                <label class="soundtrack-modal-label" for="gameNoteInput">Nota (opcional)</label>
+                <input
+                    id="gameNoteInput"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="Ej: Para jugar juntos cuando se nos antoje"
+                >
+
+                <p class="tiny" id="gameModalStatus"></p>
+                <div class="soundtrack-modal-actions">
+                    <button class="secondary" id="cancelGameButton" type="button">Cancelar</button>
+                    <button class="primary" id="saveGameButton" type="submit">Guardar</button>
+                </div>
+            </form>
+        </div>
+    </div>
 </body>
 </html>
