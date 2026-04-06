@@ -1434,67 +1434,91 @@ async function loadMuseumEntries() {
 
 function renderMuseum(entries) {
     const museumConfig = getMuseumConfig();
-    const previewEntries = entries.slice(0, 6);
+    const museumStats = document.getElementById("museumStats");
 
-    document.getElementById("museumStats").innerHTML = [
-        {
-            value: entries.length || "0",
-            label: "Capitulos guardados",
-            note: entries.length ? "La lista completa te la deje aparte." : "Cuando haya capitulos, aqui se van a ir sumando."
-        },
-        {
-            value: museumConfig.frequencyLabel || "Cada viernes",
-            label: "Ritual",
-            note: museumConfig.frequencyNote || "Ya es plan fijo entre tu y yo."
-        },
-        {
-            value: museumConfig.yearsLabel || "3 anos",
-            label: "Historia guardada",
-            note: museumConfig.yearsNote || "Y espero que sigan siendo muchos mas."
-        }
-    ]
-        .map(
-            (item) => `
-                <article class="museum-stat glass">
-                    <p class="museum-stat-value">${escapeHtml(item.value)}</p>
-                    <p class="museum-stat-label">${escapeHtml(item.label)}</p>
-                    <p class="museum-stat-note">${escapeHtml(item.note)}</p>
-                </article>
-            `
-        )
-        .join("");
+    const chaptersCount = entries.length || 0;
+    const chaptersNote = chaptersCount
+        ? "La lista completa te la deje aparte."
+        : "Cuando haya capitulos, aqui se van a ir sumando.";
 
-    if (!entries.length) {
-        museumGrid.innerHTML = `
-            <article class="museum-launch-panel glass">
-                <p class="eyebrow">Todavia vacio</p>
-                <h3>Aqui van a ir quedando nuestros capitulos</h3>
-                <p>Apenas haya enlaces en el archivo, desde aqui se entra a todo.</p>
-                <a class="primary museum-panel-button" href="museum.html">Entrar</a>
+    const ritualValue = museumConfig.frequencyLabel || "Cada viernes";
+    const ritualNote = museumConfig.frequencyNote || "Ya es plan fijo entre tu y yo.";
+
+    const teaserMessage = museumConfig.message || "";
+
+    const yearsValue = museumConfig.yearsLabel || "3 años";
+    const yearsNote = museumConfig.yearsNote || "Y espero que sigan siendo muchos mas.";
+
+    const firstChapterLabel = padSequenceNumber(1);
+    const lastChapterLabel = padSequenceNumber(Math.max(1, Math.min(Number(chaptersCount) || 1, 999)));
+
+    if (museumStats) {
+        museumStats.innerHTML = `
+            <article class="museum-ritual-card glass">
+                <p class="museum-ritual-eyebrow">El ritual</p>
+                <div class="museum-ritual-body">
+                    <div class="museum-ritual-copy">
+                        <p class="museum-ritual-value">${escapeHtml(ritualValue)}</p>
+                        <p class="museum-ritual-note">${escapeHtml(ritualNote)}</p>
+                        ${teaserMessage ? `<p class="museum-ritual-message">${escapeHtml(teaserMessage)}</p>` : ""}
+                    </div>
+                    <div class="museum-ritual-visual" aria-hidden="true">
+                        <svg class="museum-filmstrip" viewBox="0 0 280 140" focusable="false" aria-hidden="true">
+                            <rect class="museum-filmstrip-body" x="10" y="24" width="260" height="92" rx="22" />
+                            <rect class="museum-filmstrip-inner" x="16" y="30" width="248" height="80" rx="20" />
+                            <g class="museum-filmstrip-holes">
+                                <rect x="28" y="34" width="10" height="10" rx="3" />
+                                <rect x="54" y="34" width="10" height="10" rx="3" />
+                                <rect x="80" y="34" width="10" height="10" rx="3" />
+                                <rect x="106" y="34" width="10" height="10" rx="3" />
+                                <rect x="132" y="34" width="10" height="10" rx="3" />
+                                <rect x="158" y="34" width="10" height="10" rx="3" />
+                                <rect x="184" y="34" width="10" height="10" rx="3" />
+                                <rect x="210" y="34" width="10" height="10" rx="3" />
+                                <rect x="236" y="34" width="10" height="10" rx="3" />
+
+                                <rect x="28" y="96" width="10" height="10" rx="3" />
+                                <rect x="54" y="96" width="10" height="10" rx="3" />
+                                <rect x="80" y="96" width="10" height="10" rx="3" />
+                                <rect x="106" y="96" width="10" height="10" rx="3" />
+                                <rect x="132" y="96" width="10" height="10" rx="3" />
+                                <rect x="158" y="96" width="10" height="10" rx="3" />
+                                <rect x="184" y="96" width="10" height="10" rx="3" />
+                                <rect x="210" y="96" width="10" height="10" rx="3" />
+                                <rect x="236" y="96" width="10" height="10" rx="3" />
+                            </g>
+                            <g class="museum-filmstrip-frames">
+                                <rect class="museum-filmstrip-frame" x="66" y="52" width="70" height="40" rx="14" />
+                                <path class="museum-filmstrip-play" d="M96 62v26l22-13z" />
+                                <text class="museum-filmstrip-number" x="126" y="72" text-anchor="end">${escapeHtml(firstChapterLabel)}</text>
+                                <rect class="museum-filmstrip-frame" x="152" y="52" width="70" height="40" rx="14" />
+                                <path class="museum-filmstrip-play" d="M182 62v26l22-13z" />
+                                <text class="museum-filmstrip-number" x="212" y="72" text-anchor="end">${escapeHtml(lastChapterLabel)}</text>
+                            </g>
+                        </svg>
+                    </div>
+                </div>
             </article>
+
+            <div class="museum-stats-side">
+                <article class="museum-stat glass">
+                    <p class="museum-stat-value">${escapeHtml(chaptersCount || "0")}</p>
+                    <p class="museum-stat-label">Capítulos guardados</p>
+                    <p class="museum-stat-note">${escapeHtml(chaptersNote)}</p>
+                </article>
+                <article class="museum-stat glass">
+                    <p class="museum-stat-value">${escapeHtml(yearsValue)}</p>
+                    <p class="museum-stat-label">Historia guardada</p>
+                    <p class="museum-stat-note">${escapeHtml(yearsNote)}</p>
+                </article>
+            </div>
         `;
-        return;
     }
 
-    museumGrid.innerHTML = `
-        <article class="museum-launch-panel glass">
-            <p class="eyebrow">Te lo deje aparte</p>
-            <h3>${escapeHtml(museumConfig.previewTitle || "Aqui te deje todos nuestros Fucknews")}</h3>
-            <p>${escapeHtml(museumConfig.previewMessage || "Preferi dejar esto aparte para que se sintiera mas nuestro.")}</p>
-            <a class="primary museum-panel-button" href="museum.html">${escapeHtml(museumConfig.ctaLabel || "Entrar")}</a>
-        </article>
-    ` + previewEntries
-        .map(
-            (entry, index) => `
-                <article class="museum-preview-card">
-                    <span class="museum-preview-index">${padSequenceNumber(index + 1)}</span>
-                    <h3>${escapeHtml(entry.title || `Fucknews - archivo ${padSequenceNumber(index + 1)}`)}</h3>
-                    <p>${escapeHtml(entry.note || museumConfig.defaultNote || "Otro viernes contigo que quise guardar aqui.")}</p>
-                    <a class="museum-preview-link" href="museum.html">Ver</a>
-                </article>
-            `
-        )
-        .join("");
+    if (museumGrid) {
+        museumGrid.innerHTML = "";
+        museumGrid.classList.add("hidden");
+    }
 }
 
 async function renderStory() {
@@ -1518,10 +1542,45 @@ async function renderStory() {
 
     document.getElementById("museumEyebrow").textContent = museumConfig.eyebrow || "Nuestros viernes";
     document.getElementById("museumTitle").textContent = museumConfig.title || "Los Fucknews que he visto contigo";
-    document.getElementById("museumMessage").textContent = museumConfig.message || "";
+    const museumMessage = document.getElementById("museumMessage");
+    if (museumMessage) {
+        museumMessage.textContent = "";
+    }
+
+    const museumPill = document.getElementById("museumPill");
+    if (museumPill) {
+        museumPill.textContent = museumConfig.teaserPill || "Sala separada · ritual compartido · entrada especial";
+    }
 
     if (museumLaunchButton) {
         museumLaunchButton.textContent = museumConfig.ctaLabel || "Entrar";
+    }
+
+    const arcadeConfig = storyConfig.arcade || {};
+    const arcadeEyebrow = document.getElementById("arcadeEyebrow");
+    const arcadeTitle = document.getElementById("arcadeTitle");
+    const arcadeMessage = document.getElementById("arcadeMessage");
+    const arcadePill = document.getElementById("arcadePill");
+    const arcadeLaunchButton = document.getElementById("arcadeLaunchButton");
+
+    if (arcadeEyebrow) {
+        arcadeEyebrow.textContent = arcadeConfig.eyebrow || "Sala de juegos";
+    }
+
+    if (arcadeTitle) {
+        arcadeTitle.textContent = arcadeConfig.title || "Un arcade para nosotros";
+    }
+
+    if (arcadeMessage) {
+        arcadeMessage.textContent = arcadeConfig.message || "";
+    }
+
+    if (arcadePill) {
+        arcadePill.textContent = arcadeConfig.teaserPill || "Arcade · multiplayer · noche de juegos";
+    }
+
+    if (arcadeLaunchButton) {
+        arcadeLaunchButton.textContent = arcadeConfig.ctaLabel || "Entrar";
     }
 
     const metricsSection = document.getElementById("metricsSection");

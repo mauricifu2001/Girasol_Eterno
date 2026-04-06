@@ -854,9 +854,34 @@ button:hover,
 
 .museum-head {
     display: grid;
-    grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 1.2rem;
-    align-items: end;
+    align-items: start;
+}
+
+.museum-head-actions {
+    display: grid;
+    gap: 0.75rem;
+    justify-items: end;
+    align-content: start;
+}
+
+.museum-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.55rem 1rem;
+    border-radius: 999px;
+    border: 1px solid rgba(240, 194, 123, 0.22);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--muted);
+    font-size: 0.78rem;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+}
+
+.museum-head-actions .museum-launch-button {
+    padding: 0.85rem 1.25rem;
 }
 
 .museum-copy {
@@ -882,13 +907,157 @@ button:hover,
 }
 
 .museum-stats {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    margin-bottom: 1.15rem;
+    grid-template-columns: minmax(0, 1.25fr) minmax(0, 0.75fr);
+    align-items: stretch;
+    margin-bottom: 0;
+}
+
+.museum-stats-side {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
+}
+
+.museum-ritual-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 28px;
+    padding: clamp(1.25rem, 2.6vw, 1.65rem);
+    background:
+        radial-gradient(circle at 18% 18%, rgba(240, 194, 123, 0.12), transparent 58%),
+        radial-gradient(circle at 78% 68%, rgba(240, 159, 156, 0.1), transparent 62%),
+        linear-gradient(180deg, rgba(49, 33, 37, 0.92), rgba(25, 18, 20, 0.92));
+    border: 1px solid rgba(240, 194, 123, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03), 0 26px 82px rgba(0, 0, 0, 0.32);
+}
+
+.museum-ritual-card::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at top left, rgba(255, 240, 214, 0.06), transparent 52%),
+        radial-gradient(circle at bottom right, rgba(255, 240, 214, 0.04), transparent 55%);
+    pointer-events: none;
+}
+
+.museum-ritual-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+.museum-ritual-eyebrow {
+    margin: 0;
+    font-size: 0.72rem;
+    letter-spacing: 0.24em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
+.museum-ritual-body {
+    margin-top: 0.95rem;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.museum-ritual-copy {
+    min-width: 0;
+    display: grid;
+    gap: 0.55rem;
+}
+
+.museum-ritual-value {
+    margin: 0;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(2.3rem, 4.8vw, 3.4rem);
+    line-height: 0.98;
+    color: var(--gold);
+}
+
+.museum-ritual-note {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.7;
+    max-width: 52ch;
+}
+
+.museum-ritual-message {
+    margin: 0.25rem 0 0;
+    color: var(--muted);
+    line-height: 1.75;
+    max-width: 62ch;
+}
+
+.museum-ritual-visual {
+    flex: 0 0 auto;
+    width: min(320px, 44%);
+    max-width: 360px;
+    display: grid;
+    place-items: center;
+}
+
+.museum-filmstrip {
+    width: 100%;
+    height: auto;
+    display: block;
+    color: rgba(240, 194, 123, 0.92);
+    filter: drop-shadow(0 24px 70px rgba(0, 0, 0, 0.46));
+}
+
+.museum-filmstrip-body {
+    fill: rgba(18, 13, 14, 0.5);
+    stroke: rgba(240, 194, 123, 0.24);
+    stroke-width: 2;
+}
+
+.museum-filmstrip-inner {
+    fill: none;
+    stroke: rgba(255, 240, 214, 0.12);
+    stroke-width: 1.5;
+}
+
+.museum-filmstrip-holes rect {
+    fill: rgba(0, 0, 0, 0.28);
+    stroke: rgba(255, 240, 214, 0.12);
+    stroke-width: 1;
+}
+
+.museum-filmstrip-frame {
+    fill: rgba(255, 255, 255, 0.05);
+    stroke: rgba(240, 194, 123, 0.18);
+    stroke-width: 2;
+}
+
+.museum-filmstrip-play {
+    fill: currentColor;
+    opacity: 0.78;
+}
+
+.museum-filmstrip-number {
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    fill: var(--text);
+    opacity: 0.88;
+}
+
+.museum-stats-side .museum-stat {
+    padding: 1.1rem;
+}
+
+.museum-stats-side .museum-stat-value {
+    font-size: clamp(1.75rem, 3vw, 2.6rem);
 }
 
 .museum-stat {
     border-radius: 24px;
     padding: 1.15rem;
+}
+
+.museum-stat.glass {
+    border-color: rgba(240, 194, 123, 0.22);
 }
 
 .museum-stat-value,
@@ -1145,6 +1314,218 @@ button:hover,
 .museum-empty p {
     max-width: 60ch;
     margin: 0.85rem auto 0;
+}
+
+.arcade-teaser {
+    position: relative;
+    overflow: hidden;
+}
+
+.arcade-teaser::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 14% 22%, rgba(240, 159, 156, 0.11), transparent 52%),
+        radial-gradient(circle at 82% 70%, rgba(240, 194, 123, 0.14), transparent 58%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 55%);
+    opacity: 0.95;
+    pointer-events: none;
+}
+
+.arcade-teaser::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0 1px, transparent 1px 6px);
+    opacity: 0.12;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+}
+
+.arcade-teaser > * {
+    position: relative;
+    z-index: 1;
+}
+
+.arcade-shell {
+    display: grid;
+    gap: 1.3rem;
+}
+
+.arcade-hero {
+    position: relative;
+    overflow: hidden;
+}
+
+.arcade-hero-glow {
+    position: absolute;
+    inset: 0;
+    background:
+        radial-gradient(circle at 18% 20%, rgba(240, 159, 156, 0.12), transparent 55%),
+        radial-gradient(circle at 78% 72%, rgba(240, 194, 123, 0.16), transparent 58%),
+        linear-gradient(180deg, rgba(10, 8, 9, 0.2), rgba(10, 8, 9, 0.75));
+    pointer-events: none;
+}
+
+.arcade-hero-top {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.25rem;
+}
+
+.arcade-hero-copy {
+    min-width: 0;
+}
+
+.arcade-hero-actions {
+    display: flex;
+    gap: 0.85rem;
+    flex: 0 0 auto;
+}
+
+.arcade-hero h1 {
+    margin: 0;
+    font-family: "Cormorant Garamond", serif;
+    font-weight: 600;
+    line-height: 0.96;
+    font-size: clamp(2.6rem, 5vw, 4.2rem);
+}
+
+.arcade-copy {
+    margin: 1rem 0 0;
+    color: var(--muted);
+    line-height: 1.75;
+    max-width: 72ch;
+}
+
+.arcade-gallery-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-end;
+}
+
+.arcade-grid {
+    display: grid;
+    gap: 1rem;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.arcade-card {
+    position: relative;
+    overflow: hidden;
+    border-radius: 28px;
+    padding: 1.25rem;
+    background:
+        radial-gradient(circle at 18% 18%, rgba(240, 159, 156, 0.1), transparent 58%),
+        radial-gradient(circle at 82% 78%, rgba(240, 194, 123, 0.12), transparent 62%),
+        linear-gradient(180deg, rgba(31, 23, 26, 0.94), rgba(18, 13, 15, 0.92));
+    border: 1px solid rgba(240, 194, 123, 0.22);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.03), 0 26px 82px rgba(0, 0, 0, 0.28);
+}
+
+.arcade-card::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(180deg, rgba(255, 255, 255, 0.028) 0 1px, transparent 1px 8px);
+    opacity: 0.12;
+    pointer-events: none;
+    mix-blend-mode: overlay;
+}
+
+.arcade-card > * {
+    position: relative;
+    z-index: 1;
+}
+
+.arcade-card-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    align-items: flex-start;
+    flex-wrap: wrap;
+}
+
+.arcade-card-head {
+    min-width: 0;
+}
+
+.arcade-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0.85rem;
+    border-radius: 999px;
+    border: 1px solid rgba(240, 194, 123, 0.22);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 244, 230, 0.86);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.arcade-title {
+    margin: 0.6rem 0 0;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(1.7rem, 3.2vw, 2.6rem);
+    line-height: 0.98;
+}
+
+.arcade-note {
+    margin: 0.85rem 0 0;
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+.arcade-open {
+    padding: 0.85rem 1.15rem;
+    white-space: nowrap;
+}
+
+.arcade-empty {
+    grid-column: 1 / -1;
+    padding: 1.35rem;
+    text-align: center;
+    border-radius: 28px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.arcade-empty h3 {
+    margin: 0;
+    font-family: "Cormorant Garamond", serif;
+    font-size: clamp(2rem, 4vw, 2.85rem);
+    line-height: 0.96;
+}
+
+.arcade-empty p {
+    max-width: 60ch;
+    margin: 0.85rem auto 0;
+    color: var(--muted);
+    line-height: 1.7;
+}
+
+@media (max-width: 720px) {
+    .arcade-hero-top {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .arcade-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (min-width: 980px) {
+    .arcade-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
 }
 
 .metric-card {
@@ -3118,7 +3499,6 @@ body.museum-intro-opening .theater-illustration {
     .cinema-hero-layout,
     .cinema-intro-stage,
     .metrics,
-    .museum-stats,
     .reason-grid,
     .letter-grid,
     .playlist-list {
@@ -3164,6 +3544,16 @@ body.museum-intro-opening .theater-illustration {
         grid-template-columns: 1fr;
     }
 
+    .museum-head-actions {
+        justify-items: start;
+    }
+
+    .museum-pill {
+        justify-content: flex-start;
+        white-space: normal;
+        max-width: 100%;
+    }
+
     .museum-launch-button {
         justify-self: start;
     }
@@ -3174,6 +3564,23 @@ body.museum-intro-opening .theater-illustration {
 
     .museum-launch-panel {
         grid-column: 1 / -1;
+    }
+
+    .museum-stats {
+        grid-template-columns: 1fr;
+    }
+
+    .museum-stats-side {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .museum-ritual-body {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .museum-ritual-visual {
+        width: min(420px, 100%);
     }
 }
 
@@ -3428,5 +3835,11 @@ body.museum-intro-opening .theater-illustration {
     100% {
         opacity: 1;
         transform: translateY(0);
+    }
+}
+
+@media (max-width: 560px) {
+    .museum-stats-side {
+        grid-template-columns: 1fr;
     }
 }

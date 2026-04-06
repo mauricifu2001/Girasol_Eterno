@@ -94,7 +94,7 @@ window.appConfig = {
             },
             frequencyLabel: "Todos los viernes",
             frequencyNote: "Ya es costumbre tuya y mia.",
-            yearsLabel: "3 anos",
+            yearsLabel: "3 años",
             yearsNote: "Y espero que sigan siendo muchisimos mas.",
             seriesLabel: "Nuestros viernes",
             source: "fucknews_links.txt",
@@ -197,6 +197,25 @@ window.appConfig = {
                 url: "https://open.spotify.com/intl-es/track/0DKoET2reNpTGpQMS0VXI0"
             }
         ],
+                arcade: {
+                    eyebrow: "Sala de juegos",
+                    title: "Un arcade para nosotros",
+                    message: "Jueguitos para reir, competir y sentirnos cerquita incluso a distancia.",
+                    teaserPill: "Arcade · multiplayer · noche de juegos",
+                    ctaLabel: "Entrar",
+                    pageEyebrow: "Sala de juegos",
+                    pageTitle: "Arcade de nosotros",
+                    pageMessage: "Aqui estan los juegos que nos gustan o nos interesan. Se abren en su pagina original.",
+                    backLabel: "Volver",
+                    games: [
+                        {
+                            title: "JKLM.fun · Sala GGAG",
+                            note: "Para jugar juntos en vivo cuando se nos antoje.",
+                            tag: "Multiplayer",
+                            url: "https://jklm.fun/GGAG"
+                        }
+                    ]
+                },
         finalTitle: "Siempre voy a encontrar una forma de llegar a ti",
         finalMessage: "Gracias por existir en mi vida como existes, mi vida. Esta pagina no intenta competir con un abrazo tuyo, pero si queria recordarte que incluso en la distancia sigo pensando en ti con amor, admiracion y unas ganas inmensas de seguir construyendo contigo."
     }

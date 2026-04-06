@@ -217,11 +217,14 @@
 
             <section class="museum-teaser glass" id="museumSection">
                 <div class="section-head museum-head">
-                    <div>
+                    <div class="museum-head-main">
                         <p class="eyebrow" id="museumEyebrow">Museo compartido</p>
                         <h2 id="museumTitle">Los shows que hemos visto juntos</h2>
                     </div>
-                    <a class="primary museum-launch-button" href="museum.html" id="museumLaunchButton">Entrar a la sala</a>
+                    <div class="museum-head-actions">
+                        <div class="museum-pill" id="museumPill">Sala separada · ritual compartido · entrada especial</div>
+                        <a class="primary museum-launch-button" href="museum.html" id="museumLaunchButton">Entrar</a>
+                    </div>
                 </div>
 
                 <p class="museum-copy" id="museumMessage"></p>
@@ -229,6 +232,21 @@
                     <div class="museum-stats" id="museumStats"></div>
                     <div class="museum-preview-list" id="museumGrid"></div>
                 </div>
+            </section>
+
+            <section class="arcade-teaser glass" id="arcadeSection" data-experience-scope="full museum-only">
+                <div class="section-head museum-head arcade-head">
+                    <div class="museum-head-main">
+                        <p class="eyebrow" id="arcadeEyebrow">Sala de juegos</p>
+                        <h2 id="arcadeTitle">Un arcade para nosotros</h2>
+                    </div>
+                    <div class="museum-head-actions arcade-head-actions">
+                        <div class="museum-pill arcade-pill" id="arcadePill">Arcade · multiplayer · noche de juegos</div>
+                        <a class="primary museum-launch-button arcade-launch-button" href="arcade.html" id="arcadeLaunchButton">Entrar</a>
+                    </div>
+                </div>
+
+                <p class="museum-copy arcade-copy" id="arcadeMessage"></p>
             </section>
 
             <section class="story glass" id="timelineSection" data-experience-scope="full">
@@ -255,7 +273,7 @@
                 <div class="letter-grid" id="letterGrid"></div>
             </section>
 
-            <section class="playlist glass" id="playlistSection" data-experience-scope="full">
+            <section class="playlist glass" id="playlistSection" data-experience-scope="full museum-only">
                 <div class="section-head soundtrack-head">
                     <div class="soundtrack-head-main">
                         <p class="eyebrow">Banda sonora</p>

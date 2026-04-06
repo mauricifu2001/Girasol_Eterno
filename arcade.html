@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sala de juegos</title>
+    <meta name="description" content="Un arcade con juegos para nosotros.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="shortcut icon" href="favicon.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script defer src="config.js"></script>
+    <script defer src="arcade.js"></script>
+</head>
+<body class="arcade-route">
+    <div class="ambient ambient-one"></div>
+    <div class="ambient ambient-two"></div>
+
+    <main class="shell arcade-shell">
+        <section class="arcade-hero glass">
+            <div class="arcade-hero-glow" aria-hidden="true"></div>
+            <div class="arcade-hero-top">
+                <div class="arcade-hero-copy">
+                    <p class="eyebrow" id="arcadePageEyebrow">Sala de juegos</p>
+                    <h1 id="arcadePageTitle">Arcade de nosotros</h1>
+                    <p class="arcade-copy" id="arcadePageMessage"></p>
+                </div>
+                <div class="arcade-hero-actions">
+                    <a class="secondary" href="index.html" id="arcadeBackLink">Volver</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="arcade-gallery glass" id="arcadeGallery">
+            <div class="section-head arcade-gallery-head">
+                <div>
+                    <p class="eyebrow">Juegos</p>
+                    <h2>Elige el que se nos antoje</h2>
+                </div>
+            </div>
+
+            <div class="arcade-grid" id="arcadeGrid"></div>
+
+            <div class="arcade-empty hidden" id="arcadeEmpty">
+                <h3>No hay juegos todavia</h3>
+                <p>Cuando agreguemos uno, va a aparecer aqui.</p>
+            </div>
+        </section>
+    </main>
+</body>
+</html>
