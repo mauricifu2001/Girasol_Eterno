@@ -15,6 +15,7 @@ const CHUNK_MANAGEMENT_INTERVAL = 0.22;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 2;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
 const CLOUD_EDIT_WRITE_BATCH_MS = 220;
+const CLOUD_EDIT_RETRY_MS = 1200;
 
 const PLAYER_HEIGHT = 1.8;
 const PLAYER_RADIUS = 0.32;
@@ -613,6 +614,19 @@ function flushCloudEditWrites() {
     multiplayer.pendingEditWrites.clear();
     multiplayer.firebase.dbModule.update(multiplayer.refs.editsRef, updates).catch((error) => {
         console.warn("No pude sincronizar cambios de bloques (batch)", error);
+
+        for (const [key, value] of Object.entries(updates)) {
+            if (!multiplayer.pendingEditWrites.has(key)) {
+                multiplayer.pendingEditWrites.set(key, value);
+            }
+        }
+
+        if (multiplayer.writeTimerId === null) {
+            multiplayer.writeTimerId = window.setTimeout(() => {
+                multiplayer.writeTimerId = null;
+                flushCloudEditWrites();
+            }, CLOUD_EDIT_RETRY_MS);
+        }
     });
 }
 
