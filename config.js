@@ -212,7 +212,7 @@ window.appConfig = {
                             title: "Nuestro Mundo",
                             note: "Juego cooperativo que estamos integrando en nuestro portal.",
                             tag: "Co-op",
-                            url: "juego.html?v=6"
+                            url: "juego.html?v=7"
                         },
                         {
                             title: "JKLM.fun",

@@ -14,6 +14,7 @@ const CHUNK_SIZE = 16;
 const CHUNK_MANAGEMENT_INTERVAL = 0.22;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 2;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
+const CLOUD_EDIT_WRITE_BATCH_MS = 220;
 
 const PLAYER_HEIGHT = 1.8;
 const PLAYER_RADIUS = 0.32;
@@ -66,6 +67,7 @@ const PROFILE_COLORS = {
 const gameConfig = window.appConfig?.game || {};
 const multiplayerConfig = gameConfig.multiplayer || {};
 const urlParams = new URLSearchParams(window.location.search);
+const MAX_EDITED_BLOCKS = clampInt(Number(gameConfig.maxEditedBlocks) || 120000, 2000, 500000);
 const WORLD_SAVE_KEY = `girasolWorldEdits:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
 const WORLD_SAVE_VERSION = 1;
 const AUTO_SAVE_SECONDS = 12;
@@ -90,7 +92,8 @@ scene.fog = new THREE.Fog(0x9bc7ff, 30, 220);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const basePixelRatio = Math.min(window.devicePixelRatio, 2);
+renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const controls = new PointerLockControls(camera, document.body);
@@ -153,18 +156,26 @@ const multiplayer = {
     refs: {
         playersRef: null,
         myPlayerRef: null,
-        opsRef: null
+        editsRef: null
     },
     remotePlayers: new Map(),
     sendIntervalMs: 120,
     lastBroadcastMs: 0,
-    unsubscribers: []
+    unsubscribers: [],
+    pendingEditWrites: new Map(),
+    writeTimerId: null
 };
 
 const saveState = {
     dirty: false,
     writeTimerId: null,
     lastSavedAt: 0
+};
+
+const perfState = {
+    dynamicPixelRatio: basePixelRatio,
+    fpsEma: 60,
+    adjustCooldown: 0
 };
 
 function setBootStatus(message, isError = false) {
@@ -585,6 +596,165 @@ function isFirebaseConfigReady(config) {
     });
 }
 
+function flushCloudEditWrites() {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.refs.editsRef) {
+        return;
+    }
+
+    if (!multiplayer.pendingEditWrites.size) {
+        return;
+    }
+
+    const updates = {};
+    for (const [key, value] of multiplayer.pendingEditWrites.entries()) {
+        updates[key] = value;
+    }
+
+    multiplayer.pendingEditWrites.clear();
+    multiplayer.firebase.dbModule.update(multiplayer.refs.editsRef, updates).catch((error) => {
+        console.warn("No pude sincronizar cambios de bloques (batch)", error);
+    });
+}
+
+function queueCloudEditWrite(key, value) {
+    multiplayer.pendingEditWrites.set(key, value);
+
+    if (multiplayer.writeTimerId !== null) {
+        return;
+    }
+
+    multiplayer.writeTimerId = window.setTimeout(() => {
+        multiplayer.writeTimerId = null;
+        flushCloudEditWrites();
+    }, CLOUD_EDIT_WRITE_BATCH_MS);
+}
+
+function applyRemoteEditEntry(key, rawValue) {
+    const parsed = parseBlockKey(key);
+    if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+        return;
+    }
+
+    const id = Number(rawValue);
+    if (!isValidBlockId(id)) {
+        return;
+    }
+
+    applyBlockMutation(parsed.x, parsed.y, parsed.z, id, "remote");
+}
+
+function applyRemoteEditRemoval(key) {
+    const parsed = parseBlockKey(key);
+    if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+        return;
+    }
+
+    const procedural = getProceduralBlock(parsed.x, parsed.y, parsed.z);
+    applyBlockMutation(parsed.x, parsed.y, parsed.z, procedural, "remote");
+}
+
+function collectCompactEditsFromLegacyOps(opsPayload) {
+    const compact = new Map();
+    const entries = Object.entries(opsPayload || {}).sort(([a], [b]) => a.localeCompare(b));
+
+    for (const [, op] of entries) {
+        const x = Number(op?.x);
+        const y = Number(op?.y);
+        const z = Number(op?.z);
+        const id = Number(op?.id);
+
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !isValidBlockId(id)) {
+            continue;
+        }
+
+        if (!inWorldBounds(x, y, z)) {
+            continue;
+        }
+
+        const key = blockKey(x, y, z);
+        const procedural = getProceduralBlock(x, y, z);
+
+        if (id === procedural) {
+            compact.delete(key);
+        } else {
+            compact.set(key, id);
+        }
+    }
+
+    return compact;
+}
+
+async function migrateLegacyOpsIfNeeded(dbModule, db, worldPath) {
+    const editsRef = dbModule.ref(db, `${worldPath}/edits`);
+    const editsSnap = await dbModule.get(editsRef);
+    if (editsSnap.exists()) {
+        return;
+    }
+
+    const opsRef = dbModule.ref(db, `${worldPath}/ops`);
+    const opsSnap = await dbModule.get(opsRef);
+    if (!opsSnap.exists()) {
+        return;
+    }
+
+    const compact = collectCompactEditsFromLegacyOps(opsSnap.val());
+    if (!compact.size) {
+        return;
+    }
+
+    const payload = {};
+    for (const [key, id] of compact.entries()) {
+        payload[key] = id;
+    }
+
+    await dbModule.set(editsRef, payload);
+    await dbModule.remove(opsRef);
+}
+
+function updateAdaptiveQuality(deltaSeconds) {
+    const fpsInstant = deltaSeconds > 0 ? 1 / deltaSeconds : 60;
+    perfState.fpsEma = perfState.fpsEma * 0.92 + fpsInstant * 0.08;
+    perfState.adjustCooldown -= deltaSeconds;
+
+    if (perfState.adjustCooldown > 0) {
+        return;
+    }
+
+    const minRatio = 0.72;
+    let nextRatio = perfState.dynamicPixelRatio;
+
+    if (perfState.fpsEma < 47 && nextRatio > minRatio) {
+        nextRatio = Math.max(minRatio, nextRatio - 0.08);
+    } else if (perfState.fpsEma > 58 && nextRatio < basePixelRatio) {
+        nextRatio = Math.min(basePixelRatio, nextRatio + 0.05);
+    }
+
+    if (Math.abs(nextRatio - perfState.dynamicPixelRatio) < 0.01) {
+        return;
+    }
+
+    perfState.dynamicPixelRatio = Number(nextRatio.toFixed(2));
+    renderer.setPixelRatio(perfState.dynamicPixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    perfState.adjustCooldown = 1.4;
+}
+
+function getDynamicChunkBuildBudget() {
+    if (state.pendingChunkBuildCount <= 0) {
+        return 0;
+    }
+
+    if (perfState.fpsEma < 38) {
+        return 1;
+    }
+
+    if (perfState.fpsEma > 58 && state.pendingChunkBuildCount > 14) {
+        return 3;
+    }
+
+    return CHUNK_REBUILD_BUDGET_PER_FRAME;
+}
+
 let runtimeFirebaseConfigPromise = null;
 
 async function resolveFirebaseConfig() {
@@ -645,10 +815,12 @@ async function setupRealtimeMultiplayer() {
         const db = dbModule.getDatabase(app);
         const worldPath = `worlds/${multiplayer.roomId}`;
 
+        await migrateLegacyOpsIfNeeded(dbModule, db, worldPath);
+
         multiplayer.firebase = { dbModule, db };
         multiplayer.refs.playersRef = dbModule.ref(db, `${worldPath}/players`);
         multiplayer.refs.myPlayerRef = dbModule.ref(db, `${worldPath}/players/${multiplayer.profile.id}`);
-        multiplayer.refs.opsRef = dbModule.ref(db, `${worldPath}/ops`);
+        multiplayer.refs.editsRef = dbModule.ref(db, `${worldPath}/edits`);
 
         const connectedRef = dbModule.ref(db, ".info/connected");
         const unsubConnected = dbModule.onValue(connectedRef, (snapshot) => {
@@ -680,25 +852,19 @@ async function setupRealtimeMultiplayer() {
             setOnlineStatus(`Sala ${multiplayer.roomId}: ${totalOnline} conectado(s)`);
         });
 
-        const unsubOps = dbModule.onChildAdded(multiplayer.refs.opsRef, (snapshot) => {
-            const op = snapshot.val();
-            if (!op || op.by === multiplayer.profile.id) {
-                return;
-            }
-
-            const x = Number(op.x);
-            const y = Number(op.y);
-            const z = Number(op.z);
-            const id = Number(op.id);
-
-            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(id)) {
-                return;
-            }
-
-            applyBlockMutation(x, y, z, id, "remote");
+        const unsubEditAdded = dbModule.onChildAdded(multiplayer.refs.editsRef, (snapshot) => {
+            applyRemoteEditEntry(snapshot.key || "", snapshot.val());
         });
 
-        multiplayer.unsubscribers.push(unsubConnected, unsubPlayers, unsubOps);
+        const unsubEditChanged = dbModule.onChildChanged(multiplayer.refs.editsRef, (snapshot) => {
+            applyRemoteEditEntry(snapshot.key || "", snapshot.val());
+        });
+
+        const unsubEditRemoved = dbModule.onChildRemoved(multiplayer.refs.editsRef, (snapshot) => {
+            applyRemoteEditRemoval(snapshot.key || "");
+        });
+
+        multiplayer.unsubscribers.push(unsubConnected, unsubPlayers, unsubEditAdded, unsubEditChanged, unsubEditRemoved);
         multiplayer.enabled = true;
         multiplayer.ready = true;
         setOnlineStatus(`Sala ${multiplayer.roomId}: multijugador activo`);
@@ -740,22 +906,13 @@ function broadcastLocalPlayerState(force = false) {
 }
 
 function publishBlockMutation(x, y, z, id) {
-    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.refs.opsRef) {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.refs.editsRef) {
         return;
     }
 
-    const payload = {
-        x,
-        y,
-        z,
-        id,
-        by: multiplayer.profile.id,
-        at: Date.now()
-    };
-
-    multiplayer.firebase.dbModule.push(multiplayer.refs.opsRef, payload).catch((error) => {
-        console.warn("No pude sincronizar bloque", error);
-    });
+    const key = blockKey(x, y, z);
+    const overrideValue = editedBlocks.get(key);
+    queueCloudEditWrite(key, overrideValue === undefined ? null : overrideValue);
 }
 
 function blockKey(x, y, z) {
@@ -1156,6 +1313,16 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
         return;
     }
 
+    const key = blockKey(x, y, z);
+    const hadOverride = editedBlocks.has(key);
+    const procedural = getProceduralBlock(x, y, z);
+    const willHaveOverride = id !== procedural;
+
+    if (origin === "local" && !hadOverride && willHaveOverride && editedBlocks.size >= MAX_EDITED_BLOCKS) {
+        setOnlineStatus(`Limite de ciudad alcanzado (${MAX_EDITED_BLOCKS} bloques editados)`);
+        return;
+    }
+
     setBlock(x, y, z, id);
     scheduleWorldSave();
 
@@ -1330,7 +1497,7 @@ function updatePlayer(deltaSeconds) {
 function updateHud() {
     const p = state.playerPosition;
     coordsEl.textContent = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}`;
-    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount}`);
+    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`);
 }
 
 function refreshHotbarUi() {
@@ -1474,7 +1641,8 @@ function onMouseDown(event) {
 function onResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(perfState.dynamicPixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
 }
 
 function setupEvents() {
@@ -1509,6 +1677,7 @@ function setupEvents() {
 
     window.addEventListener("beforeunload", () => {
         flushWorldSave(true);
+        flushCloudEditWrites();
     });
 }
 
@@ -1518,13 +1687,17 @@ function animate() {
     const delta = Math.min(clock.getDelta(), 1 / 30);
     state.chunkTick += delta;
     state.autoSaveTick += delta;
+    updateAdaptiveQuality(delta);
 
     if (state.worldStarted) {
         updatePlayer(delta);
     }
 
     updateChunkStreaming(false);
-    processChunkRebuildQueue();
+    const budget = getDynamicChunkBuildBudget();
+    if (budget > 0) {
+        processChunkRebuildQueue(budget);
+    }
 
     updateRemotePlayers(delta);
     broadcastLocalPlayerState();
