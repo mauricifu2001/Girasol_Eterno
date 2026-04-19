@@ -1,11 +1,19 @@
 import * as THREE from "./vendor/three.module.js";
 import { PointerLockControls } from "./vendor/PointerLockControls.js";
 
-const WORLD_SIZE_X = 48;
-const WORLD_SIZE_Z = 48;
-const WORLD_MAX_Y = 24;
-const HALF_WORLD_X = Math.floor(WORLD_SIZE_X / 2);
-const HALF_WORLD_Z = Math.floor(WORLD_SIZE_Z / 2);
+function clampInt(value, min, max) {
+    if (!Number.isFinite(value)) {
+        return min;
+    }
+
+    return Math.max(min, Math.min(max, Math.round(value)));
+}
+
+const WORLD_MAX_Y = 48;
+const CHUNK_SIZE = 16;
+const CHUNK_MANAGEMENT_INTERVAL = 0.22;
+const CHUNK_REBUILD_BUDGET_PER_FRAME = 2;
+const INITIAL_CHUNK_BUILD_BUDGET = 10;
 
 const PLAYER_HEIGHT = 1.8;
 const PLAYER_RADIUS = 0.32;
@@ -14,7 +22,6 @@ const GRAVITY = 26;
 const BASE_SPEED = 6.2;
 const SPRINT_SPEED = 9.4;
 const JUMP_SPEED = 9.2;
-
 const MAX_REACH = 6;
 
 const BLOCK = {
@@ -47,12 +54,6 @@ const BLOCK_COLORS = {
     [BLOCK.SAND]: 0xd4bf8d
 };
 
-const canvas = document.getElementById("gameCanvas");
-const coordsEl = document.getElementById("coords");
-const hotbarEl = document.getElementById("hotbar");
-const overlayEl = document.getElementById("overlay");
-const startButton = document.getElementById("startButton");
-
 const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
 const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
 const MULTIPLAYER_SESSION_ID_KEY = "girasolMultiplayerSessionId";
@@ -64,17 +65,36 @@ const PROFILE_COLORS = {
 
 const gameConfig = window.appConfig?.game || {};
 const multiplayerConfig = gameConfig.multiplayer || {};
+const urlParams = new URLSearchParams(window.location.search);
+const WORLD_SAVE_KEY = `girasolWorldEdits:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
+const WORLD_SAVE_VERSION = 1;
+const AUTO_SAVE_SECONDS = 12;
+
+const WORLD_SEED = Number(gameConfig.worldSeed) || 42173;
+const INITIAL_CHUNK_RADIUS = clampInt(
+    Number(urlParams.get("chunks") || gameConfig.renderChunkRadius || 4),
+    2,
+    8
+);
+
+const canvas = document.getElementById("gameCanvas");
+const coordsEl = document.getElementById("coords");
+const hotbarEl = document.getElementById("hotbar");
+const overlayEl = document.getElementById("overlay");
+const startButton = document.getElementById("startButton");
+const helpMiniEl = document.getElementById("helpMini");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
-scene.fog = new THREE.Fog(0x9bc7ff, 26, 90);
+scene.fog = new THREE.Fog(0x9bc7ff, 30, 220);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 200);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 
 const controls = new PointerLockControls(camera, document.body);
+controls.pointerSpeed = 0.68;
 scene.add(controls.getObject());
 
 const hemiLight = new THREE.HemisphereLight(0xffffff, 0x6e748f, 0.9);
@@ -98,7 +118,10 @@ const blockMaterials = Object.fromEntries(
     ])
 );
 
-const blocks = new Map();
+const chunkMap = new Map();
+const chunkRebuildQueue = new Set();
+const editedBlocks = new Map();
+
 const blockMeshes = [];
 const blockPositionLookup = new Map();
 
@@ -112,7 +135,13 @@ const state = {
     keyDown: new Set(),
     playerPosition: new THREE.Vector3(0, 17, 0),
     worldStarted: false,
-    worldReady: false
+    worldReady: false,
+    chunkRadius: INITIAL_CHUNK_RADIUS,
+    chunkTick: 0,
+    loadedChunkCount: 0,
+    pendingChunkBuildCount: 0,
+    lastForward: new THREE.Vector3(0, 0, -1),
+    autoSaveTick: 0
 };
 
 const multiplayer = {
@@ -130,6 +159,12 @@ const multiplayer = {
     sendIntervalMs: 120,
     lastBroadcastMs: 0,
     unsubscribers: []
+};
+
+const saveState = {
+    dirty: false,
+    writeTimerId: null,
+    lastSavedAt: 0
 };
 
 function setBootStatus(message, isError = false) {
@@ -168,6 +203,30 @@ function ensureOnlineStatusElement() {
 
 function setOnlineStatus(message) {
     const el = ensureOnlineStatusElement();
+    if (el) {
+        el.textContent = message;
+    }
+}
+
+function ensureChunkInfoElement() {
+    let el = document.getElementById("chunkInfo");
+    if (el) {
+        return el;
+    }
+
+    const hudTop = document.getElementById("hudTop");
+    if (!hudTop) {
+        return null;
+    }
+
+    el = document.createElement("p");
+    el.id = "chunkInfo";
+    hudTop.appendChild(el);
+    return el;
+}
+
+function setChunkInfo(message) {
+    const el = ensureChunkInfoElement();
     if (el) {
         el.textContent = message;
     }
@@ -227,7 +286,7 @@ function resolvePlayerIdentity() {
         ? normalizeProfileLabel(window.sessionStorage.getItem(PORTAL_ACCESS_LABEL_STORAGE_KEY) || "")
         : "";
 
-    const playerFromQuery = normalizeProfileLabel(new URLSearchParams(window.location.search).get("player") || "");
+    const playerFromQuery = normalizeProfileLabel(urlParams.get("player") || "");
     const resolvedLabel = sessionLabel || playerFromQuery || "Invitado";
     const profile = profileByLabel.get(resolvedLabel);
     const displayName = profile?.displayName || resolvedLabel;
@@ -253,6 +312,114 @@ function sanitizeRoomId(value) {
         .slice(0, 48);
 
     return normalized || "mundo-principal";
+}
+
+function isValidBlockId(id) {
+    return Number.isInteger(id) && id >= BLOCK.AIR && id <= BLOCK.SAND;
+}
+
+function parseBlockKey(key) {
+    const [xText, yText, zText] = String(key).split("|");
+    const x = Number(xText);
+    const y = Number(yText);
+    const z = Number(zText);
+
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        return null;
+    }
+
+    return { x, y, z };
+}
+
+function flushWorldSave(force = false) {
+    if (!saveState.dirty && !force) {
+        return;
+    }
+
+    if (saveState.writeTimerId !== null) {
+        window.clearTimeout(saveState.writeTimerId);
+        saveState.writeTimerId = null;
+    }
+
+    const edits = [...editedBlocks.entries()]
+        .filter(([, id]) => isValidBlockId(id))
+        .map(([key, id]) => [key, id]);
+
+    try {
+        if (edits.length === 0) {
+            window.localStorage.removeItem(WORLD_SAVE_KEY);
+        } else {
+            const payload = {
+                version: WORLD_SAVE_VERSION,
+                seed: WORLD_SEED,
+                savedAt: Date.now(),
+                edits
+            };
+
+            window.localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(payload));
+        }
+
+        saveState.dirty = false;
+        saveState.lastSavedAt = Date.now();
+    } catch (error) {
+        console.warn("No se pudo guardar el mundo localmente", error);
+    }
+}
+
+function scheduleWorldSave() {
+    saveState.dirty = true;
+
+    if (saveState.writeTimerId !== null) {
+        return;
+    }
+
+    saveState.writeTimerId = window.setTimeout(() => {
+        saveState.writeTimerId = null;
+        flushWorldSave();
+    }, 1500);
+}
+
+function loadWorldFromStorage() {
+    let raw = "";
+    try {
+        raw = window.localStorage.getItem(WORLD_SAVE_KEY) || "";
+    } catch (error) {
+        return 0;
+    }
+
+    if (!raw) {
+        return 0;
+    }
+
+    try {
+        const payload = JSON.parse(raw);
+        const edits = Array.isArray(payload?.edits) ? payload.edits : [];
+
+        editedBlocks.clear();
+        let loaded = 0;
+
+        for (const item of edits) {
+            if (!Array.isArray(item) || item.length !== 2) {
+                continue;
+            }
+
+            const key = String(item[0] || "");
+            const id = Number(item[1]);
+            const parsed = parseBlockKey(key);
+
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+                continue;
+            }
+
+            editedBlocks.set(key, id);
+            loaded += 1;
+        }
+
+        return loaded;
+    } catch (error) {
+        console.warn("No se pudo leer el guardado local del mundo", error);
+        return 0;
+    }
 }
 
 function parseHexColor(color, fallback = 0x8ad1ff) {
@@ -433,7 +600,7 @@ async function setupRealtimeMultiplayer() {
         return;
     }
 
-    const roomFromQuery = new URLSearchParams(window.location.search).get("room") || "";
+    const roomFromQuery = urlParams.get("room") || "";
     multiplayer.roomId = sanitizeRoomId(roomFromQuery || multiplayerConfig.roomId || "mundo-principal");
 
     try {
@@ -459,7 +626,6 @@ async function setupRealtimeMultiplayer() {
 
             dbModule.onDisconnect(multiplayer.refs.myPlayerRef).remove().catch(() => {
             });
-
             broadcastLocalPlayerState(true);
         });
 
@@ -479,8 +645,7 @@ async function setupRealtimeMultiplayer() {
             }
 
             const totalOnline = Object.keys(payload).length;
-            const roomLabel = multiplayer.roomId;
-            setOnlineStatus(`Sala ${roomLabel}: ${totalOnline} conectado(s)`);
+            setOnlineStatus(`Sala ${multiplayer.roomId}: ${totalOnline} conectado(s)`);
         });
 
         const unsubOps = dbModule.onChildAdded(multiplayer.refs.opsRef, (snapshot) => {
@@ -505,7 +670,6 @@ async function setupRealtimeMultiplayer() {
         multiplayer.enabled = true;
         multiplayer.ready = true;
         setOnlineStatus(`Sala ${multiplayer.roomId}: multijugador activo`);
-        setBootStatus("Mundo listo. Presiona Entrar al mundo.");
     } catch (error) {
         console.error("No se pudo conectar multijugador", error);
         setOnlineStatus("Multijugador no disponible. Sigues en modo solo.");
@@ -523,8 +687,8 @@ function broadcastLocalPlayerState(force = false) {
     }
 
     multiplayer.lastBroadcastMs = now;
-
     const cameraHolder = controls.getObject();
+
     const payload = {
         label: multiplayer.profile.label,
         displayName: multiplayer.profile.displayName,
@@ -562,6 +726,395 @@ function publishBlockMutation(x, y, z, id) {
     });
 }
 
+function blockKey(x, y, z) {
+    return `${x}|${y}|${z}`;
+}
+
+function chunkKey(cx, cz) {
+    return `${cx}|${cz}`;
+}
+
+function parseChunkKey(key) {
+    const [cxText, czText] = String(key).split("|");
+    return { cx: Number(cxText), cz: Number(czText) };
+}
+
+function worldToChunkCoord(value) {
+    return Math.floor(value / CHUNK_SIZE);
+}
+
+function worldToLocalCoord(value) {
+    const mod = value % CHUNK_SIZE;
+    return mod < 0 ? mod + CHUNK_SIZE : mod;
+}
+
+function inWorldBounds(x, y, z) {
+    return y >= 0 && y < WORLD_MAX_Y;
+}
+
+function hash2D(x, z, salt = 0) {
+    let h = Math.imul(x | 0, 374761393) ^ Math.imul(z | 0, 668265263) ^ Math.imul((WORLD_SEED + salt) | 0, 1442695041);
+    h = (h ^ (h >>> 13)) >>> 0;
+    h = Math.imul(h, 1274126177) >>> 0;
+    return h;
+}
+
+function terrainHeight(x, z) {
+    const waveA = Math.sin((x + WORLD_SEED * 0.13) * 0.045) * 5.2;
+    const waveB = Math.cos((z - WORLD_SEED * 0.19) * 0.042) * 4.8;
+    const waveC = Math.sin((x + z + WORLD_SEED * 0.33) * 0.021) * 2.6;
+    const rough = ((hash2D(x, z, 17) & 1023) / 1023 - 0.5) * 2.6;
+    return clampInt(18 + waveA + waveB + waveC + rough, 4, WORLD_MAX_Y - 6);
+}
+
+function isTreeBase(x, z, surfaceY) {
+    if (surfaceY < 10) {
+        return false;
+    }
+
+    return hash2D(x, z, 91) % 43 === 0;
+}
+
+function treeHeightAt(x, z) {
+    return 3 + (hash2D(x, z, 103) % 2);
+}
+
+function getTreeBlockAt(x, y, z) {
+    for (let tx = x - 2; tx <= x + 2; tx += 1) {
+        for (let tz = z - 2; tz <= z + 2; tz += 1) {
+            const surfaceY = terrainHeight(tx, tz);
+            if (!isTreeBase(tx, tz, surfaceY)) {
+                continue;
+            }
+
+            const trunkStart = surfaceY + 1;
+            const trunkTop = trunkStart + treeHeightAt(tx, tz);
+
+            if (x === tx && z === tz && y >= trunkStart && y < trunkTop) {
+                return BLOCK.WOOD;
+            }
+
+            const topY = trunkTop;
+            const dx = x - tx;
+            const dy = y - topY;
+            const dz = z - tz;
+
+            if (dy < -2 || dy > 2) {
+                continue;
+            }
+
+            const dist = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
+            if (dist <= 4) {
+                return BLOCK.LEAVES;
+            }
+        }
+    }
+
+    return BLOCK.AIR;
+}
+
+function getProceduralBlock(x, y, z) {
+    if (y < 0) {
+        return BLOCK.BEDROCK;
+    }
+
+    if (y >= WORLD_MAX_Y) {
+        return BLOCK.AIR;
+    }
+
+    const h = terrainHeight(x, z);
+    if (y === 0) {
+        return BLOCK.BEDROCK;
+    }
+
+    if (y > h) {
+        return getTreeBlockAt(x, y, z);
+    }
+
+    if (y === h) {
+        return h < 11 ? BLOCK.SAND : BLOCK.GRASS;
+    }
+
+    if (y >= h - 2) {
+        return BLOCK.DIRT;
+    }
+
+    return BLOCK.STONE;
+}
+
+function getBlock(x, y, z) {
+    const override = editedBlocks.get(blockKey(x, y, z));
+    if (override !== undefined) {
+        return override;
+    }
+
+    return getProceduralBlock(x, y, z);
+}
+
+function markChunkDirty(cx, cz) {
+    const key = chunkKey(cx, cz);
+    const chunk = chunkMap.get(key);
+    if (!chunk) {
+        return;
+    }
+
+    chunk.dirty = true;
+    chunkRebuildQueue.add(key);
+}
+
+function markChunksDirtyAroundBlock(x, z) {
+    const cx = worldToChunkCoord(x);
+    const cz = worldToChunkCoord(z);
+    const lx = worldToLocalCoord(x);
+    const lz = worldToLocalCoord(z);
+
+    markChunkDirty(cx, cz);
+
+    if (lx === 0) markChunkDirty(cx - 1, cz);
+    if (lx === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz);
+    if (lz === 0) markChunkDirty(cx, cz - 1);
+    if (lz === CHUNK_SIZE - 1) markChunkDirty(cx, cz + 1);
+
+    if (lx === 0 && lz === 0) markChunkDirty(cx - 1, cz - 1);
+    if (lx === 0 && lz === CHUNK_SIZE - 1) markChunkDirty(cx - 1, cz + 1);
+    if (lx === CHUNK_SIZE - 1 && lz === 0) markChunkDirty(cx + 1, cz - 1);
+    if (lx === CHUNK_SIZE - 1 && lz === CHUNK_SIZE - 1) markChunkDirty(cx + 1, cz + 1);
+}
+
+function setBlock(x, y, z, id) {
+    const key = blockKey(x, y, z);
+    const proceduralId = getProceduralBlock(x, y, z);
+
+    if (id === proceduralId) {
+        editedBlocks.delete(key);
+    } else {
+        editedBlocks.set(key, id);
+    }
+
+    markChunksDirtyAroundBlock(x, z);
+}
+
+function isBlockVisible(x, y, z, id) {
+    const neighbors = [
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1]
+    ];
+
+    for (const [dx, dy, dz] of neighbors) {
+        const neighborId = getBlock(x + dx, y + dy, z + dz);
+        if (neighborId === BLOCK.AIR) {
+            return true;
+        }
+
+        if (id === BLOCK.LEAVES && neighborId !== BLOCK.LEAVES) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function removeMeshReferences(mesh) {
+    if (mesh.userData?.lookupKeys) {
+        for (const key of mesh.userData.lookupKeys) {
+            blockPositionLookup.delete(key);
+        }
+    }
+
+    const index = blockMeshes.indexOf(mesh);
+    if (index >= 0) {
+        blockMeshes.splice(index, 1);
+    }
+
+    worldRoot.remove(mesh);
+}
+
+function rebuildChunkMesh(chunk) {
+    if (!chunk) {
+        return;
+    }
+
+    while (chunk.meshes.length) {
+        const mesh = chunk.meshes.pop();
+        removeMeshReferences(mesh);
+    }
+
+    const positionsByBlock = new Map();
+    const baseX = chunk.cx * CHUNK_SIZE;
+    const baseZ = chunk.cz * CHUNK_SIZE;
+
+    for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
+            const x = baseX + lx;
+            const z = baseZ + lz;
+
+            for (let y = 0; y < WORLD_MAX_Y; y += 1) {
+                const id = getBlock(x, y, z);
+                if (id === BLOCK.AIR) {
+                    continue;
+                }
+
+                if (!isBlockVisible(x, y, z, id)) {
+                    continue;
+                }
+
+                let positions = positionsByBlock.get(id);
+                if (!positions) {
+                    positions = [];
+                    positionsByBlock.set(id, positions);
+                }
+
+                positions.push({ x, y, z });
+            }
+        }
+    }
+
+    const matrix = new THREE.Matrix4();
+
+    positionsByBlock.forEach((positions, id) => {
+        const material = blockMaterials[id];
+        if (!material || positions.length === 0) {
+            return;
+        }
+
+        const mesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.userData.blockId = id;
+        mesh.userData.lookupKeys = [];
+
+        for (let index = 0; index < positions.length; index += 1) {
+            const { x, y, z } = positions[index];
+            matrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
+            mesh.setMatrixAt(index, matrix);
+
+            const lookupKey = `${mesh.id}:${index}`;
+            blockPositionLookup.set(lookupKey, { x, y, z, id });
+            mesh.userData.lookupKeys.push(lookupKey);
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        worldRoot.add(mesh);
+        blockMeshes.push(mesh);
+        chunk.meshes.push(mesh);
+    });
+
+    chunk.dirty = false;
+}
+
+function ensureChunk(cx, cz) {
+    const key = chunkKey(cx, cz);
+    let chunk = chunkMap.get(key);
+    if (chunk) {
+        return chunk;
+    }
+
+    chunk = {
+        cx,
+        cz,
+        meshes: [],
+        dirty: true
+    };
+
+    chunkMap.set(key, chunk);
+    chunkRebuildQueue.add(key);
+    return chunk;
+}
+
+function unloadChunk(key) {
+    const chunk = chunkMap.get(key);
+    if (!chunk) {
+        return;
+    }
+
+    while (chunk.meshes.length) {
+        const mesh = chunk.meshes.pop();
+        removeMeshReferences(mesh);
+    }
+
+    chunkMap.delete(key);
+    chunkRebuildQueue.delete(key);
+}
+
+function updateChunkStreaming(force = false) {
+    state.chunkTick = force ? CHUNK_MANAGEMENT_INTERVAL : state.chunkTick;
+
+    if (state.chunkTick < CHUNK_MANAGEMENT_INTERVAL) {
+        return;
+    }
+
+    state.chunkTick = 0;
+    const centerCx = worldToChunkCoord(state.playerPosition.x);
+    const centerCz = worldToChunkCoord(state.playerPosition.z);
+
+    const desired = new Set();
+    const orderedTargets = [];
+
+    for (let dx = -state.chunkRadius; dx <= state.chunkRadius; dx += 1) {
+        for (let dz = -state.chunkRadius; dz <= state.chunkRadius; dz += 1) {
+            const cx = centerCx + dx;
+            const cz = centerCz + dz;
+            const key = chunkKey(cx, cz);
+
+            desired.add(key);
+            orderedTargets.push({ key, cx, cz, dist: Math.abs(dx) + Math.abs(dz) });
+        }
+    }
+
+    orderedTargets.sort((a, b) => a.dist - b.dist);
+
+    for (const target of orderedTargets) {
+        ensureChunk(target.cx, target.cz);
+    }
+
+    for (const key of chunkMap.keys()) {
+        if (!desired.has(key)) {
+            unloadChunk(key);
+        }
+    }
+
+    state.loadedChunkCount = chunkMap.size;
+    state.pendingChunkBuildCount = chunkRebuildQueue.size;
+}
+
+function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
+    let builds = 0;
+    while (builds < maxBuilds && chunkRebuildQueue.size > 0) {
+        const iterator = chunkRebuildQueue.values().next();
+        if (iterator.done) {
+            break;
+        }
+
+        const key = iterator.value;
+        chunkRebuildQueue.delete(key);
+
+        const chunk = chunkMap.get(key);
+        if (!chunk || !chunk.dirty) {
+            continue;
+        }
+
+        rebuildChunkMesh(chunk);
+        builds += 1;
+    }
+
+    state.pendingChunkBuildCount = chunkRebuildQueue.size;
+}
+
+function setChunkRadius(nextRadius) {
+    const clamped = clampInt(nextRadius, 2, 8);
+    if (clamped === state.chunkRadius) {
+        return;
+    }
+
+    state.chunkRadius = clamped;
+    updateChunkStreaming(true);
+    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount}`);
+}
+
 function applyBlockMutation(x, y, z, id, origin = "local") {
     if (!inWorldBounds(x, y, z)) {
         return;
@@ -572,172 +1125,11 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
     }
 
     setBlock(x, y, z, id);
-    rebuildWorldMeshes();
+    scheduleWorldSave();
 
     if (origin === "local") {
         publishBlockMutation(x, y, z, id);
     }
-}
-
-function blockKey(x, y, z) {
-    return `${x}|${y}|${z}`;
-}
-
-function setBlock(x, y, z, id) {
-    const key = blockKey(x, y, z);
-    if (id === BLOCK.AIR) {
-        blocks.delete(key);
-    } else {
-        blocks.set(key, id);
-    }
-}
-
-function getBlock(x, y, z) {
-    return blocks.get(blockKey(x, y, z)) ?? BLOCK.AIR;
-}
-
-function inWorldBounds(x, y, z) {
-    return x >= -HALF_WORLD_X && x < HALF_WORLD_X
-        && z >= -HALF_WORLD_Z && z < HALF_WORLD_Z
-        && y >= 0
-        && y < WORLD_MAX_Y;
-}
-
-function clampPlayerToWorld() {
-    state.playerPosition.x = THREE.MathUtils.clamp(state.playerPosition.x, -HALF_WORLD_X + 1, HALF_WORLD_X - 1);
-    state.playerPosition.z = THREE.MathUtils.clamp(state.playerPosition.z, -HALF_WORLD_Z + 1, HALF_WORLD_Z - 1);
-    state.playerPosition.y = Math.max(0.01, state.playerPosition.y);
-}
-
-function terrainHeight(x, z) {
-    const n1 = Math.sin(x * 0.22) * 1.8;
-    const n2 = Math.cos(z * 0.19) * 1.6;
-    const n3 = Math.sin((x + z) * 0.11) * 1.2;
-    return Math.floor(9 + n1 + n2 + n3);
-}
-
-function buildTree(baseX, baseY, baseZ) {
-    const trunkHeight = 3 + ((Math.abs(baseX * 11 + baseZ * 7) % 2));
-    for (let y = 0; y < trunkHeight; y += 1) {
-        const yy = baseY + y;
-        if (inWorldBounds(baseX, yy, baseZ)) {
-            setBlock(baseX, yy, baseZ, BLOCK.WOOD);
-        }
-    }
-
-    const topY = baseY + trunkHeight;
-    for (let dy = -2; dy <= 2; dy += 1) {
-        for (let dx = -2; dx <= 2; dx += 1) {
-            for (let dz = -2; dz <= 2; dz += 1) {
-                const dist = Math.abs(dx) + Math.abs(dy) + Math.abs(dz);
-                if (dist > 4) {
-                    continue;
-                }
-                const xx = baseX + dx;
-                const yy = topY + dy;
-                const zz = baseZ + dz;
-                if (!inWorldBounds(xx, yy, zz)) {
-                    continue;
-                }
-                if (getBlock(xx, yy, zz) === BLOCK.AIR) {
-                    setBlock(xx, yy, zz, BLOCK.LEAVES);
-                }
-            }
-        }
-    }
-}
-
-function generateWorld() {
-    blocks.clear();
-
-    for (let x = -HALF_WORLD_X; x < HALF_WORLD_X; x += 1) {
-        for (let z = -HALF_WORLD_Z; z < HALF_WORLD_Z; z += 1) {
-            const h = THREE.MathUtils.clamp(terrainHeight(x, z), 4, WORLD_MAX_Y - 3);
-
-            for (let y = 0; y <= h; y += 1) {
-                if (y === 0) {
-                    setBlock(x, y, z, BLOCK.BEDROCK);
-                    continue;
-                }
-
-                if (y === h) {
-                    if (h < 8) {
-                        setBlock(x, y, z, BLOCK.SAND);
-                    } else {
-                        setBlock(x, y, z, BLOCK.GRASS);
-                    }
-                    continue;
-                }
-
-                if (y >= h - 2) {
-                    setBlock(x, y, z, BLOCK.DIRT);
-                } else {
-                    setBlock(x, y, z, BLOCK.STONE);
-                }
-            }
-
-            const treeChance = Math.abs((x * 17 + z * 13) % 29);
-            if (h > 8 && treeChance === 0) {
-                buildTree(x, h + 1, z);
-            }
-        }
-    }
-}
-
-function clearWorldMeshes() {
-    while (worldRoot.children.length) {
-        const child = worldRoot.children[0];
-        worldRoot.remove(child);
-    }
-    blockMeshes.length = 0;
-    blockPositionLookup.clear();
-}
-
-function rebuildWorldMeshes() {
-    clearWorldMeshes();
-
-    const counts = {};
-    for (const id of blocks.values()) {
-        counts[id] = (counts[id] || 0) + 1;
-    }
-
-    const matrix = new THREE.Matrix4();
-
-    Object.entries(counts).forEach(([idText, count]) => {
-        const id = Number(idText);
-        const material = blockMaterials[id];
-        if (!material || count <= 0) {
-            return;
-        }
-
-        const mesh = new THREE.InstancedMesh(blockGeometry, material, count);
-        mesh.castShadow = false;
-        mesh.receiveShadow = false;
-        mesh.userData.blockId = id;
-        mesh.userData.positions = [];
-
-        let index = 0;
-        for (const [key, blockId] of blocks.entries()) {
-            if (blockId !== id) {
-                continue;
-            }
-
-            const [xText, yText, zText] = key.split("|");
-            const x = Number(xText);
-            const y = Number(yText);
-            const z = Number(zText);
-
-            matrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
-            mesh.setMatrixAt(index, matrix);
-            mesh.userData.positions[index] = { x, y, z };
-            blockPositionLookup.set(`${mesh.id}:${index}`, { x, y, z, id });
-            index += 1;
-        }
-
-        mesh.instanceMatrix.needsUpdate = true;
-        worldRoot.add(mesh);
-        blockMeshes.push(mesh);
-    });
 }
 
 function isSolidBlock(id) {
@@ -755,10 +1147,11 @@ function collidesAt(x, y, z) {
     for (let yy = minY; yy <= maxY; yy += 1) {
         for (let xx = minX; xx <= maxX; xx += 1) {
             for (let zz = minZ; zz <= maxZ; zz += 1) {
-                if (!inWorldBounds(xx, yy, zz)) {
-                    if (yy < 0) {
-                        return true;
-                    }
+                if (yy < 0) {
+                    return true;
+                }
+
+                if (yy >= WORLD_MAX_Y) {
                     continue;
                 }
 
@@ -812,11 +1205,21 @@ function movePlayerVertical(deltaY) {
     state.velocityY = 0;
 }
 
+function clampPlayerToWorld() {
+    state.playerPosition.y = Math.max(0.01, state.playerPosition.y);
+}
+
 function getForwardRightVectors() {
     const direction = new THREE.Vector3();
     camera.getWorldDirection(direction);
     direction.y = 0;
-    direction.normalize();
+
+    if (direction.lengthSq() < 1e-8) {
+        direction.copy(state.lastForward);
+    } else {
+        direction.normalize();
+        state.lastForward.copy(direction);
+    }
 
     const right = new THREE.Vector3();
     right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
@@ -825,8 +1228,8 @@ function getForwardRightVectors() {
 }
 
 function updatePlayer(deltaSeconds) {
-    const turnSpeed = 1.8 * deltaSeconds;
-    const pitchSpeed = 1.4 * deltaSeconds;
+    const turnSpeed = 1.6 * deltaSeconds;
+    const pitchSpeed = 1.25 * deltaSeconds;
 
     if (!controls.isLocked) {
         if (state.keyDown.has("ArrowLeft")) {
@@ -883,7 +1286,6 @@ function updatePlayer(deltaSeconds) {
 
     state.velocityY -= GRAVITY * deltaSeconds;
     movePlayerVertical(state.velocityY * deltaSeconds);
-
     clampPlayerToWorld();
 
     controls.getObject().position.set(
@@ -896,6 +1298,7 @@ function updatePlayer(deltaSeconds) {
 function updateHud() {
     const p = state.playerPosition;
     coordsEl.textContent = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}`;
+    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount}`);
 }
 
 function refreshHotbarUi() {
@@ -914,7 +1317,7 @@ function selectedBlockId() {
 }
 
 function attemptMineOrPlace(isPlacing) {
-    if (!state.worldStarted) {
+    if (!state.worldStarted || !state.worldReady) {
         return;
     }
 
@@ -996,6 +1399,16 @@ function onKeyDown(event) {
         return;
     }
 
+    if (event.code === "Equal") {
+        setChunkRadius(state.chunkRadius + 1);
+        return;
+    }
+
+    if (event.code === "Minus") {
+        setChunkRadius(state.chunkRadius - 1);
+        return;
+    }
+
     state.keyDown.add(event.code);
 }
 
@@ -1013,6 +1426,7 @@ function onMouseDown(event) {
             controls.lock();
         } catch (error) {
         }
+        return;
     }
 
     if (event.button === 0) {
@@ -1060,18 +1474,33 @@ function setupEvents() {
         } catch (error) {
         }
     });
+
+    window.addEventListener("beforeunload", () => {
+        flushWorldSave(true);
+    });
 }
 
 function animate() {
     requestAnimationFrame(animate);
 
-    const delta = Math.min(clock.getDelta(), 0.05);
+    const delta = Math.min(clock.getDelta(), 1 / 30);
+    state.chunkTick += delta;
+    state.autoSaveTick += delta;
+
     if (state.worldStarted) {
         updatePlayer(delta);
     }
 
+    updateChunkStreaming(false);
+    processChunkRebuildQueue();
+
     updateRemotePlayers(delta);
     broadcastLocalPlayerState();
+
+    if (state.autoSaveTick >= AUTO_SAVE_SECONDS) {
+        state.autoSaveTick = 0;
+        flushWorldSave();
+    }
 
     updateHud();
     renderer.render(scene, camera);
@@ -1088,14 +1517,18 @@ function findSpawnPoint() {
         }
     }
 
-    return new THREE.Vector3(0.5, 14, 0.5);
+    return new THREE.Vector3(0.5, 18, 0.5);
 }
 
 function init() {
-    setBootStatus("Cargando mundo local...");
+    setBootStatus("Cargando mundo guardado...");
 
-    generateWorld();
-    rebuildWorldMeshes();
+    const loadedEdits = loadWorldFromStorage();
+    if (loadedEdits > 0) {
+        setBootStatus(`Cargados ${loadedEdits} cambios guardados.`);
+    } else {
+        setBootStatus("Generando mundo por chunks...");
+    }
 
     const spawn = findSpawnPoint();
     state.playerPosition.copy(spawn);
@@ -1103,7 +1536,16 @@ function init() {
 
     refreshHotbarUi();
     setupEvents();
+
+    updateChunkStreaming(true);
+    processChunkRebuildQueue(INITIAL_CHUNK_BUILD_BUDGET);
+
     setupRealtimeMultiplayer();
+
+    if (helpMiniEl) {
+        helpMiniEl.textContent = "WASD mover · Mouse mirar · Click izq minar · Click der colocar · Espacio saltar · +/- chunks";
+    }
+
     state.worldReady = true;
     setBootStatus("Mundo listo. Presiona Entrar al mundo.");
     animate();

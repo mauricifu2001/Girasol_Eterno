@@ -212,7 +212,7 @@ window.appConfig = {
                             title: "Nuestro Mundo",
                             note: "Juego cooperativo que estamos integrando en nuestro portal.",
                             tag: "Co-op",
-                            url: "juego.html?v=4"
+                            url: "juego.html?v=5"
                         },
                         {
                             title: "JKLM.fun",
@@ -236,13 +236,13 @@ window.appConfig = {
             enabled: true,
             roomId: "mundo-principal",
             firebase: {
-                apiKey: "REEMPLAZA_ESTO",
-                authDomain: "REEMPLAZA_ESTO",
-                databaseURL: "REEMPLAZA_ESTO",
-                projectId: "REEMPLAZA_ESTO",
-                storageBucket: "REEMPLAZA_ESTO",
-                messagingSenderId: "REEMPLAZA_ESTO",
-                appId: "REEMPLAZA_ESTO"
+                apiKey: "AIzaSyDSL9izphgyWcV8QiyYZq9n2-p-M7VCbKo",
+                authDomain: "girasol-eterno-mundo.firebaseapp.com",
+                databaseURL: "https://console.firebase.google.com/u/0/project/girasol-eterno-mundo/database/girasol-eterno-mundo-default-rtdb/data/~2F?hl=es-419",
+                projectId: "girasol-eterno-mundo",
+                storageBucket: "girasol-eterno-mundo.firebasestorage.app",
+                messagingSenderId: "272017942507",
+                appId: "1:272017942507:web:e1d6ab7588e45edfc49bae"
             }
         }
     }
