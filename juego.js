@@ -585,6 +585,38 @@ function isFirebaseConfigReady(config) {
     });
 }
 
+let runtimeFirebaseConfigPromise = null;
+
+async function resolveFirebaseConfig() {
+    const staticConfig = multiplayerConfig.firebase || {};
+    if (isFirebaseConfigReady(staticConfig)) {
+        return staticConfig;
+    }
+
+    const endpoint = String(multiplayerConfig.firebaseConfigEndpoint || "/.netlify/functions/firebase-client-config");
+
+    if (!runtimeFirebaseConfigPromise) {
+        runtimeFirebaseConfigPromise = fetch(endpoint, {
+            method: "GET",
+            cache: "no-store"
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw new Error(`Config endpoint error (${response.status})`);
+                }
+
+                return response.json();
+            })
+            .then((payload) => payload?.firebase || {})
+            .catch((error) => {
+                console.warn("No pude leer config Firebase en runtime", error);
+                return {};
+            });
+    }
+
+    return runtimeFirebaseConfigPromise;
+}
+
 async function setupRealtimeMultiplayer() {
     multiplayer.profile = resolvePlayerIdentity();
     const profileLabel = multiplayer.profile.displayName || multiplayer.profile.label;
@@ -594,9 +626,9 @@ async function setupRealtimeMultiplayer() {
         return;
     }
 
-    const firebaseConfig = multiplayerConfig.firebase;
+    const firebaseConfig = await resolveFirebaseConfig();
     if (!isFirebaseConfigReady(firebaseConfig)) {
-        setOnlineStatus("Multijugador: falta configurar Firebase en config.js");
+        setOnlineStatus("Multijugador: falta config Firebase (Netlify env)");
         return;
     }
 
