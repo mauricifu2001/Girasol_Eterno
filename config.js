@@ -212,7 +212,7 @@ window.appConfig = {
                             title: "Nuestro Mundo",
                             note: "Juego cooperativo que estamos integrando en nuestro portal.",
                             tag: "Co-op",
-                            url: "juego.html?v=3"
+                            url: "juego.html?v=4"
                         },
                         {
                             title: "JKLM.fun",
@@ -230,5 +230,20 @@ window.appConfig = {
                 },
         finalTitle: "Siempre voy a encontrar una forma de llegar a ti",
         finalMessage: "Gracias por existir en mi vida como existes, mi vida. Esta pagina no intenta competir con un abrazo tuyo, pero si queria recordarte que incluso en la distancia sigo pensando en ti con amor, admiracion y unas ganas inmensas de seguir construyendo contigo."
+    },
+    game: {
+        multiplayer: {
+            enabled: true,
+            roomId: "mundo-principal",
+            firebase: {
+                apiKey: "REEMPLAZA_ESTO",
+                authDomain: "REEMPLAZA_ESTO",
+                databaseURL: "REEMPLAZA_ESTO",
+                projectId: "REEMPLAZA_ESTO",
+                storageBucket: "REEMPLAZA_ESTO",
+                messagingSenderId: "REEMPLAZA_ESTO",
+                appId: "REEMPLAZA_ESTO"
+            }
+        }
     }
 };

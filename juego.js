@@ -53,6 +53,18 @@ const hotbarEl = document.getElementById("hotbar");
 const overlayEl = document.getElementById("overlay");
 const startButton = document.getElementById("startButton");
 
+const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
+const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
+const MULTIPLAYER_SESSION_ID_KEY = "girasolMultiplayerSessionId";
+
+const PROFILE_COLORS = {
+    Mauricio: "#f4cf85",
+    Valentina: "#ff96c9"
+};
+
+const gameConfig = window.appConfig?.game || {};
+const multiplayerConfig = gameConfig.multiplayer || {};
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
 scene.fog = new THREE.Fog(0x9bc7ff, 26, 90);
@@ -74,6 +86,9 @@ scene.add(sun);
 
 const worldRoot = new THREE.Group();
 scene.add(worldRoot);
+
+const remotePlayersRoot = new THREE.Group();
+scene.add(remotePlayersRoot);
 
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
 const blockMaterials = Object.fromEntries(
@@ -100,6 +115,23 @@ const state = {
     worldReady: false
 };
 
+const multiplayer = {
+    enabled: false,
+    ready: false,
+    roomId: "mundo-principal",
+    profile: null,
+    firebase: null,
+    refs: {
+        playersRef: null,
+        myPlayerRef: null,
+        opsRef: null
+    },
+    remotePlayers: new Map(),
+    sendIntervalMs: 120,
+    lastBroadcastMs: 0,
+    unsubscribers: []
+};
+
 function setBootStatus(message, isError = false) {
     if (!overlayEl) {
         return;
@@ -114,6 +146,437 @@ function setBootStatus(message, isError = false) {
 
     statusEl.textContent = message;
     statusEl.style.color = isError ? "#ffb3b3" : "#d9d2c3";
+}
+
+function ensureOnlineStatusElement() {
+    let el = document.getElementById("onlineStatus");
+    if (el) {
+        return el;
+    }
+
+    const hudTop = document.getElementById("hudTop");
+    if (!hudTop) {
+        return null;
+    }
+
+    el = document.createElement("p");
+    el.id = "onlineStatus";
+    el.textContent = "Modo solo";
+    hudTop.appendChild(el);
+    return el;
+}
+
+function setOnlineStatus(message) {
+    const el = ensureOnlineStatusElement();
+    if (el) {
+        el.textContent = message;
+    }
+}
+
+function normalizeProfileLabel(label) {
+    const text = String(label || "").trim();
+    if (!text) {
+        return "";
+    }
+
+    const lower = text.toLowerCase();
+    if (lower === "mauricio") {
+        return "Mauricio";
+    }
+
+    if (lower === "valentina") {
+        return "Valentina";
+    }
+
+    return text;
+}
+
+function getSessionId() {
+    let id = "";
+    try {
+        id = window.sessionStorage.getItem(MULTIPLAYER_SESSION_ID_KEY) || "";
+    } catch (error) {
+    }
+
+    if (id) {
+        return id;
+    }
+
+    id = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
+
+    try {
+        window.sessionStorage.setItem(MULTIPLAYER_SESSION_ID_KEY, id);
+    } catch (error) {
+    }
+
+    return id;
+}
+
+function resolvePlayerIdentity() {
+    const profileList = Array.isArray(window.appConfig?.portal?.authorizedProfiles)
+        ? window.appConfig.portal.authorizedProfiles
+        : [];
+    const profileByLabel = new Map(
+        profileList
+            .filter((profile) => profile && profile.label)
+            .map((profile) => [String(profile.label), profile])
+    );
+
+    const sessionUnlocked = window.sessionStorage.getItem(PORTAL_UNLOCK_STORAGE_KEY) === "true";
+    const sessionLabel = sessionUnlocked
+        ? normalizeProfileLabel(window.sessionStorage.getItem(PORTAL_ACCESS_LABEL_STORAGE_KEY) || "")
+        : "";
+
+    const playerFromQuery = normalizeProfileLabel(new URLSearchParams(window.location.search).get("player") || "");
+    const resolvedLabel = sessionLabel || playerFromQuery || "Invitado";
+    const profile = profileByLabel.get(resolvedLabel);
+    const displayName = profile?.displayName || resolvedLabel;
+    const color = PROFILE_COLORS[resolvedLabel] || "#8ad1ff";
+
+    let id = resolvedLabel;
+    if (!PROFILE_COLORS[resolvedLabel]) {
+        id = `Invitado-${getSessionId().slice(0, 8)}`;
+    }
+
+    return {
+        id,
+        label: resolvedLabel,
+        displayName,
+        color
+    };
+}
+
+function sanitizeRoomId(value) {
+    const normalized = String(value || "")
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]/g, "")
+        .slice(0, 48);
+
+    return normalized || "mundo-principal";
+}
+
+function parseHexColor(color, fallback = 0x8ad1ff) {
+    const normalized = String(color || "").trim().replace(/^#/, "");
+    if (/^[0-9a-fA-F]{6}$/.test(normalized)) {
+        return Number.parseInt(normalized, 16);
+    }
+
+    return fallback;
+}
+
+function createNameTagSprite(labelText, colorText) {
+    const canvasTag = document.createElement("canvas");
+    canvasTag.width = 512;
+    canvasTag.height = 128;
+
+    const context = canvasTag.getContext("2d");
+    if (!context) {
+        return null;
+    }
+
+    context.clearRect(0, 0, canvasTag.width, canvasTag.height);
+    context.fillStyle = "rgba(8, 9, 12, 0.78)";
+    context.fillRect(0, 24, canvasTag.width, 80);
+
+    context.fillStyle = colorText || "#f4cf85";
+    context.fillRect(0, 24, 8, 80);
+
+    context.font = "700 48px Sora, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+    context.fillStyle = "#f5efe2";
+    context.fillText(labelText, canvasTag.width / 2, canvasTag.height / 2 + 2);
+
+    const texture = new THREE.CanvasTexture(canvasTag);
+    texture.needsUpdate = true;
+
+    const spriteMaterial = new THREE.SpriteMaterial({
+        map: texture,
+        transparent: true,
+        depthTest: false
+    });
+
+    const sprite = new THREE.Sprite(spriteMaterial);
+    sprite.scale.set(1.9, 0.46, 1);
+
+    return sprite;
+}
+
+function createRemotePlayerNode(playerId, payload) {
+    const group = new THREE.Group();
+
+    const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.24, 0.82, 4, 10),
+        new THREE.MeshLambertMaterial({ color: parseHexColor(payload.color, 0x8ad1ff) })
+    );
+    body.position.y = 0.95;
+    group.add(body);
+
+    const head = new THREE.Mesh(
+        new THREE.SphereGeometry(0.2, 12, 10),
+        new THREE.MeshLambertMaterial({ color: 0xfff4da })
+    );
+    head.position.y = 1.63;
+    group.add(head);
+
+    const nameTag = createNameTagSprite(payload.displayName || playerId, payload.color || "#8ad1ff");
+    if (nameTag) {
+        nameTag.position.set(0, 2.25, 0);
+        group.add(nameTag);
+    }
+
+    group.position.set(
+        Number(payload.x) || 0,
+        Number(payload.y) || 10,
+        Number(payload.z) || 0
+    );
+    group.rotation.y = Number(payload.yaw) || 0;
+
+    remotePlayersRoot.add(group);
+
+    return {
+        id: playerId,
+        group,
+        targetPosition: group.position.clone(),
+        targetYaw: group.rotation.y,
+        nameTag,
+        lastSeenAt: Date.now()
+    };
+}
+
+function upsertRemotePlayer(playerId, payload) {
+    if (!payload || playerId === multiplayer.profile?.id) {
+        return;
+    }
+
+    let node = multiplayer.remotePlayers.get(playerId);
+    if (!node) {
+        node = createRemotePlayerNode(playerId, payload);
+        multiplayer.remotePlayers.set(playerId, node);
+    }
+
+    node.targetPosition.set(
+        Number(payload.x) || 0,
+        Number(payload.y) || 10,
+        Number(payload.z) || 0
+    );
+    node.targetYaw = Number(payload.yaw) || 0;
+    node.lastSeenAt = Date.now();
+}
+
+function removeRemotePlayer(playerId) {
+    const node = multiplayer.remotePlayers.get(playerId);
+    if (!node) {
+        return;
+    }
+
+    if (node.nameTag?.material?.map) {
+        node.nameTag.material.map.dispose();
+    }
+
+    node.group.traverse((child) => {
+        if (child.isMesh) {
+            child.geometry?.dispose?.();
+            child.material?.dispose?.();
+        }
+    });
+
+    remotePlayersRoot.remove(node.group);
+    multiplayer.remotePlayers.delete(playerId);
+}
+
+function updateRemotePlayers(deltaSeconds) {
+    const lerpFactor = Math.min(1, 12 * deltaSeconds);
+    for (const node of multiplayer.remotePlayers.values()) {
+        node.group.position.lerp(node.targetPosition, lerpFactor);
+
+        let yawDelta = node.targetYaw - node.group.rotation.y;
+        while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+        while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+        node.group.rotation.y += yawDelta * lerpFactor;
+    }
+}
+
+function isFirebaseConfigReady(config) {
+    if (!config || typeof config !== "object") {
+        return false;
+    }
+
+    const keys = [
+        "apiKey",
+        "authDomain",
+        "databaseURL",
+        "projectId",
+        "storageBucket",
+        "messagingSenderId",
+        "appId"
+    ];
+
+    return keys.every((key) => {
+        const value = String(config[key] || "").trim();
+        return value && value !== "REEMPLAZA_ESTO";
+    });
+}
+
+async function setupRealtimeMultiplayer() {
+    multiplayer.profile = resolvePlayerIdentity();
+    const profileLabel = multiplayer.profile.displayName || multiplayer.profile.label;
+    setOnlineStatus(`Jugador: ${profileLabel} · modo solo`);
+
+    if (!multiplayerConfig?.enabled) {
+        return;
+    }
+
+    const firebaseConfig = multiplayerConfig.firebase;
+    if (!isFirebaseConfigReady(firebaseConfig)) {
+        setOnlineStatus("Multijugador: falta configurar Firebase en config.js");
+        return;
+    }
+
+    const roomFromQuery = new URLSearchParams(window.location.search).get("room") || "";
+    multiplayer.roomId = sanitizeRoomId(roomFromQuery || multiplayerConfig.roomId || "mundo-principal");
+
+    try {
+        const appModule = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+        const dbModule = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js");
+
+        const appName = `girasol-${multiplayer.roomId}`;
+        const existingApp = appModule.getApps().find((item) => item.name === appName);
+        const app = existingApp || appModule.initializeApp(firebaseConfig, appName);
+        const db = dbModule.getDatabase(app);
+        const worldPath = `worlds/${multiplayer.roomId}`;
+
+        multiplayer.firebase = { dbModule, db };
+        multiplayer.refs.playersRef = dbModule.ref(db, `${worldPath}/players`);
+        multiplayer.refs.myPlayerRef = dbModule.ref(db, `${worldPath}/players/${multiplayer.profile.id}`);
+        multiplayer.refs.opsRef = dbModule.ref(db, `${worldPath}/ops`);
+
+        const connectedRef = dbModule.ref(db, ".info/connected");
+        const unsubConnected = dbModule.onValue(connectedRef, (snapshot) => {
+            if (snapshot.val() !== true) {
+                return;
+            }
+
+            dbModule.onDisconnect(multiplayer.refs.myPlayerRef).remove().catch(() => {
+            });
+
+            broadcastLocalPlayerState(true);
+        });
+
+        const unsubPlayers = dbModule.onValue(multiplayer.refs.playersRef, (snapshot) => {
+            const payload = snapshot.val() || {};
+            const aliveIds = new Set();
+
+            Object.entries(payload).forEach(([playerId, playerData]) => {
+                aliveIds.add(playerId);
+                upsertRemotePlayer(playerId, playerData || {});
+            });
+
+            for (const remoteId of multiplayer.remotePlayers.keys()) {
+                if (!aliveIds.has(remoteId)) {
+                    removeRemotePlayer(remoteId);
+                }
+            }
+
+            const totalOnline = Object.keys(payload).length;
+            const roomLabel = multiplayer.roomId;
+            setOnlineStatus(`Sala ${roomLabel}: ${totalOnline} conectado(s)`);
+        });
+
+        const unsubOps = dbModule.onChildAdded(multiplayer.refs.opsRef, (snapshot) => {
+            const op = snapshot.val();
+            if (!op || op.by === multiplayer.profile.id) {
+                return;
+            }
+
+            const x = Number(op.x);
+            const y = Number(op.y);
+            const z = Number(op.z);
+            const id = Number(op.id);
+
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(id)) {
+                return;
+            }
+
+            applyBlockMutation(x, y, z, id, "remote");
+        });
+
+        multiplayer.unsubscribers.push(unsubConnected, unsubPlayers, unsubOps);
+        multiplayer.enabled = true;
+        multiplayer.ready = true;
+        setOnlineStatus(`Sala ${multiplayer.roomId}: multijugador activo`);
+        setBootStatus("Mundo listo. Presiona Entrar al mundo.");
+    } catch (error) {
+        console.error("No se pudo conectar multijugador", error);
+        setOnlineStatus("Multijugador no disponible. Sigues en modo solo.");
+    }
+}
+
+function broadcastLocalPlayerState(force = false) {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.refs.myPlayerRef) {
+        return;
+    }
+
+    const now = performance.now();
+    if (!force && now - multiplayer.lastBroadcastMs < multiplayer.sendIntervalMs) {
+        return;
+    }
+
+    multiplayer.lastBroadcastMs = now;
+
+    const cameraHolder = controls.getObject();
+    const payload = {
+        label: multiplayer.profile.label,
+        displayName: multiplayer.profile.displayName,
+        color: multiplayer.profile.color,
+        x: Number(state.playerPosition.x.toFixed(3)),
+        y: Number(state.playerPosition.y.toFixed(3)),
+        z: Number(state.playerPosition.z.toFixed(3)),
+        yaw: Number(cameraHolder.rotation.y.toFixed(4)),
+        pitch: Number(camera.rotation.x.toFixed(4)),
+        started: state.worldStarted,
+        updatedAt: Date.now()
+    };
+
+    multiplayer.firebase.dbModule.set(multiplayer.refs.myPlayerRef, payload).catch((error) => {
+        console.warn("No pude publicar posicion de jugador", error);
+    });
+}
+
+function publishBlockMutation(x, y, z, id) {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.refs.opsRef) {
+        return;
+    }
+
+    const payload = {
+        x,
+        y,
+        z,
+        id,
+        by: multiplayer.profile.id,
+        at: Date.now()
+    };
+
+    multiplayer.firebase.dbModule.push(multiplayer.refs.opsRef, payload).catch((error) => {
+        console.warn("No pude sincronizar bloque", error);
+    });
+}
+
+function applyBlockMutation(x, y, z, id, origin = "local") {
+    if (!inWorldBounds(x, y, z)) {
+        return;
+    }
+
+    if (getBlock(x, y, z) === id) {
+        return;
+    }
+
+    setBlock(x, y, z, id);
+    rebuildWorldMeshes();
+
+    if (origin === "local") {
+        publishBlockMutation(x, y, z, id);
+    }
 }
 
 function blockKey(x, y, z) {
@@ -479,8 +942,7 @@ function attemptMineOrPlace(isPlacing) {
             return;
         }
 
-        setBlock(lookup.x, lookup.y, lookup.z, BLOCK.AIR);
-        rebuildWorldMeshes();
+        applyBlockMutation(lookup.x, lookup.y, lookup.z, BLOCK.AIR, "local");
         return;
     }
 
@@ -514,8 +976,7 @@ function attemptMineOrPlace(isPlacing) {
         return;
     }
 
-    setBlock(placeX, placeY, placeZ, selectedBlockId());
-    rebuildWorldMeshes();
+    applyBlockMutation(placeX, placeY, placeZ, selectedBlockId(), "local");
 }
 
 function setSelectedHotbar(index) {
@@ -609,6 +1070,9 @@ function animate() {
         updatePlayer(delta);
     }
 
+    updateRemotePlayers(delta);
+    broadcastLocalPlayerState();
+
     updateHud();
     renderer.render(scene, camera);
 }
@@ -639,6 +1103,7 @@ function init() {
 
     refreshHotbarUi();
     setupEvents();
+    setupRealtimeMultiplayer();
     state.worldReady = true;
     setBootStatus("Mundo listo. Presiona Entrar al mundo.");
     animate();

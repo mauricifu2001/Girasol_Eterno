@@ -63,6 +63,12 @@ body {
     color: #d9d2c3;
 }
 
+#onlineStatus {
+    margin-top: 4px;
+    font-size: 0.72rem;
+    color: #f4cf85;
+}
+
 #crosshair {
     position: fixed;
     left: 50%;
