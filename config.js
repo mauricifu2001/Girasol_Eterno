@@ -209,6 +209,12 @@ window.appConfig = {
                     backLabel: "Volver",
                     games: [
                         {
+                            title: "Nuestro Mundo",
+                            note: "Juego cooperativo que estamos integrando en nuestro portal.",
+                            tag: "Co-op",
+                            url: "juego.html?v=3"
+                        },
+                        {
                             title: "JKLM.fun",
                             note: "Para jugar juntos en vivo cuando se nos antoje.",
                             tag: "Multiplayer",

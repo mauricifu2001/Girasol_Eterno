@@ -677,7 +677,7 @@ function ensureSoundtrack() {
 
     if (!state.soundtrack) {
         const audio = new Audio(soundtrackConfig.src);
-        audio.preload = "auto";
+        audio.preload = "none";
         audio.loop = soundtrackConfig.loop !== false;
         audio.volume = clamp(Number(soundtrackConfig.volume ?? 0.16), 0, 1);
         state.soundtrack = audio;
@@ -1925,7 +1925,6 @@ async function buildAuthorizedMatcher() {
 
 async function initializePortal() {
     await renderStory();
-    ensureSoundtrack();
     stopSoundtrack();
 
     if (restorePortalSessionIfAvailable()) {

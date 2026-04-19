@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Nuestro Mundo 3D</title>
+    <meta name="description" content="Sandbox 3D tipo voxel para probar mecanicas estilo Minecraft.">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <link rel="stylesheet" href="juego.css">
+</head>
+<body>
+    <canvas id="gameCanvas" aria-label="Juego 3D"></canvas>
+
+    <div id="hudTop" class="panel">
+        <p class="title">Nuestro Mundo 3D</p>
+        <p id="coords">X: 0 Y: 0 Z: 0</p>
+        <p id="helpMini">WASD mover · Mouse mirar · Click izq minar · Click der colocar · Espacio saltar</p>
+    </div>
+
+    <div id="crosshair" aria-hidden="true"></div>
+
+    <div id="hotbar" class="panel" aria-label="Bloques disponibles"></div>
+
+    <a id="backButton" href="arcade.html">Volver al Arcade</a>
+
+    <div id="overlay">
+        <div class="panel overlay-card">
+            <h1>Sandbox 3D</h1>
+            <p>Prototipo estilo Minecraft para que iteremos rapido en local.</p>
+            <p>Controles: WASD, Mouse, Espacio, Shift, 1-6 para bloques.</p>
+            <p id="bootStatus">Preparando motor 3D...</p>
+            <button id="startButton" type="button">Entrar al mundo</button>
+        </div>
+    </div>
+
+    <script type="module" src="juego.js?v=3"></script>
+</body>
+</html>

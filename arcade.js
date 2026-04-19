@@ -29,6 +29,11 @@ const ARCADE_HIDDEN_GAMES_STORAGE_KEY = "girasolArcadeHiddenGames";
 
 let roomSoundtrack = null;
 
+function isLocalPreviewHost() {
+    const host = String(window.location.hostname || "").toLowerCase();
+    return host === "localhost" || host === "127.0.0.1";
+}
+
 function clamp(value, min, max) {
     return Math.min(Math.max(value, min), max);
 }
@@ -62,7 +67,7 @@ function getDesiredRoomSoundtrackVolume() {
 function ensureRoomSoundtrack() {
     if (!roomSoundtrack) {
         const audio = new Audio(ROOM_SOUNDTRACK_SRC);
-        audio.preload = "auto";
+        audio.preload = "none";
         audio.loop = true;
         roomSoundtrack = audio;
     }
@@ -109,6 +114,10 @@ function pauseRoomSoundtrack() {
 }
 
 function bindRoomSoundtrackAutoplay() {
+    if (isLocalPreviewHost()) {
+        return;
+    }
+
     const attempt = () => {
         playRoomSoundtrack().then((played) => {
             if (!played) {
@@ -122,7 +131,6 @@ function bindRoomSoundtrackAutoplay() {
 
     window.addEventListener("pointerdown", attempt, { passive: true });
     window.addEventListener("keydown", attempt);
-    attempt();
 }
 
 function escapeHtml(value) {
@@ -147,13 +155,19 @@ function normalizeGameUrl(rawUrl) {
     }
 
     try {
-        const url = new URL(text);
+        const hasScheme = /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(text);
+        const url = hasScheme ? new URL(text) : new URL(text, window.location.href);
 
         if (url.protocol !== "http:" && url.protocol !== "https:") {
             return null;
         }
 
         url.hash = "";
+
+        if (!hasScheme && url.origin === window.location.origin) {
+            return `${url.pathname}${url.search}`;
+        }
+
         return url.toString();
     } catch (error) {
         return null;
@@ -167,7 +181,7 @@ function getGameUrlKey(rawUrl) {
     }
 
     try {
-        const url = new URL(normalized);
+        const url = new URL(normalized, window.location.href);
         const host = url.host.toLowerCase();
         const protocol = url.protocol.toLowerCase();
         const search = url.search;
@@ -326,13 +340,16 @@ function renderGames(games) {
             const safeUrl = escapeHtml(game.url);
             const safeKey = escapeHtml(game.key || getGameUrlKey(game.url) || "");
             const safeSource = escapeHtml(game.source || "base");
+            const isLocalRoute = String(game.url || "").startsWith("/");
+            const linkTarget = isLocalRoute ? "_self" : "_blank";
+            const relValue = isLocalRoute ? "" : "noopener";
 
             return `
                 <a
                     class="arcade-mini-card glass"
                     href="${safeUrl}"
-                    target="_blank"
-                    rel="noopener"
+                    target="${linkTarget}"
+                    rel="${relValue}"
                     data-arcade-url="${safeUrl}"
                     data-arcade-key="${safeKey}"
                     data-arcade-source="${safeSource}"
@@ -474,7 +491,7 @@ function setupArcadeEditor() {
             }
 
             if (!normalizedUrl) {
-                setGameModalStatus("Ese link no parece valido. Usa un enlace http(s). ");
+                setGameModalStatus("Ese link no parece valido. Usa un enlace http(s) o una ruta local como juego.html.");
                 return;
             }
 
@@ -514,6 +531,11 @@ function setupArcadeEditor() {
         grid.addEventListener("click", (event) => {
             const removeTrigger = event.target.closest('[data-arcade-action="remove"]');
             if (!removeTrigger) {
+                const cardLink = event.target.closest(".arcade-mini-card");
+                if (cardLink) {
+                    pauseRoomSoundtrack();
+                }
+
                 return;
             }
 
