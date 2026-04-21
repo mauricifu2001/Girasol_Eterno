@@ -70,6 +70,32 @@ const PROP_TYPE = {
     PLANTER: "planter"
 };
 const VALID_PROP_TYPES = new Set(Object.values(PROP_TYPE));
+const PROP_PROFILES = {
+    [PROP_TYPE.CHAIR]: {
+        halfExtents: { x: 0.28, z: 0.28 },
+        minY: 0,
+        maxY: 0.99,
+        supportY: 0.49
+    },
+    [PROP_TYPE.TABLE]: {
+        halfExtents: { x: 0.49, z: 0.47 },
+        minY: 0,
+        maxY: 0.78,
+        supportY: 0.76
+    },
+    [PROP_TYPE.LAMP]: {
+        halfExtents: { x: 0.16, z: 0.16 },
+        minY: 0,
+        maxY: 1.02,
+        supportY: 1
+    },
+    [PROP_TYPE.PLANTER]: {
+        halfExtents: { x: 0.27, z: 0.27 },
+        minY: 0,
+        maxY: 0.62,
+        supportY: 0.42
+    }
+};
 
 const HOTBAR_SIZE = 8;
 
@@ -213,6 +239,12 @@ const SUN_ORBIT_HEIGHT = 98;
 const LAMP_INTENSITY_LEVELS = [0, 0.85, 1.7, 2.75];
 const LAMP_DISTANCE_LEVELS = [0, 9, 13, 17];
 const LAMP_BULB_EMISSIVE_LEVELS = [0.01, 0.28, 0.56, 0.92];
+const LAMP_SHADOW_MAP_SIZE = 128;
+const MAX_SHADOW_CASTING_LAMPS = 3;
+const LAMP_SHADOW_MAX_DISTANCE = 26;
+const LAMP_SHADOW_REFRESH_SECONDS = 0.24;
+const SKY_SHADOW_REFRESH_SECONDS = 0.28;
+const PROP_ROTATION_STEP = Math.PI * 0.5;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
 const SKY_DUSK_COLOR = new THREE.Color(0xffb579);
 const SKY_NIGHT_COLOR = new THREE.Color(0x091327);
@@ -278,7 +310,7 @@ renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.02;
+renderer.toneMappingExposure = 1.12;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
@@ -288,11 +320,13 @@ scene.add(controls.getObject());
 
 const hemiLight = new THREE.HemisphereLight(0xcfe7ff, 0x5f6177, 0.32);
 scene.add(hemiLight);
+const ambientFill = new THREE.AmbientLight(0xffffff, 0.22);
+scene.add(ambientFill);
 
 const sun = new THREE.DirectionalLight(0xffffff, 0.9);
 sun.position.set(16, 30, 8);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.near = 20;
 sun.shadow.camera.far = 280;
 sun.shadow.camera.left = -64;
@@ -301,11 +335,13 @@ sun.shadow.camera.top = 64;
 sun.shadow.camera.bottom = -64;
 sun.shadow.bias = -0.0005;
 sun.shadow.normalBias = 0.02;
+sun.shadow.autoUpdate = false;
+sun.shadow.needsUpdate = true;
 scene.add(sun);
 
 const moon = new THREE.DirectionalLight(0x8ba9ff, 0.16);
 moon.castShadow = true;
-moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.mapSize.set(512, 512);
 moon.shadow.camera.near = 20;
 moon.shadow.camera.far = 240;
 moon.shadow.camera.left = -54;
@@ -314,6 +350,8 @@ moon.shadow.camera.top = 54;
 moon.shadow.camera.bottom = -54;
 moon.shadow.bias = -0.00035;
 moon.shadow.normalBias = 0.016;
+moon.shadow.autoUpdate = false;
+moon.shadow.needsUpdate = true;
 scene.add(moon);
 
 const sunTarget = new THREE.Object3D();
@@ -524,9 +562,21 @@ function createBlockMaterial(blockId, color) {
     }
 
     if (blockId === BLOCK.WATER) {
+        if (material.map) {
+            material.map.dispose();
+            material.map = null;
+        }
+        material.color.setHex(0x4b86ea);
+        material.emissive.setHex(0x123a74);
+        material.emissiveIntensity = 0.14;
+        material.roughness = 0.18;
+        material.metalness = 0.03;
         material.transparent = true;
-        material.opacity = 0.58;
+        material.opacity = 0.76;
         material.depthWrite = false;
+        material.depthTest = true;
+        material.alphaTest = 0.01;
+        material.premultipliedAlpha = true;
         material.side = THREE.DoubleSide;
     }
 
@@ -664,7 +714,11 @@ const skyState = {
     sunGlow: null,
     moonCore: null,
     moonGlow: null,
-    cycleSeconds: DAY_DURATION_SECONDS * 0.35
+    cycleSeconds: DAY_DURATION_SECONDS * 0.35,
+    shadowRefreshTimer: 0,
+    lastShadowAnchorX: 0,
+    lastShadowAnchorZ: 0,
+    lastShadowSunY: 0
 };
 
 const uiState = {
@@ -683,13 +737,17 @@ const economyState = {
 };
 
 const propState = {
-    nextId: 1
+    nextId: 1,
+    shadowRefreshTimer: 0,
+    shadowDirty: true,
+    cullingDirty: true
 };
 
 const floraState = {
     sunflowers: new Map(),
     nextId: 1,
-    spawnTimer: 3
+    spawnTimer: 3,
+    lastHarvestAt: 0
 };
 
 let draggedInventoryItemId = "";
@@ -1228,9 +1286,10 @@ function updateTargetedBlockUi() {
         raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
         raycaster.far = MAX_REACH;
         const flowerHits = raycaster.intersectObjects(sunflowerRoot.children, true);
-        if (flowerHits.length > 0) {
-            flowerDistance = flowerHits[0].distance;
-            flowerId = String(findAncestorUserDataValue(flowerHits[0].object, "sunflowerId") || "");
+        const nearestFlowerHit = getFirstVisibleRayHit(flowerHits);
+        if (nearestFlowerHit) {
+            flowerDistance = nearestFlowerHit.distance;
+            flowerId = String(findAncestorUserDataValue(nearestFlowerHit.object, "sunflowerId") || "");
         }
     }
 
@@ -1239,7 +1298,7 @@ function updateTargetedBlockUi() {
     if (flowerId && flowerDistance <= blockDistance + 0.001 && flowerDistance <= propDistance + 0.001) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
-            targetBlockLabelEl.textContent = "Girasol: click izq para cosechar";
+            targetBlockLabelEl.textContent = "Girasol: tecla E para cosechar";
             targetBlockLabelEl.classList.remove("hidden");
         }
         return;
@@ -1398,6 +1457,19 @@ function updateSky(deltaSeconds) {
     sun.target.updateMatrixWorld();
     moon.target.updateMatrixWorld();
 
+    skyState.shadowRefreshTimer -= deltaSeconds;
+    const movedX = Math.abs(anchorX - skyState.lastShadowAnchorX);
+    const movedZ = Math.abs(anchorZ - skyState.lastShadowAnchorZ);
+    const sunYDelta = Math.abs(sunDir.y - skyState.lastShadowSunY);
+    if (skyState.shadowRefreshTimer <= 0 || movedX > 1.25 || movedZ > 1.25 || sunYDelta > 0.025) {
+        sun.shadow.needsUpdate = true;
+        moon.shadow.needsUpdate = true;
+        skyState.shadowRefreshTimer = SKY_SHADOW_REFRESH_SECONDS;
+        skyState.lastShadowAnchorX = anchorX;
+        skyState.lastShadowAnchorZ = anchorZ;
+        skyState.lastShadowSunY = sunDir.y;
+    }
+
     if (skyState.sunCore) {
         skyState.sunCore.position.set(sunPosX, sunPosY, sunPosZ);
     }
@@ -1421,9 +1493,10 @@ function updateSky(deltaSeconds) {
     scene.background.copy(skyColorScratch);
     scene.fog.color.copy(skyColorScratch);
 
-    sun.intensity = 0.03 + dayFactor * 1.18;
-    moon.intensity = 0.02 + nightFactor * 0.34;
-    hemiLight.intensity = 0.05 + dayFactor * 0.27 + nightFactor * 0.06;
+    sun.intensity = 0.14 + dayFactor * 1.08;
+    moon.intensity = 0.03 + nightFactor * 0.26;
+    hemiLight.intensity = 0.2 + dayFactor * 0.4 + nightFactor * 0.1;
+    ambientFill.intensity = 0.08 + dayFactor * 0.2 + nightFactor * 0.12;
     sun.color.setHSL(0.1, 0.85 - twilightFactor * 0.28, 0.56 + twilightFactor * 0.08);
     moon.color.setHSL(0.62, 0.45, 0.62);
 
@@ -1758,6 +1831,19 @@ function updateWildlife(deltaSeconds) {
     }
 
     for (const [rabbitId, rabbit] of Array.from(wildlifeState.rabbits.entries())) {
+        const dx = rabbit.x - state.playerPosition.x;
+        const dz = rabbit.z - state.playerPosition.z;
+        if (dx * dx + dz * dz > RABBIT_DESPAWN_DISTANCE * RABBIT_DESPAWN_DISTANCE) {
+            removeRabbitEntity(rabbitId);
+            continue;
+        }
+
+        const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(rabbit.x, rabbit.z);
+        rabbit.node.visible = isVisibleInLoadedChunk;
+        if (!isVisibleInLoadedChunk) {
+            continue;
+        }
+
         updateSingleRabbit(rabbitId, rabbit, deltaSeconds);
     }
 }
@@ -1794,6 +1880,143 @@ function getPropLabel(propType) {
     return "Objeto";
 }
 
+function getPropProfile(propType) {
+    return PROP_PROFILES[propType] || PROP_PROFILES[PROP_TYPE.PLANTER];
+}
+
+function getRotatedPropHalfExtents(propType, yaw = 0) {
+    const profile = getPropProfile(propType);
+    const base = profile.halfExtents || { x: 0.25, z: 0.25 };
+    const normalized = Math.abs(Math.round(normalizeYawRadians(yaw) / PROP_ROTATION_STEP)) % 2;
+    if (normalized === 1) {
+        return { x: base.z, z: base.x };
+    }
+
+    return { x: base.x, z: base.z };
+}
+
+function getPlacedPropBoundsAt(propType, x, y, z, yaw = 0, expand = 0) {
+    const profile = getPropProfile(propType);
+    const extents = getRotatedPropHalfExtents(propType, yaw);
+    return {
+        minX: x - extents.x - expand,
+        maxX: x + extents.x + expand,
+        minY: y + profile.minY - expand,
+        maxY: y + profile.maxY + expand,
+        minZ: z - extents.z - expand,
+        maxZ: z + extents.z + expand
+    };
+}
+
+function getPlacedPropBounds(placed, expand = 0) {
+    if (!placed) {
+        return null;
+    }
+    return getPlacedPropBoundsAt(
+        placed.propType,
+        Number(placed.x) || 0,
+        Number(placed.y) || 0,
+        Number(placed.z) || 0,
+        Number(placed.yaw) || 0,
+        expand
+    );
+}
+
+function getPlacedPropSupportY(placed) {
+    if (!placed) {
+        return 0;
+    }
+    const profile = getPropProfile(placed.propType);
+    return (Number(placed.y) || 0) + profile.supportY;
+}
+
+function isWorldPositionChunkLoaded(x, z) {
+    const cx = worldToChunkCoord(x);
+    const cz = worldToChunkCoord(z);
+    return chunkMap.has(chunkKey(cx, cz));
+}
+
+function refreshSinglePropVisibility(placed) {
+    if (!placed?.node) {
+        return;
+    }
+    placed.chunkKey = chunkKey(worldToChunkCoord(placed.x), worldToChunkCoord(placed.z));
+    placed.node.visible = isWorldPositionChunkLoaded(placed.x, placed.z);
+}
+
+function updatePlacedPropCulling() {
+    for (const placed of placedProps.values()) {
+        refreshSinglePropVisibility(placed);
+    }
+    propState.cullingDirty = false;
+}
+
+function intersectsAabb(a, b) {
+    if (!a || !b) {
+        return false;
+    }
+    return (
+        a.minX < b.maxX
+        && a.maxX > b.minX
+        && a.minY < b.maxY
+        && a.maxY > b.minY
+        && a.minZ < b.maxZ
+        && a.maxZ > b.minZ
+    );
+}
+
+function isObjectHierarchyVisible(object) {
+    let current = object;
+    while (current) {
+        if (current.visible === false) {
+            return false;
+        }
+        current = current.parent || null;
+    }
+    return true;
+}
+
+function getFirstVisibleRayHit(hits) {
+    for (const hit of hits || []) {
+        if (isObjectHierarchyVisible(hit.object)) {
+            return hit;
+        }
+    }
+    return null;
+}
+
+function getWorldNormalFromRayHit(hit) {
+    const localNormal = hit?.face?.normal;
+    if (!localNormal) {
+        return null;
+    }
+
+    const worldNormal = localNormal.clone();
+    if (hit.object?.matrixWorld) {
+        worldNormal.transformDirection(hit.object.matrixWorld);
+    }
+    return worldNormal.normalize();
+}
+
+function findNearestPlacedPropOfType(propType, x, z, maxDistance = 2.3) {
+    const maxDistanceSq = maxDistance * maxDistance;
+    let nearest = null;
+    let nearestSq = Number.POSITIVE_INFINITY;
+    for (const placed of placedProps.values()) {
+        if (placed.propType !== propType) {
+            continue;
+        }
+        const dx = placed.x - x;
+        const dz = placed.z - z;
+        const distanceSq = dx * dx + dz * dz;
+        if (distanceSq < nearestSq && distanceSq <= maxDistanceSq) {
+            nearest = placed;
+            nearestSq = distanceSq;
+        }
+    }
+    return nearest;
+}
+
 function normalizeLampLevel(value) {
     const numeric = Math.floor(Number(value));
     if (!Number.isFinite(numeric) || numeric < 0) {
@@ -1810,6 +2033,62 @@ function getLampIntensityLabel(level) {
     return "Maxima";
 }
 
+function normalizeYawRadians(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return 0;
+    }
+
+    let yaw = numeric % (Math.PI * 2);
+    if (yaw > Math.PI) {
+        yaw -= Math.PI * 2;
+    } else if (yaw < -Math.PI) {
+        yaw += Math.PI * 2;
+    }
+    return yaw;
+}
+
+function snapYawToStep(value, step = PROP_ROTATION_STEP) {
+    const normalized = normalizeYawRadians(value);
+    const snapped = Math.round(normalized / step) * step;
+    return normalizeYawRadians(snapped);
+}
+
+function resolvePropPlacementYaw(propType, propX, propZ) {
+    let yaw = controls.getObject().rotation.y || 0;
+    if (propType === PROP_TYPE.CHAIR) {
+        const nearestTable = findNearestPlacedPropOfType(PROP_TYPE.TABLE, propX, propZ, 2.25);
+        if (nearestTable) {
+            const lookDx = nearestTable.x - propX;
+            const lookDz = nearestTable.z - propZ;
+            if (lookDx * lookDx + lookDz * lookDz > 0.0001) {
+                yaw = Math.atan2(lookDx, lookDz);
+                return snapYawToStep(yaw);
+            }
+        }
+
+        const dx = state.playerPosition.x - propX;
+        const dz = state.playerPosition.z - propZ;
+        const distanceSq = dx * dx + dz * dz;
+        if (distanceSq > 0.0001) {
+            yaw = Math.atan2(dx, dz);
+        }
+    } else if (propType === PROP_TYPE.TABLE) {
+        const nearestTable = findNearestPlacedPropOfType(PROP_TYPE.TABLE, propX, propZ, 1.55);
+        if (nearestTable) {
+            yaw = nearestTable.yaw || 0;
+        } else {
+            const dx = state.playerPosition.x - propX;
+            const dz = state.playerPosition.z - propZ;
+            if (dx * dx + dz * dz > 0.0001) {
+                yaw = Math.atan2(dx, dz);
+            }
+        }
+    }
+
+    return snapYawToStep(yaw);
+}
+
 function createPlacedPropNode(propType) {
     const root = new THREE.Group();
 
@@ -1821,11 +2100,11 @@ function createPlacedPropNode(propType) {
         root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: 0.2 }, 0x7e5836));
         root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: 0.2 }, 0x7e5836));
     } else if (propType === PROP_TYPE.TABLE) {
-        root.add(createDetailPart({ x: 0.94, y: 0.08, z: 0.64 }, { x: 0, y: 0.72, z: 0 }, 0xb58657));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.36, y: 0.34, z: -0.22 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.36, y: 0.34, z: -0.22 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.36, y: 0.34, z: 0.22 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.36, y: 0.34, z: 0.22 }, 0x8c633e));
+        root.add(createDetailPart({ x: 0.98, y: 0.08, z: 0.94 }, { x: 0, y: 0.72, z: 0 }, 0xb58657));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: -0.36 }, 0x8c633e));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: -0.36 }, 0x8c633e));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: 0.36 }, 0x8c633e));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: 0.36 }, 0x8c633e));
     } else if (propType === PROP_TYPE.LAMP) {
         root.add(createDetailPart({ x: 0.2, y: 0.05, z: 0.2 }, { x: 0, y: 0.03, z: 0 }, 0x6f573b));
         root.add(createDetailPart({ x: 0.06, y: 0.68, z: 0.06 }, { x: 0, y: 0.37, z: 0 }, 0x5d4a35));
@@ -1851,12 +2130,14 @@ function createPlacedPropNode(propType) {
 
         const pointLight = new THREE.PointLight(0xffe6aa, 0, 0, 2);
         pointLight.position.set(0, 0.82, 0);
-        pointLight.castShadow = true;
-        pointLight.shadow.mapSize.set(512, 512);
+        pointLight.castShadow = false;
+        pointLight.shadow.mapSize.set(LAMP_SHADOW_MAP_SIZE, LAMP_SHADOW_MAP_SIZE);
         pointLight.shadow.bias = -0.0006;
         pointLight.shadow.normalBias = 0.022;
         pointLight.shadow.camera.near = 0.1;
         pointLight.shadow.camera.far = 24;
+        pointLight.shadow.autoUpdate = false;
+        pointLight.shadow.needsUpdate = true;
         root.add(pointLight);
         root.userData.lampPointLight = pointLight;
         root.userData.lampBulbMaterial = bulbMaterial;
@@ -1883,6 +2164,7 @@ function applyLampVisualState(placed, lampLevel, persist = true) {
         pointLight.intensity = LAMP_INTENSITY_LEVELS[normalizedLevel];
         pointLight.distance = LAMP_DISTANCE_LEVELS[normalizedLevel];
         pointLight.visible = normalizedLevel > 0;
+        pointLight.shadow.needsUpdate = normalizedLevel > 0;
     }
 
     if (bulbMaterial) {
@@ -1890,10 +2172,76 @@ function applyLampVisualState(placed, lampLevel, persist = true) {
         bulbMaterial.emissiveIntensity = LAMP_BULB_EMISSIVE_LEVELS[normalizedLevel];
     }
 
+    markLampShadowsDirty();
     if (persist) {
         scheduleWorldSave();
     }
     return true;
+}
+
+function markLampShadowsDirty() {
+    propState.shadowDirty = true;
+    propState.shadowRefreshTimer = 0;
+}
+
+function updateActiveLampShadowCasters(deltaSeconds) {
+    propState.shadowRefreshTimer -= deltaSeconds;
+    if (!propState.shadowDirty && propState.shadowRefreshTimer > 0) {
+        return;
+    }
+
+    const forceShadowRefresh = propState.shadowDirty;
+    propState.shadowDirty = false;
+    propState.shadowRefreshTimer = LAMP_SHADOW_REFRESH_SECONDS;
+
+    const candidates = [];
+    const maxDistanceSq = LAMP_SHADOW_MAX_DISTANCE * LAMP_SHADOW_MAX_DISTANCE;
+    const playerX = state.playerPosition.x;
+    const playerY = state.playerPosition.y;
+    const playerZ = state.playerPosition.z;
+
+    for (const placed of placedProps.values()) {
+        if (placed.propType !== PROP_TYPE.LAMP) {
+            continue;
+        }
+
+        const lampLevel = normalizeLampLevel(placed.lampLevel);
+        const dx = placed.x - playerX;
+        const dy = placed.y - playerY;
+        const dz = placed.z - playerZ;
+        const distanceSq = dx * dx + dy * dy + dz * dz;
+        const pointLight = placed.node?.userData?.lampPointLight || null;
+        if (!pointLight) {
+            continue;
+        }
+
+        if (placed.node?.visible === false) {
+            if (pointLight.castShadow) {
+                pointLight.castShadow = false;
+                pointLight.shadow.needsUpdate = true;
+            }
+            continue;
+        }
+
+        if (distanceSq <= maxDistanceSq) {
+            candidates.push({ placed, pointLight, distanceSq, lampLevel });
+        } else if (pointLight.castShadow) {
+            pointLight.castShadow = false;
+            pointLight.shadow.needsUpdate = true;
+        }
+    }
+
+    candidates.sort((a, b) => a.distanceSq - b.distanceSq);
+    for (let i = 0; i < candidates.length; i += 1) {
+        const shouldCast = i < MAX_SHADOW_CASTING_LAMPS;
+        const pointLight = candidates[i].pointLight;
+        if (pointLight.castShadow !== shouldCast) {
+            pointLight.castShadow = shouldCast;
+            pointLight.shadow.needsUpdate = true;
+        } else if (shouldCast && (forceShadowRefresh || candidates[i].lampLevel > 0)) {
+            pointLight.shadow.needsUpdate = true;
+        }
+    }
 }
 
 function allocateNextPropId() {
@@ -1916,7 +2264,7 @@ function normalizePropEntry(rawEntry, fallbackId = "") {
     const y = Number(rawEntry?.y);
     const z = Number(rawEntry?.z);
     const yawRaw = Number(rawEntry?.yaw);
-    const yaw = Number.isFinite(yawRaw) ? yawRaw : 0;
+    const yaw = Number.isFinite(yawRaw) ? snapYawToStep(yawRaw) : 0;
     if (!id || !VALID_PROP_TYPES.has(propType) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(yaw)) {
         return null;
     }
@@ -2015,6 +2363,7 @@ function addPlacedPropEntry(entry, origin = "local") {
             existing.yaw = yaw;
             existing.node.position.set(x, y, z);
             existing.node.rotation.y = yaw;
+            refreshSinglePropVisibility(existing);
             if (propType === PROP_TYPE.LAMP) {
                 applyLampVisualState(existing, lampLevel, false);
             } else {
@@ -2022,6 +2371,8 @@ function addPlacedPropEntry(entry, origin = "local") {
             }
 
             bumpNextPropIdFromValue(id);
+            markLampShadowsDirty();
+            propState.cullingDirty = true;
             if (origin === "local") {
                 scheduleWorldSave();
                 publishPropUpsert(id);
@@ -2044,15 +2395,19 @@ function addPlacedPropEntry(entry, origin = "local") {
         z,
         yaw,
         lampLevel,
+        chunkKey: chunkKey(worldToChunkCoord(x), worldToChunkCoord(z)),
         node
     };
     placedProps.set(id, placedEntry);
+    refreshSinglePropVisibility(placedEntry);
 
     if (propType === PROP_TYPE.LAMP) {
         applyLampVisualState(placedEntry, placedEntry.lampLevel, false);
     }
 
     bumpNextPropIdFromValue(id);
+    markLampShadowsDirty();
+    propState.cullingDirty = true;
     if (origin === "local") {
         scheduleWorldSave();
         publishPropUpsert(id);
@@ -2072,9 +2427,32 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
         return false;
     }
 
+    const supportY = getPlacedPropSupportY(placed);
+    const supportBounds = getPlacedPropBounds(placed, 0.02);
+    const dependentIds = [];
+    for (const other of placedProps.values()) {
+        if (other.id === id) {
+            continue;
+        }
+        if (Math.abs(other.y - supportY) > 0.12) {
+            continue;
+        }
+        if (
+            supportBounds
+            && other.x > supportBounds.minX
+            && other.x < supportBounds.maxX
+            && other.z > supportBounds.minZ
+            && other.z < supportBounds.maxZ
+        ) {
+            dependentIds.push(other.id);
+        }
+    }
+
     disposePropNodeResources(placed.node);
     propsRoot.remove(placed.node);
     placedProps.delete(id);
+    markLampShadowsDirty();
+    propState.cullingDirty = true;
 
     if (origin === "local") {
         scheduleWorldSave();
@@ -2085,6 +2463,10 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
         showToast(`${getPropLabel(placed.propType)} guardado al inventario`, "success", 950);
     }
 
+    for (const dependentId of dependentIds) {
+        removePlacedPropEntry(dependentId, origin, false);
+    }
+
     return true;
 }
 
@@ -2092,6 +2474,7 @@ function clearPlacedProps() {
     for (const propId of Array.from(placedProps.keys())) {
         removePlacedPropEntry(propId, "remote", false);
     }
+    markLampShadowsDirty();
 }
 
 function removePropsSupportedByBlock(x, y, z, origin = "local") {
@@ -2295,6 +2678,12 @@ function updateSunflowers(deltaSeconds) {
             continue;
         }
 
+        const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(flower.x, flower.z);
+        flower.node.visible = isVisibleInLoadedChunk;
+        if (!isVisibleInLoadedChunk) {
+            continue;
+        }
+
         flower.swayPhase += deltaSeconds * flower.swaySpeed;
         flower.node.rotation.z = Math.sin(flower.swayPhase) * 0.06;
     }
@@ -2419,7 +2808,7 @@ function getMedian(values) {
 }
 
 function computeTerrainReacomodoShift(edits, props = []) {
-    const foundationByColumn = new Map();
+    const solidYByColumn = new Map();
     for (const item of edits) {
         if (!Array.isArray(item) || item.length !== 2) {
             continue;
@@ -2433,14 +2822,15 @@ function computeTerrainReacomodoShift(edits, props = []) {
         }
 
         const columnKey = `${parsed.x}|${parsed.z}`;
-        const current = foundationByColumn.get(columnKey);
-        if (current === undefined || parsed.y < current) {
-            foundationByColumn.set(columnKey, parsed.y);
+        const values = solidYByColumn.get(columnKey) || [];
+        values.push(parsed.y);
+        if (!solidYByColumn.has(columnKey)) {
+            solidYByColumn.set(columnKey, values);
         }
     }
 
     const deltas = [];
-    for (const [columnKey, minY] of foundationByColumn.entries()) {
+    for (const [columnKey, values] of solidYByColumn.entries()) {
         const [xText, zText] = columnKey.split("|");
         const x = Number(xText);
         const z = Number(zText);
@@ -2448,8 +2838,25 @@ function computeTerrainReacomodoShift(edits, props = []) {
             continue;
         }
 
-        const surfaceY = getColumnInfo(x, z).height;
-        deltas.push(minY - (surfaceY + 1));
+        const targetY = getColumnInfo(x, z).height + 1;
+        let nearestY = null;
+        let nearestDistance = Number.POSITIVE_INFINITY;
+        for (const rawY of values) {
+            const y = Number(rawY);
+            if (!Number.isFinite(y)) {
+                continue;
+            }
+            const distance = Math.abs(y - targetY);
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearestY = y;
+            }
+        }
+        if (nearestY === null) {
+            continue;
+        }
+
+        deltas.push(nearestY - targetY);
     }
 
     if (deltas.length < TERRAIN_REACOMODO_MIN_COLUMNS) {
@@ -2474,7 +2881,14 @@ function computeTerrainReacomodoShift(edits, props = []) {
     const trim = Math.floor(sorted.length * 0.2);
     const core = sorted.slice(trim, sorted.length - trim);
     const median = getMedian(core.length > 0 ? core : sorted);
-    const shift = clampInt(-median, -TERRAIN_REACOMODO_MAX_SHIFT, TERRAIN_REACOMODO_MAX_SHIFT);
+    let shift = clampInt(-median, -TERRAIN_REACOMODO_MAX_SHIFT, TERRAIN_REACOMODO_MAX_SHIFT);
+    const safetyIndex = Math.max(0, Math.min(sorted.length - 1, Math.floor(sorted.length * 0.3)));
+    const safetyDelta = sorted[safetyIndex];
+    const minSafeShift = clampInt(Math.ceil(-safetyDelta), -TERRAIN_REACOMODO_MAX_SHIFT, TERRAIN_REACOMODO_MAX_SHIFT);
+    if (shift < minSafeShift) {
+        shift = minSafeShift;
+    }
+
     if (Math.abs(shift) < TERRAIN_REACOMODO_MIN_ABS_SHIFT) {
         return 0;
     }
@@ -3521,6 +3935,41 @@ function applyRemotePropsSnapshot(rawPayload) {
     }
 }
 
+function applyRemotePropEntry(propId, rawProp) {
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+
+    if (multiplayer.pendingPropWrites.get(id) === null) {
+        return;
+    }
+
+    const normalized = normalizePropEntry({
+        ...(rawProp || {}),
+        id
+    }, id);
+    if (!normalized) {
+        return;
+    }
+
+    addPlacedPropEntry(normalized, "remote");
+}
+
+function applyRemotePropRemoval(propId) {
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+
+    const pendingValue = multiplayer.pendingPropWrites.get(id);
+    if (pendingValue !== undefined && pendingValue !== null) {
+        return;
+    }
+
+    removePlacedPropEntry(id, "remote", false);
+}
+
 function clearPropSnapshotSubscription() {
     if (typeof multiplayer.propSnapshotUnsubscribe === "function") {
         multiplayer.propSnapshotUnsubscribe();
@@ -3541,8 +3990,25 @@ function subscribePropSnapshot() {
 
     const propsRef = multiplayer.refs.propsRootRef || dbModule.ref(db, `${multiplayer.worldPath}/props`);
     multiplayer.refs.propsRootRef = propsRef;
-    multiplayer.propSnapshotUnsubscribe = dbModule.onValue(propsRef, (snapshot) => {
+    const unsubAdded = dbModule.onChildAdded(propsRef, (snapshot) => {
+        applyRemotePropEntry(snapshot.key || "", snapshot.val());
+    });
+    const unsubChanged = dbModule.onChildChanged(propsRef, (snapshot) => {
+        applyRemotePropEntry(snapshot.key || "", snapshot.val());
+    });
+    const unsubRemoved = dbModule.onChildRemoved(propsRef, (snapshot) => {
+        applyRemotePropRemoval(snapshot.key || "");
+    });
+
+    multiplayer.propSnapshotUnsubscribe = () => {
+        if (typeof unsubAdded === "function") unsubAdded();
+        if (typeof unsubChanged === "function") unsubChanged();
+        if (typeof unsubRemoved === "function") unsubRemoved();
+    };
+
+    dbModule.get(propsRef).then((snapshot) => {
         applyRemotePropsSnapshot(snapshot.val() || {});
+    }).catch(() => {
     });
 }
 
@@ -3740,7 +4206,10 @@ async function migrateTerrainLayoutIfNeeded(dbModule, db, worldPath) {
     const metaSnap = await dbModule.get(metaRef);
     const meta = metaSnap.exists() ? (metaSnap.val() || {}) : {};
     const storedFingerprint = String(meta?.terrainFingerprint || "");
-    if (storedFingerprint === currentFingerprint) {
+    const fingerprintChanged = storedFingerprint !== currentFingerprint;
+    const storedShift = Number(meta?.terrainShiftY || 0);
+    const canAutoCorrect = !fingerprintChanged && Math.abs(storedShift) >= TERRAIN_REACOMODO_MIN_ABS_SHIFT;
+    if (!fingerprintChanged && !canAutoCorrect) {
         return { migrated: false, shiftY: 0 };
     }
 
@@ -3763,11 +4232,15 @@ async function migrateTerrainLayoutIfNeeded(dbModule, db, worldPath) {
     }
 
     const shiftY = computeTerrainReacomodoShift(entries, props);
+    const nextAccumulatedShift = canAutoCorrect ? (storedShift + shiftY) : shiftY;
     const patch = {
         "meta/terrainFingerprint": currentFingerprint,
-        "meta/terrainShiftY": shiftY,
+        "meta/terrainShiftY": nextAccumulatedShift,
         "meta/terrainMigratedAt": Date.now()
     };
+    if (canAutoCorrect) {
+        patch["meta/terrainAutoCorrectedAt"] = Date.now();
+    }
 
     if (!shiftY) {
         await dbModule.update(worldRef, patch);
@@ -4356,6 +4829,80 @@ function removeMeshReferences(mesh) {
     worldRoot.remove(mesh);
 }
 
+function appendWaterFaceGeometry(positions, normals, indices, x, y, z, corners, normal) {
+    const baseIndex = positions.length / 3;
+    for (const corner of corners) {
+        positions.push(x + corner[0], y + corner[1], z + corner[2]);
+        normals.push(normal[0], normal[1], normal[2]);
+    }
+
+    indices.push(
+        baseIndex,
+        baseIndex + 1,
+        baseIndex + 2,
+        baseIndex,
+        baseIndex + 2,
+        baseIndex + 3
+    );
+}
+
+function buildWaterChunkMesh(positions) {
+    if (!Array.isArray(positions) || positions.length === 0) {
+        return null;
+    }
+
+    const waterFaces = [
+        { offset: [1, 0, 0], normal: [1, 0, 0], corners: [[1, 0, 0], [1, 1, 0], [1, 1, 1], [1, 0, 1]] },
+        { offset: [-1, 0, 0], normal: [-1, 0, 0], corners: [[0, 0, 1], [0, 1, 1], [0, 1, 0], [0, 0, 0]] },
+        { offset: [0, 1, 0], normal: [0, 1, 0], corners: [[0, 1, 0], [0, 1, 1], [1, 1, 1], [1, 1, 0]] },
+        { offset: [0, -1, 0], normal: [0, -1, 0], corners: [[0, 0, 1], [0, 0, 0], [1, 0, 0], [1, 0, 1]] },
+        { offset: [0, 0, 1], normal: [0, 0, 1], corners: [[1, 0, 1], [1, 1, 1], [0, 1, 1], [0, 0, 1]] },
+        { offset: [0, 0, -1], normal: [0, 0, -1], corners: [[0, 0, 0], [0, 1, 0], [1, 1, 0], [1, 0, 0]] }
+    ];
+
+    const vertexData = [];
+    const normalData = [];
+    const indexData = [];
+
+    for (const position of positions) {
+        const x = position.x;
+        const y = position.y;
+        const z = position.z;
+
+        for (const face of waterFaces) {
+            const neighborId = getBlock(
+                x + face.offset[0],
+                y + face.offset[1],
+                z + face.offset[2]
+            );
+            if (neighborId === BLOCK.WATER) {
+                continue;
+            }
+
+            appendWaterFaceGeometry(vertexData, normalData, indexData, x, y, z, face.corners, face.normal);
+        }
+    }
+
+    if (vertexData.length === 0 || indexData.length === 0) {
+        return null;
+    }
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertexData, 3));
+    geometry.setAttribute("normal", new THREE.Float32BufferAttribute(normalData, 3));
+    geometry.setIndex(indexData);
+    geometry.computeBoundingSphere();
+    geometry.computeBoundingBox();
+
+    const mesh = new THREE.Mesh(geometry, blockMaterials[BLOCK.WATER]);
+    mesh.castShadow = false;
+    mesh.receiveShadow = false;
+    mesh.renderOrder = 4;
+    mesh.userData.blockId = BLOCK.WATER;
+    mesh.userData.lookupKeys = [];
+    return mesh;
+}
+
 function rebuildChunkMesh(chunk) {
     if (!chunk) {
         return;
@@ -4404,11 +4951,22 @@ function rebuildChunkMesh(chunk) {
             return;
         }
 
+        if (id === BLOCK.WATER) {
+            const waterMesh = buildWaterChunkMesh(positions);
+            if (!waterMesh) {
+                return;
+            }
+            worldRoot.add(waterMesh);
+            blockMeshes.push(waterMesh);
+            chunk.meshes.push(waterMesh);
+            return;
+        }
+
         const mesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
         const transparentBlock = isTranslucentBlock(id);
-        mesh.castShadow = !transparentBlock;
-        mesh.receiveShadow = true;
-        mesh.renderOrder = transparentBlock ? 3 : 1;
+        mesh.castShadow = !transparentBlock && id !== BLOCK.LEAVES;
+        mesh.receiveShadow = id !== BLOCK.WATER && id !== BLOCK.LEAVES;
+        mesh.renderOrder = id === BLOCK.WATER ? 4 : id === BLOCK.GLASS ? 3 : transparentBlock ? 2 : 1;
         mesh.userData.blockId = id;
         mesh.userData.lookupKeys = [];
 
@@ -4512,6 +5070,8 @@ function updateChunkStreaming(force = false) {
 
     state.loadedChunkCount = chunkMap.size;
     state.pendingChunkBuildCount = chunkRebuildQueue.size;
+    propState.cullingDirty = true;
+    updatePlacedPropCulling();
 }
 
 function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
@@ -4577,6 +5137,7 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
     if (id === BLOCK.AIR || id === BLOCK.WATER) {
         removePropsSupportedByBlock(x, y, z, origin);
     }
+    markLampShadowsDirty();
     scheduleWorldSave();
 
     if (origin === "local") {
@@ -4611,6 +5172,25 @@ function collidesAt(x, y, z) {
                     return true;
                 }
             }
+        }
+    }
+
+    const playerBounds = {
+        minX: x - PLAYER_RADIUS,
+        maxX: x + PLAYER_RADIUS,
+        minY: y,
+        maxY: y + PLAYER_HEIGHT - 0.001,
+        minZ: z - PLAYER_RADIUS,
+        maxZ: z + PLAYER_RADIUS
+    };
+
+    for (const placed of placedProps.values()) {
+        if (!placed?.node || placed.node.visible === false) {
+            continue;
+        }
+        const propBounds = getPlacedPropBounds(placed, 0);
+        if (intersectsAabb(playerBounds, propBounds)) {
+            return true;
         }
     }
 
@@ -4752,7 +5332,7 @@ function updateHud() {
     const p = state.playerPosition;
     const previewSuffix = state.avatarPreviewOpen ? " | Vista avatar" : "";
     coordsEl.textContent = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}${previewSuffix}`;
-    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Flores: ${floraState.sunflowers.size} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`);
+    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Flores activas: ${floraState.sunflowers.size} | Girasoles (moneda): ${economyState.sunflowers} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`);
 }
 
 function updateSelectedMaterialHud() {
@@ -4947,6 +5527,32 @@ function selectedPropType() {
     return selected.propType || "";
 }
 
+function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
+    if (!hit?.point) {
+        return null;
+    }
+
+    const normal = getWorldNormalFromRayHit(hit) || hit.face?.normal?.clone() || null;
+    if (!normal) {
+        return null;
+    }
+
+    const samplePoint = hit.point.clone().addScaledVector(normal, -0.0012);
+    const x = Math.floor(samplePoint.x);
+    const y = Math.floor(samplePoint.y);
+    const z = Math.floor(samplePoint.z);
+    if (!inWorldBounds(x, y, z)) {
+        return null;
+    }
+
+    let id = getBlock(x, y, z);
+    if (id === BLOCK.AIR && isValidBlockId(Number(fallbackBlockId))) {
+        id = Number(fallbackBlockId);
+    }
+
+    return { x, y, z, id };
+}
+
 function findTargetedBlockHit() {
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
     raycaster.far = MAX_REACH;
@@ -4958,12 +5564,22 @@ function findTargetedBlockHit() {
     const hit = intersects[0];
     const instanceId = hit.instanceId;
     if (instanceId === undefined || instanceId === null) {
-        return null;
+        const fallbackBlockId = Number(hit.object?.userData?.blockId);
+        const lookup = resolveBlockLookupFromRayHit(hit, fallbackBlockId);
+        if (!lookup) {
+            return null;
+        }
+        return { hit, lookup };
     }
 
     const lookup = blockPositionLookup.get(`${hit.object.id}:${instanceId}`);
     if (!lookup) {
-        return null;
+        const fallbackBlockId = Number(hit.object?.userData?.blockId);
+        const resolved = resolveBlockLookupFromRayHit(hit, fallbackBlockId);
+        if (!resolved) {
+            return null;
+        }
+        return { hit, lookup: resolved };
     }
 
     return { hit, lookup };
@@ -4982,7 +5598,10 @@ function findTargetedPropHit(blockingDistance = null) {
     }
 
     const blockHit = blockingDistance === null ? findTargetedBlockHit() : null;
-    const nearestProp = propHits[0];
+    const nearestProp = getFirstVisibleRayHit(propHits);
+    if (!nearestProp) {
+        return null;
+    }
     const blockerDistance = blockingDistance === null
         ? (blockHit ? blockHit.hit.distance : Number.POSITIVE_INFINITY)
         : blockingDistance;
@@ -5027,15 +5646,17 @@ function attemptMineOrPlace(isPlacing) {
         return;
     }
 
-    const targeted = findTargetedBlockHit();
-    if (!targeted) {
-        return;
-    }
-
-    const { hit, lookup } = targeted;
+    const targetedBlock = findTargetedBlockHit();
+    const blockDistance = targetedBlock?.hit?.distance ?? Number.POSITIVE_INFINITY;
+    const targetedProp = findTargetedPropHit(blockDistance);
 
     if (!isPlacing) {
-        if (lookup.id === BLOCK.BEDROCK || lookup.id === BLOCK.WATER) {
+        if (!targetedBlock) {
+            return;
+        }
+
+        const { lookup } = targetedBlock;
+        if (lookup.id === BLOCK.BEDROCK) {
             return;
         }
 
@@ -5043,6 +5664,103 @@ function attemptMineOrPlace(isPlacing) {
         return;
     }
 
+    const propType = selectedPropType();
+    if (propType) {
+        let propX = 0;
+        let propY = 0;
+        let propZ = 0;
+        let hasAnchor = false;
+
+        if (targetedProp && targetedProp.distance <= blockDistance + 0.001) {
+            const worldNormal = getWorldNormalFromRayHit(targetedProp.hit);
+            if (!worldNormal || worldNormal.y < 0.45) {
+                showToast("Ese objeto no tiene una cara superior para apoyar", "warning", 1000);
+                return;
+            }
+
+            propX = Math.floor(targetedProp.hit.point.x) + 0.5;
+            propY = getPlacedPropSupportY(targetedProp.placed);
+            propZ = Math.floor(targetedProp.hit.point.z) + 0.5;
+            hasAnchor = true;
+        } else if (targetedBlock) {
+            const { hit, lookup } = targetedBlock;
+            const normal = hit.face?.normal?.clone();
+            if (!normal) {
+                return;
+            }
+
+            if (normal.y < 0.4) {
+                showToast("Los objetos se colocan sobre una superficie", "warning", 900);
+                return;
+            }
+
+            const placeX = lookup.x + Math.round(normal.x);
+            const placeY = lookup.y + Math.round(normal.y);
+            const placeZ = lookup.z + Math.round(normal.z);
+
+            if (!inWorldBounds(placeX, placeY, placeZ)) {
+                return;
+            }
+
+            const targetId = getBlock(placeX, placeY, placeZ);
+            if (targetId !== BLOCK.AIR && targetId !== BLOCK.WATER) {
+                const now = performance.now();
+                if (now - uiState.noSpaceToastAt > 700) {
+                    showToast("No hay espacio", "warning", 800);
+                    uiState.noSpaceToastAt = now;
+                }
+                return;
+            }
+
+            propX = placeX + 0.5;
+            propY = placeY;
+            propZ = placeZ + 0.5;
+            hasAnchor = true;
+        }
+
+        if (!hasAnchor || !inWorldBounds(Math.floor(propX), Math.floor(propY), Math.floor(propZ))) {
+            return;
+        }
+
+        if (hasPropNearPosition(propX, propY, propZ, 0.34)) {
+            showToast("Ya hay un objeto en ese espacio", "warning", 900);
+            return;
+        }
+
+        const propYaw = resolvePropPlacementYaw(propType, propX, propZ);
+        const playerBounds = {
+            minX: state.playerPosition.x - PLAYER_RADIUS,
+            maxX: state.playerPosition.x + PLAYER_RADIUS,
+            minY: state.playerPosition.y,
+            maxY: state.playerPosition.y + PLAYER_HEIGHT - 0.001,
+            minZ: state.playerPosition.z - PLAYER_RADIUS,
+            maxZ: state.playerPosition.z + PLAYER_RADIUS
+        };
+        const nextPropBounds = getPlacedPropBoundsAt(propType, propX, propY, propZ, propYaw, 0.001);
+        if (intersectsAabb(playerBounds, nextPropBounds)) {
+            return;
+        }
+
+        const propId = addPlacedPropEntry({
+            propType,
+            x: propX,
+            y: propY,
+            z: propZ,
+            lampLevel: propType === PROP_TYPE.LAMP ? 0 : undefined,
+            yaw: propYaw
+        }, "local");
+
+        if (propId) {
+            showToast(`${getPropLabel(propType)} colocada`, "success", 900);
+        }
+        return;
+    }
+
+    if (!targetedBlock) {
+        return;
+    }
+
+    const { hit, lookup } = targetedBlock;
     const normal = hit.face?.normal?.clone();
     if (!normal) {
         return;
@@ -5079,36 +5797,6 @@ function attemptMineOrPlace(isPlacing) {
         return;
     }
 
-    const propType = selectedPropType();
-    if (propType) {
-        if (normal.y < 0.4) {
-            showToast("Los objetos se colocan sobre una superficie", "warning", 900);
-            return;
-        }
-
-        const propX = placeX + 0.5;
-        const propY = placeY;
-        const propZ = placeZ + 0.5;
-        if (hasPropNearPosition(propX, propY, propZ, 0.34)) {
-            showToast("Ya hay un objeto en ese espacio", "warning", 900);
-            return;
-        }
-
-        const propId = addPlacedPropEntry({
-            propType,
-            x: propX,
-            y: propY,
-            z: propZ,
-            lampLevel: propType === PROP_TYPE.LAMP ? 0 : undefined,
-            yaw: controls.getObject().rotation.y || 0
-        }, "local");
-
-        if (propId) {
-            showToast(`${getPropLabel(propType)} colocada`, "success", 900);
-        }
-        return;
-    }
-
     const placeId = selectedBlockId();
     if (placeId === null) {
         return;
@@ -5129,6 +5817,11 @@ function setSelectedHotbar(index) {
 }
 
 function tryHarvestSunflowerAtCrosshair() {
+    const now = performance.now();
+    if (now - floraState.lastHarvestAt < 180) {
+        return false;
+    }
+
     if (sunflowerRoot.children.length === 0) {
         return false;
     }
@@ -5136,13 +5829,13 @@ function tryHarvestSunflowerAtCrosshair() {
     raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
     raycaster.far = MAX_REACH;
     const flowerHits = raycaster.intersectObjects(sunflowerRoot.children, true);
-    if (!flowerHits.length) {
+    const nearestFlower = getFirstVisibleRayHit(flowerHits);
+    if (!nearestFlower) {
         return false;
     }
 
     const blockHit = findTargetedBlockHit();
     const blockingDistance = blockHit ? blockHit.hit.distance : Number.POSITIVE_INFINITY;
-    const nearestFlower = flowerHits[0];
     if (nearestFlower.distance > blockingDistance + 0.001) {
         return false;
     }
@@ -5152,7 +5845,11 @@ function tryHarvestSunflowerAtCrosshair() {
         return false;
     }
 
-    return harvestSunflower(flowerId);
+    const harvested = harvestSunflower(flowerId);
+    if (harvested) {
+        floraState.lastHarvestAt = now;
+    }
+    return harvested;
 }
 
 function cycleLampIntensity(propId, showFeedback = true) {
@@ -5319,6 +6016,15 @@ function onKeyDown(event) {
         return;
     }
 
+    if (event.code === "KeyE") {
+        event.preventDefault();
+        if (event.repeat || !controls.isLocked) {
+            return;
+        }
+        tryHarvestSunflowerAtCrosshair();
+        return;
+    }
+
     if (/^Digit[1-8]$/.test(event.code)) {
         const idx = Number(event.code.slice(-1)) - 1;
         setSelectedHotbar(idx);
@@ -5360,9 +6066,6 @@ function onMouseDown(event) {
     }
 
     if (event.button === 0) {
-        if (tryHarvestSunflowerAtCrosshair()) {
-            return;
-        }
         if (tryRemovePlacedPropAtCrosshair()) {
             return;
         }
@@ -5551,11 +6254,17 @@ function animate() {
         updateWildlife(delta);
         updateSunflowers(delta);
     }
+    if (state.worldStarted && state.worldReady) {
+        updateActiveLampShadowCasters(delta);
+    }
 
     updateChunkStreaming(false);
     const budget = getDynamicChunkBuildBudget();
     if (budget > 0) {
         processChunkRebuildQueue(budget);
+    }
+    if (propState.cullingDirty) {
+        updatePlacedPropCulling();
     }
 
     updateRemotePlayers(delta);
@@ -5623,7 +6332,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E cosechar girasol - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;
