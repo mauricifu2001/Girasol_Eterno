@@ -1,0 +1,165 @@
+Quiero que mejores la interfaz y la experiencia de juego de mi proyecto actual, que es un juego tipo voxel/blocky estilo sandbox, hecho para correr bien en máquinas modestas. El proyecto usa tecnologías web (HTML/JSON y lo que ya exista en el repositorio). Antes de cambiar cosas, inspecciona la estructura actual del proyecto y adapta la implementación al stack existente, sin romper controles, mundo, materiales ni rendimiento.
+
+OBJETIVO GENERAL
+Rediseñar el HUD/UI para que se vea más limpio, cómodo y “de juego”, separando la información útil para el jugador de la información técnica de desarrollo. Quiero una experiencia más inmersiva, simple y ligera, manteniendo buena fluidez.
+
+PRINCIPIOS IMPORTANTES
+- Priorizar rendimiento y simplicidad.
+- No meter librerías pesadas si no son realmente necesarias.
+- Mantener compatibilidad con equipos modestos.
+- Reutilizar la arquitectura actual del proyecto.
+- Si algo ya existe, refactorízalo en vez de duplicarlo.
+- Todo debe sentirse más limpio, intuitivo y visualmente coherente.
+- La UI debe ser responsive y no tapar demasiado la pantalla.
+
+CAMBIOS PRINCIPALES A IMPLEMENTAR
+
+1) Separar HUD normal y HUD debug
+Ahora mismo tengo un cuadro arriba a la izquierda con mucha información técnica. Quiero que eso cambie así:
+- En modo normal, mostrar solo información mínima útil para el jugador.
+- Toda la información técnica (coordenadas, chunks, pendientes, edits, etc.) debe pasar a un “modo debug”.
+- El modo debug debe activarse/desactivarse con F3.
+- Si F3 no es viable por alguna restricción del navegador o del proyecto, usa una tecla alternativa y documenta cuál.
+- El panel debug debe verse ordenado y legible, con fondo semitransparente.
+- En modo normal, evitar saturar la pantalla.
+
+2) Mejorar la hotbar inferior de materiales
+Actualmente tengo materiales asignados a números. Quiero convertir eso en una hotbar más clara y más agradable visualmente.
+Requisitos:
+- Mantener selección por teclas numéricas.
+- Agregar cambio con rueda del mouse.
+- Resaltar claramente el slot activo.
+- Mostrar nombre corto del material seleccionado.
+- Si ya existen iconos, úsalos. Si no, usar colores, mini previews o labels limpias.
+- La hotbar debe quedar centrada abajo.
+- Debe ser visualmente sobria, moderna y fácil de leer.
+- Máximo recomendado: entre 7 y 9 slots visibles.
+- Agregar una pequeña animación o transición ligera al cambiar selección, sin afectar rendimiento.
+
+3) Mostrar feedback del material seleccionado
+Cada vez que el jugador cambie de material:
+- mostrar una notificación corta y discreta en la parte inferior central o cerca de la hotbar
+- ejemplo: “Material seleccionado: Madera”
+- debe desaparecer sola al poco tiempo
+- que no se acumulen muchas notificaciones encima si el usuario cambia rápido; manejar debounce o reemplazo de mensaje
+
+4) Crear un menú de pausa real
+Ahora tengo botones fijos como “Ajustes” y “Volver al Arcade”. No quiero que estén siempre visibles durante la partida.
+Quiero:
+- abrir menú de pausa con ESC
+- opcionalmente dejar un pequeño botón discreto de pausa arriba a la derecha, si encaja bien
+- dentro del menú de pausa incluir:
+  - Continuar
+  - Ajustes
+  - Volver al Arcade
+  - Reiniciar mundo (solo si ya existe lógica o si es fácil integrarlo sin romper nada)
+  - Guardar / Exportar (solo si ya existe lógica o si es fácil de integrar)
+- El menú debe oscurecer suavemente el fondo y pausar la interacción del juego si es posible
+- El diseño debe ser minimalista y consistente con el estilo del juego
+
+5) Resaltado del bloque apuntado
+Quiero mejorar la precisión al construir/destruir.
+Implementa:
+- un resaltado del bloque que estoy apuntando
+- puede ser outline, borde, sombreado o wireframe simple
+- además, mostrar el nombre del bloque apuntado en una pequeña etiqueta discreta
+- esto debe ser ligero y no costoso en rendimiento
+
+6) Tutorial inicial corto
+La primera vez que el jugador entra (o hasta que se cierre manualmente), mostrar una ayuda breve con controles:
+- WASD mover
+- mouse mirar
+- click izquierdo minar/destruir
+- click derecho colocar
+- rueda o números cambiar material
+- espacio saltar
+- ESC pausa
+Requisitos:
+- que se vea limpio
+- que no moleste demasiado
+- que se pueda cerrar
+- idealmente recordar en localStorage si ya fue visto
+
+7) Sistema de mensajes cortos
+Agregar un pequeño sistema de mensajes/toasts para feedback útil, por ejemplo:
+- “Mundo guardado”
+- “Material seleccionado: Arena”
+- “Debug activado”
+- “Debug desactivado”
+- “No hay espacio”
+Deben ser:
+- ligeros
+- no intrusivos
+- con duración corta
+- sin romper el flujo del juego
+
+8) Mantener estética limpia y jugable
+La UI no debe parecer una app administrativa. Debe sentirse más como videojuego.
+Quiero:
+- menos texto permanente en pantalla
+- jerarquía visual clara
+- colores sobrios
+- fondos semitransparentes
+- bordes redondeados si ya encajan con el estilo actual
+- tipografía legible
+- que el mundo siga siendo protagonista
+
+RENDIMIENTO
+Esto es muy importante:
+- Evita efectos visuales pesados.
+- Evita sombras o blur costosos en exceso.
+- Evita demasiadas animaciones simultáneas.
+- Prefiere soluciones DOM/CSS simples si son más baratas que renderizar elementos complejos dentro de la escena 3D.
+- Si implementas animaciones, que sean mínimas y eficientes.
+- No quiero que la UI empeore la fluidez del juego.
+
+COMPATIBILIDAD CON EL CÓDIGO EXISTENTE
+Quiero que primero entiendas cómo está armado el proyecto y luego hagas los cambios con criterio.
+Por favor:
+- identifica dónde está la lógica del HUD actual
+- identifica cómo se maneja la selección de materiales
+- identifica cómo se renderiza o actualiza el texto de debug actual
+- identifica cómo se manejan inputs de teclado y mouse
+- reutiliza funciones existentes cuando tenga sentido
+- no rompas el sistema actual de bloques ni materiales
+
+ENTREGABLES
+Quiero que hagas lo siguiente:
+1. inspeccionar el proyecto y explicarme brevemente qué partes vas a tocar
+2. implementar los cambios
+3. mostrarme los archivos modificados
+4. resumirme qué se agregó
+5. decirme cómo probar cada mejora
+6. si algo no es posible por la estructura actual, explícame por qué y propón la alternativa más cercana
+
+ORDEN DE PRIORIDAD
+Implementa primero esto:
+1. HUD normal vs debug con F3
+2. hotbar mejorada
+3. menú de pausa con ESC
+4. resaltado del bloque apuntado
+5. feedback de material seleccionado
+6. tutorial inicial
+7. sistema de toasts/mensajes
+
+CRITERIOS DE ACEPTACIÓN
+Consideraré exitoso el cambio si:
+- la pantalla se ve más limpia durante el juego normal
+- la info técnica solo aparece en debug
+- la hotbar se siente más clara y cómoda
+- puedo pausar con ESC
+- veo qué bloque estoy apuntando
+- al cambiar material recibo feedback visual
+- el rendimiento no empeora notablemente
+- la experiencia se siente más pulida y más cómoda para jugar
+
+EXTRA OPCIONAL
+Si después de completar lo anterior ves que queda bien, deja preparada una estructura ligera para futuras mejoras como:
+- ajustes de sensibilidad
+- volumen
+- distancia de render
+- mostrar/ocultar coordenadas
+- pequeños sonidos de UI
+pero solo si no complica demasiado la implementación actual.
+
+Trabaja sobre mi código real, no generes una demo separada. Quiero cambios integrados al proyecto existente.
