@@ -28,6 +28,12 @@ const RABBIT_MIN_RABBIT_DISTANCE = 2.4;
 const DEBUG_VISIBILITY_STORAGE_KEY = "girasolDebugHudVisible";
 const TUTORIAL_SEEN_STORAGE_KEY = "girasolTutorialSeenV1";
 const BLOCK_HIGHLIGHT_SIZE = 1.02;
+const AVATAR_VOXEL_TARGET_HEIGHT = 2.1;
+const AVATAR_PREVIEW_ORBIT_SPEED = 0.72;
+const AVATAR_PREVIEW_RADIUS = 2.55;
+const AVATAR_WALK_BLEND_SPEED = 9.5;
+const AVATAR_WALK_MIN_SPEED = 0.05;
+const AVATAR_WALK_SWING = 0.78;
 
 const PLAYER_HEIGHT = 1.8;
 const PLAYER_RADIUS = 0.32;
@@ -37,6 +43,7 @@ const BASE_SPEED = 6.2;
 const SPRINT_SPEED = 9.4;
 const JUMP_SPEED = 9.2;
 const MAX_REACH = 6;
+const DEFAULT_POINTER_SPEED = 0.68;
 
 const BLOCK = {
     AIR: 0,
@@ -47,17 +54,63 @@ const BLOCK = {
     WOOD: 5,
     LEAVES: 6,
     SAND: 7,
-    WATER: 8
+    WATER: 8,
+    GLASS: 9
 };
 
-const PLACEABLE_BLOCKS = [
-    { id: BLOCK.STONE, label: "Piedra" },
-    { id: BLOCK.DIRT, label: "Tierra" },
-    { id: BLOCK.GRASS, label: "Cesped" },
-    { id: BLOCK.WOOD, label: "Madera" },
-    { id: BLOCK.LEAVES, label: "Hojas" },
-    { id: BLOCK.SAND, label: "Arena" }
+const ITEM_KIND = {
+    BLOCK: "block",
+    PROP: "prop"
+};
+
+const PROP_TYPE = {
+    CHAIR: "chair",
+    TABLE: "table",
+    LAMP: "lamp",
+    PLANTER: "planter"
+};
+const VALID_PROP_TYPES = new Set(Object.values(PROP_TYPE));
+
+const HOTBAR_SIZE = 8;
+
+const INVENTORY_CATEGORY = {
+    TERRAIN: "terrain",
+    NATURE: "nature",
+    LIQUIDS: "liquids",
+    FURNITURE: "furniture"
+};
+
+const INVENTORY_CATEGORY_ORDER = [
+    INVENTORY_CATEGORY.TERRAIN,
+    INVENTORY_CATEGORY.NATURE,
+    INVENTORY_CATEGORY.LIQUIDS,
+    INVENTORY_CATEGORY.FURNITURE
 ];
+
+const INVENTORY_CATEGORY_LABELS = {
+    [INVENTORY_CATEGORY.TERRAIN]: "Terreno",
+    [INVENTORY_CATEGORY.NATURE]: "Naturaleza",
+    [INVENTORY_CATEGORY.LIQUIDS]: "Liquidos y transparentes",
+    [INVENTORY_CATEGORY.FURNITURE]: "Muebles y decoracion"
+};
+
+const INVENTORY_ITEMS = [
+    { id: "stone", kind: ITEM_KIND.BLOCK, blockId: BLOCK.STONE, label: "Piedra", category: INVENTORY_CATEGORY.TERRAIN },
+    { id: "dirt", kind: ITEM_KIND.BLOCK, blockId: BLOCK.DIRT, label: "Tierra", category: INVENTORY_CATEGORY.TERRAIN },
+    { id: "sand", kind: ITEM_KIND.BLOCK, blockId: BLOCK.SAND, label: "Arena", category: INVENTORY_CATEGORY.TERRAIN },
+    { id: "grass", kind: ITEM_KIND.BLOCK, blockId: BLOCK.GRASS, label: "Cesped", category: INVENTORY_CATEGORY.NATURE },
+    { id: "wood", kind: ITEM_KIND.BLOCK, blockId: BLOCK.WOOD, label: "Madera", category: INVENTORY_CATEGORY.NATURE },
+    { id: "leaves", kind: ITEM_KIND.BLOCK, blockId: BLOCK.LEAVES, label: "Hojas", category: INVENTORY_CATEGORY.NATURE },
+    { id: "glass", kind: ITEM_KIND.BLOCK, blockId: BLOCK.GLASS, label: "Vidrio", category: INVENTORY_CATEGORY.LIQUIDS },
+    { id: "water", kind: ITEM_KIND.BLOCK, blockId: BLOCK.WATER, label: "Agua", category: INVENTORY_CATEGORY.LIQUIDS },
+    { id: "chair", kind: ITEM_KIND.PROP, propType: PROP_TYPE.CHAIR, label: "Silla", category: INVENTORY_CATEGORY.FURNITURE },
+    { id: "table", kind: ITEM_KIND.PROP, propType: PROP_TYPE.TABLE, label: "Mesa", category: INVENTORY_CATEGORY.FURNITURE },
+    { id: "lamp", kind: ITEM_KIND.PROP, propType: PROP_TYPE.LAMP, label: "Lampara", category: INVENTORY_CATEGORY.FURNITURE },
+    { id: "planter", kind: ITEM_KIND.PROP, propType: PROP_TYPE.PLANTER, label: "Maceta", category: INVENTORY_CATEGORY.FURNITURE }
+];
+
+const DEFAULT_HOTBAR_ITEM_IDS = ["stone", "dirt", "grass", "wood", "glass", "water", "chair", "lamp"];
+const INVENTORY_ITEM_BY_ID = new Map(INVENTORY_ITEMS.map((item) => [item.id, item]));
 
 const BLOCK_COLORS = {
     [BLOCK.BEDROCK]: 0x3b3b41,
@@ -67,7 +120,8 @@ const BLOCK_COLORS = {
     [BLOCK.WOOD]: 0x8b633d,
     [BLOCK.LEAVES]: 0x3c7b3f,
     [BLOCK.SAND]: 0xd4bf8d,
-    [BLOCK.WATER]: 0x4f8dff
+    [BLOCK.WATER]: 0x4f8dff,
+    [BLOCK.GLASS]: 0xc8e8ff
 };
 
 const BLOCK_LABELS = {
@@ -79,12 +133,18 @@ const BLOCK_LABELS = {
     [BLOCK.WOOD]: "Madera",
     [BLOCK.LEAVES]: "Hojas",
     [BLOCK.SAND]: "Arena",
-    [BLOCK.WATER]: "Agua"
+    [BLOCK.WATER]: "Agua",
+    [BLOCK.GLASS]: "Vidrio"
 };
 
 const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
 const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
 const MULTIPLAYER_SESSION_ID_KEY = "girasolMultiplayerSessionId";
+const CHUNK_RADIUS_STORAGE_KEY = "girasolChunkRadiusV1";
+const POINTER_SENSITIVITY_STORAGE_KEY = "girasolPointerSensitivityV1";
+const QUALITY_PRESET_STORAGE_KEY = "girasolQualityPresetV1";
+const HOTBAR_STORAGE_KEY = "girasolHotbarSlotsV1";
+const SUNFLOWER_CURRENCY_STORAGE_KEY = "girasolSunflowerCurrencyV1";
 
 const PROFILE_COLORS = {
     Mauricio: "#f4cf85",
@@ -134,9 +194,38 @@ const gameConfig = window.appConfig?.game || {};
 const multiplayerConfig = gameConfig.multiplayer || {};
 const urlParams = new URLSearchParams(window.location.search);
 const MAX_EDITED_BLOCKS = clampInt(Number(gameConfig.maxEditedBlocks) || 120000, 2000, 500000);
+const MAX_PLACED_PROPS = clampInt(Number(gameConfig.maxPlacedProps) || 2400, 100, 10000);
 const WORLD_SAVE_KEY = `girasolWorldEdits:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
-const WORLD_SAVE_VERSION = 1;
+const WORLD_SAVE_VERSION = 2;
 const AUTO_SAVE_SECONDS = 12;
+const SUNFLOWER_MAX_COUNT = clampInt(Number(gameConfig.sunflowerMaxCount) || 130, 20, 500);
+const SUNFLOWER_SPAWN_INTERVAL_MIN = 1.5;
+const SUNFLOWER_SPAWN_INTERVAL_MAX = 4.2;
+const SUNFLOWER_SPAWN_ATTEMPTS = 16;
+const SUNFLOWER_DESPAWN_DISTANCE = 150;
+const SUNFLOWER_MIN_PLAYER_DISTANCE = 5;
+const SUNFLOWER_MIN_FLOWER_DISTANCE = 1.25;
+const DAY_DURATION_SECONDS = 30 * 60;
+const NIGHT_DURATION_SECONDS = 10 * 60;
+const DAY_NIGHT_CYCLE_SECONDS = DAY_DURATION_SECONDS + NIGHT_DURATION_SECONDS;
+const SUN_ORBIT_RADIUS = 150;
+const SUN_ORBIT_HEIGHT = 98;
+const LAMP_INTENSITY_LEVELS = [0, 0.85, 1.7, 2.75];
+const LAMP_DISTANCE_LEVELS = [0, 9, 13, 17];
+const LAMP_BULB_EMISSIVE_LEVELS = [0.01, 0.28, 0.56, 0.92];
+const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
+const SKY_DUSK_COLOR = new THREE.Color(0xffb579);
+const SKY_NIGHT_COLOR = new THREE.Color(0x091327);
+const TERRAIN_SYNC_SAMPLE_POINTS = [
+    [-96, -96], [-96, -32], [-96, 32], [-96, 96],
+    [-32, -96], [-32, -32], [-32, 32], [-32, 96],
+    [32, -96], [32, -32], [32, 32], [32, 96],
+    [96, -96], [96, -32], [96, 32], [96, 96],
+    [0, 0], [0, 64], [64, 0], [-64, 0], [0, -64]
+];
+const TERRAIN_REACOMODO_MIN_COLUMNS = 12;
+const TERRAIN_REACOMODO_MIN_ABS_SHIFT = 2;
+const TERRAIN_REACOMODO_MAX_SHIFT = 22;
 
 const WORLD_SEED = Number(gameConfig.worldSeed) || 42173;
 const INITIAL_CHUNK_RADIUS = clampInt(
@@ -154,8 +243,14 @@ const helpMiniEl = document.getElementById("helpMini");
 const hudTopEl = document.getElementById("hudTop");
 const debugPanelEl = document.getElementById("debugPanel");
 const selectedMaterialHudEl = document.getElementById("selectedMaterialHud");
+const sunflowerCurrencyHudEl = document.getElementById("sunflowerCurrencyHud");
 const hotbarSelectedMaterialEl = document.getElementById("hotbarSelectedMaterial");
+const inventoryToggleButtonEl = document.getElementById("inventoryToggleButton");
+const inventoryPanelEl = document.getElementById("inventoryPanel");
+const inventoryCloseButtonEl = document.getElementById("inventoryCloseButton");
+const inventoryGridEl = document.getElementById("inventoryGrid");
 const targetBlockLabelEl = document.getElementById("targetBlockLabel");
+const crosshairEl = document.getElementById("crosshair");
 const toastContainerEl = document.getElementById("toastContainer");
 const pauseButton = document.getElementById("pauseButton");
 const pauseMenuEl = document.getElementById("pauseMenu");
@@ -164,6 +259,11 @@ const pauseSettingsButton = document.getElementById("pauseSettingsButton");
 const pauseSaveButton = document.getElementById("pauseSaveButton");
 const pauseRestartButton = document.getElementById("pauseRestartButton");
 const pauseSettingsSection = document.getElementById("pauseSettingsSection");
+const chunkRadiusSliderEl = document.getElementById("chunkRadiusSlider");
+const chunkRadiusValueEl = document.getElementById("chunkRadiusValue");
+const qualityPresetSelectEl = document.getElementById("qualityPresetSelect");
+const pointerSensitivitySliderEl = document.getElementById("pointerSensitivitySlider");
+const pointerSensitivityValueEl = document.getElementById("pointerSensitivityValue");
 const tutorialPanelEl = document.getElementById("tutorialPanel");
 const tutorialCloseButton = document.getElementById("tutorialCloseButton");
 
@@ -179,17 +279,54 @@ renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.02;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const controls = new PointerLockControls(camera, document.body);
-controls.pointerSpeed = 0.68;
+controls.pointerSpeed = DEFAULT_POINTER_SPEED;
 scene.add(controls.getObject());
 
-const hemiLight = new THREE.HemisphereLight(0xffffff, 0x6e748f, 0.9);
+const hemiLight = new THREE.HemisphereLight(0xcfe7ff, 0x5f6177, 0.32);
 scene.add(hemiLight);
 
 const sun = new THREE.DirectionalLight(0xffffff, 0.9);
 sun.position.set(16, 30, 8);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 20;
+sun.shadow.camera.far = 280;
+sun.shadow.camera.left = -64;
+sun.shadow.camera.right = 64;
+sun.shadow.camera.top = 64;
+sun.shadow.camera.bottom = -64;
+sun.shadow.bias = -0.0005;
+sun.shadow.normalBias = 0.02;
 scene.add(sun);
+
+const moon = new THREE.DirectionalLight(0x8ba9ff, 0.16);
+moon.castShadow = true;
+moon.shadow.mapSize.set(1024, 1024);
+moon.shadow.camera.near = 20;
+moon.shadow.camera.far = 240;
+moon.shadow.camera.left = -54;
+moon.shadow.camera.right = 54;
+moon.shadow.camera.top = 54;
+moon.shadow.camera.bottom = -54;
+moon.shadow.bias = -0.00035;
+moon.shadow.normalBias = 0.016;
+scene.add(moon);
+
+const sunTarget = new THREE.Object3D();
+scene.add(sunTarget);
+sun.target = sunTarget;
+
+const moonTarget = new THREE.Object3D();
+scene.add(moonTarget);
+moon.target = moonTarget;
+
+const skyColorScratch = new THREE.Color();
+const skyVectorScratchA = new THREE.Vector3();
+const skyVectorScratchB = new THREE.Vector3();
 
 const skyDecorRoot = new THREE.Group();
 scene.add(skyDecorRoot);
@@ -197,11 +334,21 @@ scene.add(skyDecorRoot);
 const worldRoot = new THREE.Group();
 scene.add(worldRoot);
 
+const propsRoot = new THREE.Group();
+scene.add(propsRoot);
+
 const remotePlayersRoot = new THREE.Group();
 scene.add(remotePlayersRoot);
 
 const wildlifeRoot = new THREE.Group();
 scene.add(wildlifeRoot);
+
+const sunflowerRoot = new THREE.Group();
+scene.add(sunflowerRoot);
+
+const localAvatarPreviewRoot = new THREE.Group();
+localAvatarPreviewRoot.visible = false;
+scene.add(localAvatarPreviewRoot);
 
 function clampByte(value) {
     return Math.max(0, Math.min(255, Math.round(value)));
@@ -332,6 +479,17 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
             ctx.bezierCurveTo(size * 0.25, y + 2, size * 0.5, y - 2, size, y + 1);
             ctx.stroke();
         }
+    } else if (blockId === BLOCK.GLASS) {
+        fillNoisyBase(ctx, size, hexToRgb(0xcde7ff), 8, rng, 212);
+        ctx.strokeStyle = "rgba(240, 250, 255, 0.42)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i += 1) {
+            const x = 3 + i * 7 + Math.floor(rng() * 2);
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x + Math.sin(i) * 2, size);
+            ctx.stroke();
+        }
     } else {
         fillNoisyBase(ctx, size, fallbackRgb, 18, rng);
     }
@@ -353,8 +511,8 @@ function createBlockMaterial(blockId, color) {
     const material = new THREE.MeshStandardMaterial({
         color: 0xffffff,
         map: texture,
-        roughness: blockId === BLOCK.WATER ? 0.08 : 0.92,
-        metalness: blockId === BLOCK.WATER ? 0.02 : 0
+        roughness: blockId === BLOCK.WATER ? 0.08 : blockId === BLOCK.GLASS ? 0.18 : 0.92,
+        metalness: blockId === BLOCK.WATER ? 0.02 : blockId === BLOCK.GLASS ? 0.01 : 0
     });
 
     if (blockId === BLOCK.GRASS || blockId === BLOCK.LEAVES) {
@@ -367,14 +525,24 @@ function createBlockMaterial(blockId, color) {
 
     if (blockId === BLOCK.WATER) {
         material.transparent = true;
-        material.opacity = 0.72;
+        material.opacity = 0.58;
         material.depthWrite = false;
+        material.side = THREE.DoubleSide;
+    }
+
+    if (blockId === BLOCK.GLASS) {
+        material.transparent = true;
+        material.opacity = 0.34;
+        material.depthWrite = false;
+        material.side = THREE.DoubleSide;
     }
 
     return material;
 }
 
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
+const detailUnitGeometry = new THREE.BoxGeometry(1, 1, 1);
+const detailMaterialCache = new Map();
 const blockMaterials = Object.fromEntries(
     Object.entries(BLOCK_COLORS).map(([id, color]) => [
         Number(id),
@@ -382,10 +550,36 @@ const blockMaterials = Object.fromEntries(
     ])
 );
 
+function getDetailMaterial(colorHex) {
+    const key = Number(colorHex) >>> 0;
+    let material = detailMaterialCache.get(key);
+    if (material) {
+        return material;
+    }
+
+    material = new THREE.MeshLambertMaterial({ color: key });
+    detailMaterialCache.set(key, material);
+    return material;
+}
+
+function createDetailPart(size, position, colorHex, rotation = null) {
+    const mesh = new THREE.Mesh(detailUnitGeometry, getDetailMaterial(colorHex));
+    mesh.scale.set(size.x, size.y, size.z);
+    mesh.position.set(position.x, position.y, position.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    if (rotation) {
+        mesh.rotation.set(rotation.x || 0, rotation.y || 0, rotation.z || 0);
+    }
+
+    return mesh;
+}
+
 const chunkMap = new Map();
 const chunkRebuildQueue = new Set();
 const editedBlocks = new Map();
 const columnCache = new Map();
+const placedProps = new Map();
 
 const blockMeshes = [];
 const blockPositionLookup = new Map();
@@ -401,6 +595,7 @@ scene.add(targetHighlight);
 
 const state = {
     selectedHotbarIndex: 0,
+    hotbarItemIds: [...DEFAULT_HOTBAR_ITEM_IDS.slice(0, HOTBAR_SIZE)],
     velocityY: 0,
     onGround: false,
     keyDown: new Set(),
@@ -408,9 +603,12 @@ const state = {
     worldStarted: false,
     worldReady: false,
     paused: false,
+    inventoryOpen: false,
     pauseSettingsOpen: false,
     debugVisible: false,
     tutorialVisible: false,
+    avatarPreviewOpen: false,
+    avatarPreviewAngle: 0,
     chunkRadius: INITIAL_CHUNK_RADIUS,
     chunkTick: 0,
     loadedChunkCount: 0,
@@ -429,15 +627,20 @@ const multiplayer = {
     refs: {
         playersRef: null,
         myPlayerRef: null,
-        chunksRootRef: null
+        chunksRootRef: null,
+        propsRootRef: null,
+        metaRef: null
     },
     remotePlayers: new Map(),
     chunkEditSubscriptions: new Map(),
+    propSnapshotUnsubscribe: null,
     sendIntervalMs: 120,
     lastBroadcastMs: 0,
     unsubscribers: [],
     pendingEditWrites: new Map(),
-    writeTimerId: null
+    pendingPropWrites: new Map(),
+    writeTimerId: null,
+    propWriteTimerId: null
 };
 
 const saveState = {
@@ -449,11 +652,19 @@ const saveState = {
 const perfState = {
     dynamicPixelRatio: basePixelRatio,
     fpsEma: 60,
-    adjustCooldown: 0
+    adjustCooldown: 0,
+    adaptiveEnabled: true,
+    minPixelRatio: 0.72,
+    qualityPreset: "auto"
 };
 
 const skyState = {
-    clouds: []
+    clouds: [],
+    sunCore: null,
+    sunGlow: null,
+    moonCore: null,
+    moonGlow: null,
+    cycleSeconds: DAY_DURATION_SECONDS * 0.35
 };
 
 const uiState = {
@@ -465,6 +676,26 @@ const wildlifeState = {
     rabbits: new Map(),
     nextId: 1,
     spawnTimer: 5.2
+};
+
+const economyState = {
+    sunflowers: 0
+};
+
+const propState = {
+    nextId: 1
+};
+
+const floraState = {
+    sunflowers: new Map(),
+    nextId: 1,
+    spawnTimer: 3
+};
+
+let draggedInventoryItemId = "";
+
+const localAvatarPreviewState = {
+    modelKey: ""
 };
 
 function setBootStatus(message, isError = false) {
@@ -562,6 +793,232 @@ function loadDebugVisibility() {
     }
 }
 
+function readStorageNumber(key, fallback) {
+    try {
+        const raw = window.localStorage.getItem(key);
+        if (raw === null || raw === "") {
+            return fallback;
+        }
+
+        const value = Number(raw);
+        return Number.isFinite(value) ? value : fallback;
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function readStorageString(key, fallback = "") {
+    try {
+        const raw = window.localStorage.getItem(key);
+        return raw === null ? fallback : String(raw);
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function writeStorageValue(key, value) {
+    try {
+        window.localStorage.setItem(key, String(value));
+    } catch (error) {
+    }
+}
+
+function sanitizeHotbarItemIds(rawSlots) {
+    const fallback = DEFAULT_HOTBAR_ITEM_IDS.filter((itemId) => INVENTORY_ITEM_BY_ID.has(itemId));
+    const source = Array.isArray(rawSlots) ? rawSlots.map((value) => String(value || "")) : [];
+    const next = [];
+
+    for (let i = 0; i < HOTBAR_SIZE; i += 1) {
+        const candidate = source[i];
+        if (candidate && INVENTORY_ITEM_BY_ID.has(candidate)) {
+            next.push(candidate);
+            continue;
+        }
+
+        const fallbackId = fallback[i] || fallback[i % Math.max(1, fallback.length)] || INVENTORY_ITEMS[0].id;
+        next.push(fallbackId);
+    }
+
+    return next;
+}
+
+function saveHotbarConfiguration() {
+    try {
+        window.localStorage.setItem(HOTBAR_STORAGE_KEY, JSON.stringify(state.hotbarItemIds));
+    } catch (error) {
+    }
+}
+
+function loadHotbarConfiguration() {
+    let parsed = null;
+
+    try {
+        const raw = window.localStorage.getItem(HOTBAR_STORAGE_KEY);
+        if (raw) {
+            parsed = JSON.parse(raw);
+        }
+    } catch (error) {
+    }
+
+    state.hotbarItemIds = sanitizeHotbarItemIds(parsed);
+}
+
+function getHotbarItemByIndex(index) {
+    const safeIndex = THREE.MathUtils.clamp(Math.floor(Number(index) || 0), 0, HOTBAR_SIZE - 1);
+    const itemId = state.hotbarItemIds[safeIndex];
+    return INVENTORY_ITEM_BY_ID.get(itemId) || INVENTORY_ITEMS[0];
+}
+
+function getSelectedHotbarItem() {
+    return getHotbarItemByIndex(state.selectedHotbarIndex);
+}
+
+function getInventoryItemTint(item) {
+    if (!item) {
+        return "rgba(255, 255, 255, 0.08)";
+    }
+
+    if (item.kind === ITEM_KIND.BLOCK) {
+        const color = BLOCK_COLORS[item.blockId] || 0x8fa3bf;
+        return `#${color.toString(16).padStart(6, "0")}44`;
+    }
+
+    if (item.propType === PROP_TYPE.CHAIR) return "rgba(177, 140, 92, 0.42)";
+    if (item.propType === PROP_TYPE.TABLE) return "rgba(194, 152, 104, 0.42)";
+    if (item.propType === PROP_TYPE.LAMP) return "rgba(221, 192, 122, 0.42)";
+    return "rgba(150, 196, 132, 0.42)";
+}
+
+function updateSunflowerCurrencyHud() {
+    if (sunflowerCurrencyHudEl) {
+        sunflowerCurrencyHudEl.textContent = `Girasoles: ${Math.max(0, Math.floor(economyState.sunflowers || 0))}`;
+    }
+}
+
+function addSunflowerCurrency(amount, reason = "Recolectaste girasoles") {
+    const gain = Math.max(0, Math.floor(Number(amount) || 0));
+    if (gain <= 0) {
+        return;
+    }
+
+    economyState.sunflowers = Math.max(0, Math.floor(economyState.sunflowers || 0)) + gain;
+    writeStorageValue(SUNFLOWER_CURRENCY_STORAGE_KEY, economyState.sunflowers);
+    updateSunflowerCurrencyHud();
+    showToast(`${reason}: +${gain} girasol${gain === 1 ? "" : "es"}`, "success", 1300);
+}
+
+function loadSunflowerCurrency() {
+    economyState.sunflowers = Math.max(0, Math.floor(readStorageNumber(SUNFLOWER_CURRENCY_STORAGE_KEY, 0)));
+    updateSunflowerCurrencyHud();
+}
+
+function updateGameplaySettingsUi() {
+    if (chunkRadiusSliderEl) {
+        chunkRadiusSliderEl.value = String(state.chunkRadius);
+    }
+
+    if (chunkRadiusValueEl) {
+        chunkRadiusValueEl.textContent = String(state.chunkRadius);
+    }
+
+    if (pointerSensitivitySliderEl) {
+        pointerSensitivitySliderEl.value = String(controls.pointerSpeed.toFixed(2));
+    }
+
+    if (pointerSensitivityValueEl) {
+        pointerSensitivityValueEl.textContent = controls.pointerSpeed.toFixed(2);
+    }
+
+    if (qualityPresetSelectEl) {
+        qualityPresetSelectEl.value = perfState.qualityPreset;
+    }
+}
+
+function normalizeQualityPreset(value) {
+    const raw = String(value || "").toLowerCase();
+    if (raw === "low" || raw === "medium" || raw === "high") {
+        return raw;
+    }
+
+    return "auto";
+}
+
+function setQualityPreset(preset, persist = true, showFeedback = false) {
+    const normalized = normalizeQualityPreset(preset);
+    perfState.qualityPreset = normalized;
+    perfState.adjustCooldown = 0;
+
+    if (normalized === "auto") {
+        perfState.adaptiveEnabled = true;
+        perfState.minPixelRatio = 0.72;
+        perfState.dynamicPixelRatio = THREE.MathUtils.clamp(perfState.dynamicPixelRatio, perfState.minPixelRatio, basePixelRatio);
+    } else {
+        perfState.adaptiveEnabled = false;
+        const manualRatio = normalized === "low"
+            ? Math.min(basePixelRatio, 0.78)
+            : normalized === "medium"
+                ? Math.min(basePixelRatio, 1)
+                : basePixelRatio;
+        perfState.dynamicPixelRatio = manualRatio;
+    }
+
+    renderer.setPixelRatio(perfState.dynamicPixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+
+    if (persist) {
+        writeStorageValue(QUALITY_PRESET_STORAGE_KEY, normalized);
+    }
+
+    if (showFeedback) {
+        const label = normalized === "auto"
+            ? "automatica"
+            : normalized === "low"
+                ? "baja"
+                : normalized === "medium"
+                    ? "media"
+                    : "alta";
+        showToast(`Calidad: ${label}`, "info", 1100);
+    }
+
+    updateGameplaySettingsUi();
+}
+
+function setPointerSensitivity(value, persist = true, showFeedback = false) {
+    const numeric = Number(value);
+    const next = THREE.MathUtils.clamp(
+        Number.isFinite(numeric) ? numeric : DEFAULT_POINTER_SPEED,
+        0.35,
+        1.5
+    );
+
+    controls.pointerSpeed = Number(next.toFixed(2));
+
+    if (persist) {
+        writeStorageValue(POINTER_SENSITIVITY_STORAGE_KEY, controls.pointerSpeed);
+    }
+
+    if (showFeedback) {
+        showToast(`Sensibilidad: ${controls.pointerSpeed.toFixed(2)}`, "info", 900);
+    }
+
+    updateGameplaySettingsUi();
+}
+
+function loadGameplayPreferences() {
+    const storedChunkRadius = clampInt(readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius), 2, 8);
+    state.chunkRadius = storedChunkRadius;
+
+    const storedPointerSensitivity = readStorageNumber(POINTER_SENSITIVITY_STORAGE_KEY, DEFAULT_POINTER_SPEED);
+    setPointerSensitivity(storedPointerSensitivity, false, false);
+
+    const storedQualityPreset = readStorageString(QUALITY_PRESET_STORAGE_KEY, "auto");
+    setQualityPreset(storedQualityPreset, false, false);
+
+    loadHotbarConfiguration();
+    loadSunflowerCurrency();
+    updateGameplaySettingsUi();
+}
+
 function setPauseSettingsOpen(open) {
     state.pauseSettingsOpen = Boolean(open);
     if (pauseSettingsSection) {
@@ -569,13 +1026,119 @@ function setPauseSettingsOpen(open) {
     }
 }
 
+function setAvatarPreviewOpen(open, showFeedback = false) {
+    const next = Boolean(open);
+    if (next === state.avatarPreviewOpen) {
+        return;
+    }
+
+    state.avatarPreviewOpen = next;
+
+    if (state.avatarPreviewOpen) {
+        if (state.inventoryOpen) {
+            setInventoryOpen(false);
+        }
+        state.keyDown.clear();
+        state.avatarPreviewAngle = controls.getObject().rotation.y || 0;
+        ensureLocalAvatarPreviewModel();
+        localAvatarPreviewRoot.visible = true;
+
+        if (crosshairEl) {
+            crosshairEl.classList.add("hidden");
+        }
+
+        if (controls.isLocked) {
+            try {
+                controls.unlock();
+            } catch (error) {
+            }
+        }
+
+        if (showFeedback) {
+            showToast("Vista de avatar activada. Presiona V para volver.", "info", 1900);
+        }
+        return;
+    }
+
+    localAvatarPreviewRoot.visible = false;
+
+    if (crosshairEl && !state.inventoryOpen) {
+        crosshairEl.classList.remove("hidden");
+    }
+
+    if (showFeedback) {
+        showToast("Vista de avatar cerrada", "info", 900);
+    }
+
+    if (state.worldStarted && !state.paused && !state.tutorialVisible && !state.inventoryOpen && !controls.isLocked) {
+        try {
+            controls.lock();
+        } catch (error) {
+        }
+    }
+}
+
+function updateAvatarPreviewCamera(deltaSeconds) {
+    if (!state.avatarPreviewOpen) {
+        return;
+    }
+
+    ensureLocalAvatarPreviewModel();
+    localAvatarPreviewRoot.visible = true;
+
+    const baseX = state.playerPosition.x;
+    const baseY = state.playerPosition.y;
+    const baseZ = state.playerPosition.z;
+    const lookY = baseY + 1.08;
+
+    state.avatarPreviewAngle += deltaSeconds * AVATAR_PREVIEW_ORBIT_SPEED;
+
+    const camX = baseX + Math.cos(state.avatarPreviewAngle) * AVATAR_PREVIEW_RADIUS;
+    const camZ = baseZ + Math.sin(state.avatarPreviewAngle) * AVATAR_PREVIEW_RADIUS;
+    const camY = lookY + 0.58;
+
+    const previewAvatar = localAvatarPreviewRoot.children[0];
+    if (previewAvatar) {
+        let moveForward = 0;
+        let moveRight = 0;
+        if (state.keyDown.has("KeyW")) moveForward += 1;
+        if (state.keyDown.has("KeyS")) moveForward -= 1;
+        if (state.keyDown.has("KeyD")) moveRight += 1;
+        if (state.keyDown.has("KeyA")) moveRight -= 1;
+        const walkIntent = Math.hypot(moveForward, moveRight) > 0 ? 1 : 0;
+        const previewSpeed = walkIntent > 0
+            ? (state.keyDown.has("ShiftLeft") ? SPRINT_SPEED : BASE_SPEED)
+            : 0;
+        updateAvatarWalkAnimation(previewAvatar, previewSpeed, deltaSeconds);
+    }
+
+    localAvatarPreviewRoot.position.set(baseX, baseY, baseZ);
+    localAvatarPreviewRoot.rotation.y = state.avatarPreviewAngle + Math.PI * 1.5;
+
+    controls.getObject().position.set(camX, camY, camZ);
+    camera.lookAt(baseX, lookY, baseZ);
+}
+
 function setPauseMenuOpen(open) {
     if (!state.worldStarted) {
         state.paused = false;
+        if (state.inventoryOpen) {
+            setInventoryOpen(false);
+        }
+        if (state.avatarPreviewOpen) {
+            setAvatarPreviewOpen(false);
+        }
         if (pauseMenuEl) {
             pauseMenuEl.classList.add("hidden");
         }
         return;
+    }
+
+    if (open && state.avatarPreviewOpen) {
+        setAvatarPreviewOpen(false);
+    }
+    if (open && state.inventoryOpen) {
+        setInventoryOpen(false);
     }
 
     state.paused = Boolean(open);
@@ -636,6 +1199,7 @@ function closeTutorial(remember = true) {
 function saveWorldNow(showFeedback = false) {
     flushWorldSave(true);
     flushCloudEditWrites();
+    flushCloudPropWrites();
     if (showFeedback) {
         showToast("Mundo guardado", "success");
     }
@@ -646,7 +1210,7 @@ function getBlockLabel(blockId) {
 }
 
 function updateTargetedBlockUi() {
-    if (!state.worldStarted || !state.worldReady || state.paused || !controls.isLocked) {
+    if (!state.worldStarted || !state.worldReady || state.paused || state.avatarPreviewOpen || state.inventoryOpen || !controls.isLocked) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
             targetBlockLabelEl.classList.add("hidden");
@@ -654,30 +1218,47 @@ function updateTargetedBlockUi() {
         return;
     }
 
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-    raycaster.far = MAX_REACH;
+    const blockHit = findTargetedBlockHit();
+    const blockDistance = blockHit?.hit?.distance ?? Number.POSITIVE_INFINITY;
+    const propHit = findTargetedPropHit(blockDistance);
 
-    const intersects = raycaster.intersectObjects(blockMeshes, false);
-    if (!intersects.length) {
+    let flowerDistance = Number.POSITIVE_INFINITY;
+    let flowerId = "";
+    if (sunflowerRoot.children.length > 0) {
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        raycaster.far = MAX_REACH;
+        const flowerHits = raycaster.intersectObjects(sunflowerRoot.children, true);
+        if (flowerHits.length > 0) {
+            flowerDistance = flowerHits[0].distance;
+            flowerId = String(findAncestorUserDataValue(flowerHits[0].object, "sunflowerId") || "");
+        }
+    }
+
+    const propDistance = propHit?.distance ?? Number.POSITIVE_INFINITY;
+
+    if (flowerId && flowerDistance <= blockDistance + 0.001 && flowerDistance <= propDistance + 0.001) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
-            targetBlockLabelEl.classList.add("hidden");
+            targetBlockLabelEl.textContent = "Girasol: click izq para cosechar";
+            targetBlockLabelEl.classList.remove("hidden");
         }
         return;
     }
 
-    const hit = intersects[0];
-    const instanceId = hit.instanceId;
-    if (instanceId === undefined || instanceId === null) {
+    if (propHit && propDistance <= blockDistance + 0.001) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
-            targetBlockLabelEl.classList.add("hidden");
+            if (propHit.placed.propType === PROP_TYPE.LAMP) {
+                targetBlockLabelEl.textContent = `Lampara ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (click der cambiar luz, click izq quitar)`;
+            } else {
+                targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq para quitar)`;
+            }
+            targetBlockLabelEl.classList.remove("hidden");
         }
         return;
     }
 
-    const lookup = blockPositionLookup.get(`${hit.object.id}:${instanceId}`);
-    if (!lookup) {
+    if (!blockHit) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
             targetBlockLabelEl.classList.add("hidden");
@@ -686,10 +1267,10 @@ function updateTargetedBlockUi() {
     }
 
     targetHighlight.visible = true;
-    targetHighlight.position.set(lookup.x + 0.5, lookup.y + 0.5, lookup.z + 0.5);
+    targetHighlight.position.set(blockHit.lookup.x + 0.5, blockHit.lookup.y + 0.5, blockHit.lookup.z + 0.5);
 
     if (targetBlockLabelEl) {
-        targetBlockLabelEl.textContent = `Bloque: ${getBlockLabel(lookup.id)}`;
+        targetBlockLabelEl.textContent = `Bloque: ${getBlockLabel(blockHit.lookup.id)}`;
         targetBlockLabelEl.classList.remove("hidden");
     }
 }
@@ -729,6 +1310,7 @@ function createSkyDecor() {
         new THREE.MeshBasicMaterial({ color: 0xffe7a1 })
     );
     sunCore.position.set(95, 78, -135);
+    sunCore.renderOrder = 5;
     skyDecorRoot.add(sunCore);
 
     const sunGlow = new THREE.Mesh(
@@ -736,7 +1318,29 @@ function createSkyDecor() {
         new THREE.MeshBasicMaterial({ color: 0xfff4c7, transparent: true, opacity: 0.24 })
     );
     sunGlow.position.copy(sunCore.position);
+    sunGlow.renderOrder = 5;
     skyDecorRoot.add(sunGlow);
+
+    const moonCore = new THREE.Mesh(
+        new THREE.SphereGeometry(4.3, 18, 14),
+        new THREE.MeshBasicMaterial({ color: 0xe6ebff })
+    );
+    moonCore.position.set(-92, 64, 132);
+    moonCore.renderOrder = 5;
+    skyDecorRoot.add(moonCore);
+
+    const moonGlow = new THREE.Mesh(
+        new THREE.SphereGeometry(6.5, 18, 14),
+        new THREE.MeshBasicMaterial({ color: 0xbccfff, transparent: true, opacity: 0.16 })
+    );
+    moonGlow.position.copy(moonCore.position);
+    moonGlow.renderOrder = 5;
+    skyDecorRoot.add(moonGlow);
+
+    skyState.sunCore = sunCore;
+    skyState.sunGlow = sunGlow;
+    skyState.moonCore = moonCore;
+    skyState.moonGlow = moonGlow;
 
     const cloudRange = 240;
 
@@ -758,7 +1362,78 @@ function createSkyDecor() {
     }
 }
 
+function getSkyOrbitAngle(cycleSeconds) {
+    const wrapped = ((cycleSeconds % DAY_NIGHT_CYCLE_SECONDS) + DAY_NIGHT_CYCLE_SECONDS) % DAY_NIGHT_CYCLE_SECONDS;
+    if (wrapped < DAY_DURATION_SECONDS) {
+        const dayProgress = wrapped / DAY_DURATION_SECONDS;
+        return THREE.MathUtils.lerp(-Math.PI * 0.08, Math.PI * 1.08, dayProgress);
+    }
+
+    const nightProgress = (wrapped - DAY_DURATION_SECONDS) / NIGHT_DURATION_SECONDS;
+    return THREE.MathUtils.lerp(Math.PI * 1.08, Math.PI * 1.92, nightProgress);
+}
+
 function updateSky(deltaSeconds) {
+    skyState.cycleSeconds = (skyState.cycleSeconds + deltaSeconds) % DAY_NIGHT_CYCLE_SECONDS;
+    const orbitAngle = getSkyOrbitAngle(skyState.cycleSeconds);
+    const sunDir = skyVectorScratchA
+        .set(Math.cos(orbitAngle), Math.sin(orbitAngle), Math.sin(orbitAngle * 0.42 + 1.1))
+        .normalize();
+    const moonDir = skyVectorScratchB.copy(sunDir).multiplyScalar(-1);
+
+    const anchorX = state.playerPosition.x;
+    const anchorY = state.playerPosition.y + 6;
+    const anchorZ = state.playerPosition.z;
+    const sunPosX = anchorX + sunDir.x * SUN_ORBIT_RADIUS;
+    const sunPosY = anchorY + sunDir.y * SUN_ORBIT_HEIGHT;
+    const sunPosZ = anchorZ + sunDir.z * SUN_ORBIT_RADIUS;
+    const moonPosX = anchorX + moonDir.x * SUN_ORBIT_RADIUS;
+    const moonPosY = anchorY + moonDir.y * SUN_ORBIT_HEIGHT;
+    const moonPosZ = anchorZ + moonDir.z * SUN_ORBIT_RADIUS;
+
+    sun.position.set(sunPosX, sunPosY, sunPosZ);
+    moon.position.set(moonPosX, moonPosY, moonPosZ);
+    sunTarget.position.set(anchorX, anchorY - 2, anchorZ);
+    moonTarget.position.set(anchorX, anchorY - 2, anchorZ);
+    sun.target.updateMatrixWorld();
+    moon.target.updateMatrixWorld();
+
+    if (skyState.sunCore) {
+        skyState.sunCore.position.set(sunPosX, sunPosY, sunPosZ);
+    }
+    if (skyState.sunGlow) {
+        skyState.sunGlow.position.set(sunPosX, sunPosY, sunPosZ);
+    }
+    if (skyState.moonCore) {
+        skyState.moonCore.position.set(moonPosX, moonPosY, moonPosZ);
+    }
+    if (skyState.moonGlow) {
+        skyState.moonGlow.position.set(moonPosX, moonPosY, moonPosZ);
+    }
+
+    const dayFactor = smoothstep(-0.09, 0.2, sunDir.y);
+    const nightFactor = smoothstep(-0.08, 0.2, moonDir.y);
+    const twilightFactor = 1 - Math.min(1, Math.abs(sunDir.y) * 5);
+    skyColorScratch.copy(SKY_NIGHT_COLOR).lerp(SKY_DAY_COLOR, dayFactor);
+    if (twilightFactor > 0.001) {
+        skyColorScratch.lerp(SKY_DUSK_COLOR, twilightFactor * (1 - dayFactor * 0.6));
+    }
+    scene.background.copy(skyColorScratch);
+    scene.fog.color.copy(skyColorScratch);
+
+    sun.intensity = 0.03 + dayFactor * 1.18;
+    moon.intensity = 0.02 + nightFactor * 0.34;
+    hemiLight.intensity = 0.05 + dayFactor * 0.27 + nightFactor * 0.06;
+    sun.color.setHSL(0.1, 0.85 - twilightFactor * 0.28, 0.56 + twilightFactor * 0.08);
+    moon.color.setHSL(0.62, 0.45, 0.62);
+
+    if (skyState.sunGlow?.material) {
+        skyState.sunGlow.material.opacity = 0.1 + dayFactor * 0.25;
+    }
+    if (skyState.moonGlow?.material) {
+        skyState.moonGlow.material.opacity = 0.04 + nightFactor * 0.2;
+    }
+
     for (const cloud of skyState.clouds) {
         cloud.node.position.x += cloud.speed * deltaSeconds;
 
@@ -792,6 +1467,8 @@ function approachAngle(current, target, factor) {
 function createRabbitPart(size, position, material, rotation = null) {
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(size.x, size.y, size.z), material);
     mesh.position.set(position.x, position.y, position.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
     if (rotation) {
         mesh.rotation.set(rotation.x || 0, rotation.y || 0, rotation.z || 0);
     }
@@ -1098,6 +1775,531 @@ function initWildlife() {
     }
 }
 
+function findAncestorUserDataValue(object, key) {
+    let current = object;
+    while (current) {
+        if (current.userData && current.userData[key] !== undefined) {
+            return current.userData[key];
+        }
+        current = current.parent || null;
+    }
+    return null;
+}
+
+function getPropLabel(propType) {
+    if (propType === PROP_TYPE.CHAIR) return "Silla";
+    if (propType === PROP_TYPE.TABLE) return "Mesa";
+    if (propType === PROP_TYPE.LAMP) return "Lampara";
+    if (propType === PROP_TYPE.PLANTER) return "Maceta";
+    return "Objeto";
+}
+
+function normalizeLampLevel(value) {
+    const numeric = Math.floor(Number(value));
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return 0;
+    }
+
+    return Math.min(numeric, LAMP_INTENSITY_LEVELS.length - 1);
+}
+
+function getLampIntensityLabel(level) {
+    if (level === 0) return "Apagada";
+    if (level === 1) return "Minima";
+    if (level === 2) return "Media";
+    return "Maxima";
+}
+
+function createPlacedPropNode(propType) {
+    const root = new THREE.Group();
+
+    if (propType === PROP_TYPE.CHAIR) {
+        root.add(createDetailPart({ x: 0.5, y: 0.08, z: 0.5 }, { x: 0, y: 0.45, z: 0 }, 0x986f45));
+        root.add(createDetailPart({ x: 0.5, y: 0.5, z: 0.08 }, { x: 0, y: 0.74, z: -0.21 }, 0x8b643e));
+        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: -0.2 }, 0x7e5836));
+        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: -0.2 }, 0x7e5836));
+        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: 0.2 }, 0x7e5836));
+        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: 0.2 }, 0x7e5836));
+    } else if (propType === PROP_TYPE.TABLE) {
+        root.add(createDetailPart({ x: 0.94, y: 0.08, z: 0.64 }, { x: 0, y: 0.72, z: 0 }, 0xb58657));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.36, y: 0.34, z: -0.22 }, 0x8c633e));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.36, y: 0.34, z: -0.22 }, 0x8c633e));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.36, y: 0.34, z: 0.22 }, 0x8c633e));
+        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.36, y: 0.34, z: 0.22 }, 0x8c633e));
+    } else if (propType === PROP_TYPE.LAMP) {
+        root.add(createDetailPart({ x: 0.2, y: 0.05, z: 0.2 }, { x: 0, y: 0.03, z: 0 }, 0x6f573b));
+        root.add(createDetailPart({ x: 0.06, y: 0.68, z: 0.06 }, { x: 0, y: 0.37, z: 0 }, 0x5d4a35));
+        const shade = createDetailPart({ x: 0.3, y: 0.2, z: 0.3 }, { x: 0, y: 0.84, z: 0 }, 0xffd890);
+        root.add(shade);
+        root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.18 }, { x: 0, y: 0.96, z: 0 }, 0xcf9d56));
+
+        const bulbMaterial = new THREE.MeshStandardMaterial({
+            color: 0xffe6b4,
+            roughness: 0.26,
+            metalness: 0.02,
+            emissive: 0x000000,
+            emissiveIntensity: 0
+        });
+        bulbMaterial.userData.disposeOnRemove = true;
+        const bulb = new THREE.Mesh(detailUnitGeometry, bulbMaterial);
+        bulb.scale.set(0.12, 0.11, 0.12);
+        bulb.position.set(0, 0.82, 0);
+        bulb.castShadow = false;
+        bulb.receiveShadow = false;
+        bulb.userData.isLampBulb = true;
+        root.add(bulb);
+
+        const pointLight = new THREE.PointLight(0xffe6aa, 0, 0, 2);
+        pointLight.position.set(0, 0.82, 0);
+        pointLight.castShadow = true;
+        pointLight.shadow.mapSize.set(512, 512);
+        pointLight.shadow.bias = -0.0006;
+        pointLight.shadow.normalBias = 0.022;
+        pointLight.shadow.camera.near = 0.1;
+        pointLight.shadow.camera.far = 24;
+        root.add(pointLight);
+        root.userData.lampPointLight = pointLight;
+        root.userData.lampBulbMaterial = bulbMaterial;
+    } else {
+        root.add(createDetailPart({ x: 0.5, y: 0.22, z: 0.5 }, { x: 0, y: 0.11, z: 0 }, 0x8a6540));
+        root.add(createDetailPart({ x: 0.38, y: 0.2, z: 0.38 }, { x: 0, y: 0.32, z: 0 }, 0x3f8947));
+        root.add(createDetailPart({ x: 0.16, y: 0.34, z: 0.16 }, { x: 0, y: 0.45, z: 0 }, 0x4f9f51));
+    }
+
+    root.userData.propType = propType;
+    return root;
+}
+
+function applyLampVisualState(placed, lampLevel, persist = true) {
+    if (!placed || placed.propType !== PROP_TYPE.LAMP) {
+        return false;
+    }
+
+    const normalizedLevel = normalizeLampLevel(lampLevel);
+    placed.lampLevel = normalizedLevel;
+    const pointLight = placed.node?.userData?.lampPointLight || null;
+    const bulbMaterial = placed.node?.userData?.lampBulbMaterial || null;
+    if (pointLight) {
+        pointLight.intensity = LAMP_INTENSITY_LEVELS[normalizedLevel];
+        pointLight.distance = LAMP_DISTANCE_LEVELS[normalizedLevel];
+        pointLight.visible = normalizedLevel > 0;
+    }
+
+    if (bulbMaterial) {
+        bulbMaterial.emissive.setHex(0xffd185);
+        bulbMaterial.emissiveIntensity = LAMP_BULB_EMISSIVE_LEVELS[normalizedLevel];
+    }
+
+    if (persist) {
+        scheduleWorldSave();
+    }
+    return true;
+}
+
+function allocateNextPropId() {
+    const id = `prop-${propState.nextId}`;
+    propState.nextId += 1;
+    return id;
+}
+
+function bumpNextPropIdFromValue(propId) {
+    const numericPart = Number(String(propId || "").replace(/^prop-/, ""));
+    if (Number.isFinite(numericPart) && numericPart >= propState.nextId) {
+        propState.nextId = numericPart + 1;
+    }
+}
+
+function normalizePropEntry(rawEntry, fallbackId = "") {
+    const id = String(rawEntry?.id || fallbackId || "");
+    const propType = String(rawEntry?.propType || "");
+    const x = Number(rawEntry?.x);
+    const y = Number(rawEntry?.y);
+    const z = Number(rawEntry?.z);
+    const yawRaw = Number(rawEntry?.yaw);
+    const yaw = Number.isFinite(yawRaw) ? yawRaw : 0;
+    if (!id || !VALID_PROP_TYPES.has(propType) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(yaw)) {
+        return null;
+    }
+
+    if (!inWorldBounds(Math.floor(x), Math.floor(y), Math.floor(z))) {
+        return null;
+    }
+
+    return {
+        id,
+        propType,
+        x,
+        y,
+        z,
+        yaw,
+        lampLevel: propType === PROP_TYPE.LAMP ? normalizeLampLevel(rawEntry?.lampLevel) : 0
+    };
+}
+
+function serializePropForCloud(rawEntry, fallbackId = "") {
+    const normalized = normalizePropEntry(rawEntry, fallbackId);
+    if (!normalized) {
+        return null;
+    }
+
+    return {
+        propType: normalized.propType,
+        x: normalized.x,
+        y: normalized.y,
+        z: normalized.z,
+        yaw: normalized.yaw,
+        lampLevel: normalized.lampLevel
+    };
+}
+
+function registerPropNode(node, propId) {
+    node.userData.propId = propId;
+    node.traverse((child) => {
+        if (!child.isMesh) {
+            return;
+        }
+        child.userData.propId = propId;
+    });
+}
+
+function disposePropNodeResources(node) {
+    if (!node) {
+        return;
+    }
+
+    node.traverse((child) => {
+        if (!child.isMesh) {
+            return;
+        }
+
+        const material = child.material;
+        if (Array.isArray(material)) {
+            for (const item of material) {
+                if (item?.userData?.disposeOnRemove) {
+                    item.dispose?.();
+                }
+            }
+            return;
+        }
+
+        if (material?.userData?.disposeOnRemove) {
+            material.dispose?.();
+        }
+    });
+}
+
+function addPlacedPropEntry(entry, origin = "local") {
+    const generatedId = entry?.id ? String(entry.id) : allocateNextPropId();
+    const normalized = normalizePropEntry({
+        ...entry,
+        id: generatedId
+    }, generatedId);
+    if (!normalized) {
+        return null;
+    }
+
+    const { id, propType, x, y, z, yaw, lampLevel } = normalized;
+    const existing = placedProps.get(id);
+    if (!existing && origin === "local" && placedProps.size >= MAX_PLACED_PROPS) {
+        showToast("Limite de objetos alcanzado", "warning", 1100);
+        return null;
+    }
+
+    if (existing) {
+        if (existing.propType !== propType) {
+            removePlacedPropEntry(id, "remote", false);
+        } else {
+            existing.x = x;
+            existing.y = y;
+            existing.z = z;
+            existing.yaw = yaw;
+            existing.node.position.set(x, y, z);
+            existing.node.rotation.y = yaw;
+            if (propType === PROP_TYPE.LAMP) {
+                applyLampVisualState(existing, lampLevel, false);
+            } else {
+                existing.lampLevel = 0;
+            }
+
+            bumpNextPropIdFromValue(id);
+            if (origin === "local") {
+                scheduleWorldSave();
+                publishPropUpsert(id);
+            }
+            return id;
+        }
+    }
+
+    const node = createPlacedPropNode(propType);
+    node.position.set(x, y, z);
+    node.rotation.y = yaw;
+    registerPropNode(node, id);
+    propsRoot.add(node);
+
+    const placedEntry = {
+        id,
+        propType,
+        x,
+        y,
+        z,
+        yaw,
+        lampLevel,
+        node
+    };
+    placedProps.set(id, placedEntry);
+
+    if (propType === PROP_TYPE.LAMP) {
+        applyLampVisualState(placedEntry, placedEntry.lampLevel, false);
+    }
+
+    bumpNextPropIdFromValue(id);
+    if (origin === "local") {
+        scheduleWorldSave();
+        publishPropUpsert(id);
+    }
+
+    return id;
+}
+
+function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
+    const id = String(propId || "");
+    if (!id) {
+        return false;
+    }
+
+    const placed = placedProps.get(id);
+    if (!placed) {
+        return false;
+    }
+
+    disposePropNodeResources(placed.node);
+    propsRoot.remove(placed.node);
+    placedProps.delete(id);
+
+    if (origin === "local") {
+        scheduleWorldSave();
+        publishPropRemoval(id);
+    }
+
+    if (showFeedback) {
+        showToast(`${getPropLabel(placed.propType)} guardado al inventario`, "success", 950);
+    }
+
+    return true;
+}
+
+function clearPlacedProps() {
+    for (const propId of Array.from(placedProps.keys())) {
+        removePlacedPropEntry(propId, "remote", false);
+    }
+}
+
+function removePropsSupportedByBlock(x, y, z, origin = "local") {
+    const supportX = Math.floor(x);
+    const supportY = Math.floor(y);
+    const supportZ = Math.floor(z);
+
+    for (const [propId, prop] of Array.from(placedProps.entries())) {
+        const propSupportX = Math.floor(prop.x);
+        const propSupportY = Math.floor(prop.y) - 1;
+        const propSupportZ = Math.floor(prop.z);
+
+        if (propSupportX === supportX && propSupportY === supportY && propSupportZ === supportZ) {
+            removePlacedPropEntry(propId, origin, false);
+        }
+    }
+}
+
+function isSunflowerGroundBlock(id) {
+    return id === BLOCK.GRASS || id === BLOCK.DIRT || id === BLOCK.SAND;
+}
+
+function sampleSurfaceForSunflower(worldX, worldZ) {
+    const x = Math.floor(worldX);
+    const z = Math.floor(worldZ);
+
+    for (let y = WORLD_MAX_Y - 2; y >= 1; y -= 1) {
+        const groundId = getBlock(x, y, z);
+        if (groundId === BLOCK.AIR || groundId === BLOCK.WATER || groundId === BLOCK.LEAVES) {
+            continue;
+        }
+
+        if (!isSunflowerGroundBlock(groundId)) {
+            return null;
+        }
+
+        if (getBlock(x, y + 1, z) !== BLOCK.AIR || getBlock(x, y + 2, z) !== BLOCK.AIR) {
+            return null;
+        }
+
+        return {
+            x: x + 0.5,
+            y: y + 1.02,
+            z: z + 0.5
+        };
+    }
+
+    return null;
+}
+
+function createSunflowerNode() {
+    const root = new THREE.Group();
+    root.add(createDetailPart({ x: 0.08, y: 0.76, z: 0.08 }, { x: 0, y: 0.38, z: 0 }, 0x4a963f));
+    root.add(createDetailPart({ x: 0.3, y: 0.06, z: 0.16 }, { x: 0.12, y: 0.34, z: 0 }, 0x4d9e42, { y: 0.5 }));
+    root.add(createDetailPart({ x: 0.3, y: 0.06, z: 0.16 }, { x: -0.12, y: 0.52, z: 0 }, 0x4d9e42, { y: -0.5 }));
+    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.07 }, { x: 0, y: 0.86, z: 0.1 }, 0xf4ce4c));
+    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.07 }, { x: 0, y: 0.86, z: -0.1 }, 0xf4ce4c));
+    root.add(createDetailPart({ x: 0.07, y: 0.2, z: 0.2 }, { x: 0.1, y: 0.86, z: 0 }, 0xf4ce4c));
+    root.add(createDetailPart({ x: 0.07, y: 0.2, z: 0.2 }, { x: -0.1, y: 0.86, z: 0 }, 0xf4ce4c));
+    root.add(createDetailPart({ x: 0.16, y: 0.16, z: 0.16 }, { x: 0, y: 0.86, z: 0 }, 0x57351f));
+    return root;
+}
+
+function resetSunflowerSpawnTimer() {
+    floraState.spawnTimer = randomInRange(SUNFLOWER_SPAWN_INTERVAL_MIN, SUNFLOWER_SPAWN_INTERVAL_MAX);
+}
+
+function removeSunflowerEntity(flowerId) {
+    const sunflower = floraState.sunflowers.get(flowerId);
+    if (!sunflower) {
+        return false;
+    }
+
+    sunflowerRoot.remove(sunflower.node);
+    floraState.sunflowers.delete(flowerId);
+    return true;
+}
+
+function clearSunflowers() {
+    for (const flowerId of Array.from(floraState.sunflowers.keys())) {
+        removeSunflowerEntity(flowerId);
+    }
+}
+
+function harvestSunflower(flowerId) {
+    if (!removeSunflowerEntity(flowerId)) {
+        return false;
+    }
+
+    addSunflowerCurrency(1, "Girasol cosechado");
+    return true;
+}
+
+function trySpawnSunflowerNearPlayer(force = false) {
+    if (!force && !state.worldStarted) {
+        return false;
+    }
+
+    if (floraState.sunflowers.size >= SUNFLOWER_MAX_COUNT) {
+        return false;
+    }
+
+    const searchRadius = Math.max(24, state.chunkRadius * CHUNK_SIZE * 2.2);
+
+    for (let attempt = 0; attempt < SUNFLOWER_SPAWN_ATTEMPTS; attempt += 1) {
+        const angle = Math.random() * Math.PI * 2;
+        const distance = randomInRange(SUNFLOWER_MIN_PLAYER_DISTANCE + 3, searchRadius);
+        const candidateX = state.playerPosition.x + Math.cos(angle) * distance;
+        const candidateZ = state.playerPosition.z + Math.sin(angle) * distance;
+        const spawnPoint = sampleSurfaceForSunflower(candidateX, candidateZ);
+        if (!spawnPoint) {
+            continue;
+        }
+
+        const spawnChunk = chunkKey(worldToChunkCoord(spawnPoint.x), worldToChunkCoord(spawnPoint.z));
+        if (!chunkMap.has(spawnChunk)) {
+            continue;
+        }
+
+        let tooClose = false;
+        for (const sunflower of floraState.sunflowers.values()) {
+            const dx = spawnPoint.x - sunflower.x;
+            const dz = spawnPoint.z - sunflower.z;
+            if (dx * dx + dz * dz < SUNFLOWER_MIN_FLOWER_DISTANCE * SUNFLOWER_MIN_FLOWER_DISTANCE) {
+                tooClose = true;
+                break;
+            }
+        }
+
+        if (tooClose) {
+            continue;
+        }
+
+        const node = createSunflowerNode();
+        node.position.set(spawnPoint.x, spawnPoint.y, spawnPoint.z);
+        node.rotation.y = Math.random() * Math.PI * 2;
+        const id = `sunflower-${floraState.nextId}`;
+        floraState.nextId += 1;
+
+        node.userData.sunflowerId = id;
+        node.traverse((child) => {
+            if (child.isMesh) {
+                child.userData.sunflowerId = id;
+            }
+        });
+
+        sunflowerRoot.add(node);
+        floraState.sunflowers.set(id, {
+            id,
+            node,
+            x: spawnPoint.x,
+            y: spawnPoint.y,
+            z: spawnPoint.z,
+            swayPhase: Math.random() * Math.PI * 2,
+            swaySpeed: randomInRange(1.2, 2.2)
+        });
+        return true;
+    }
+
+    return false;
+}
+
+function initSunflowers() {
+    clearSunflowers();
+    floraState.nextId = 1;
+    resetSunflowerSpawnTimer();
+
+    const initialCount = randomIntInclusive(16, 30);
+    for (let i = 0; i < initialCount; i += 1) {
+        if (!trySpawnSunflowerNearPlayer(true)) {
+            break;
+        }
+    }
+}
+
+function updateSunflowers(deltaSeconds) {
+    if (!state.worldReady) {
+        return;
+    }
+
+    floraState.spawnTimer -= deltaSeconds;
+    if (floraState.spawnTimer <= 0) {
+        resetSunflowerSpawnTimer();
+        const occupancy = floraState.sunflowers.size / SUNFLOWER_MAX_COUNT;
+        const spawnChance = Math.max(0.24, 0.9 - occupancy * 0.75);
+        if (Math.random() < spawnChance) {
+            const bursts = floraState.sunflowers.size < 20 ? randomIntInclusive(1, 3) : 1;
+            for (let i = 0; i < bursts; i += 1) {
+                if (!trySpawnSunflowerNearPlayer(false)) {
+                    break;
+                }
+            }
+        }
+    }
+
+    for (const [flowerId, flower] of Array.from(floraState.sunflowers.entries())) {
+        const dx = flower.x - state.playerPosition.x;
+        const dz = flower.z - state.playerPosition.z;
+        if (dx * dx + dz * dz > SUNFLOWER_DESPAWN_DISTANCE * SUNFLOWER_DESPAWN_DISTANCE) {
+            removeSunflowerEntity(flowerId);
+            continue;
+        }
+
+        flower.swayPhase += deltaSeconds * flower.swaySpeed;
+        flower.node.rotation.z = Math.sin(flower.swayPhase) * 0.06;
+    }
+}
+
 function normalizeProfileLabel(label) {
     const text = String(label || "").trim();
     if (!text) {
@@ -1181,7 +2383,7 @@ function sanitizeRoomId(value) {
 }
 
 function isValidBlockId(id) {
-    return Number.isInteger(id) && id >= BLOCK.AIR && id <= BLOCK.WATER;
+    return Number.isInteger(id) && id >= BLOCK.AIR && id <= BLOCK.GLASS;
 }
 
 function parseBlockKey(key) {
@@ -1195,6 +2397,314 @@ function parseBlockKey(key) {
     }
 
     return { x, y, z };
+}
+
+function getTerrainFingerprint() {
+    const samples = TERRAIN_SYNC_SAMPLE_POINTS.map(([x, z]) => `${x},${z}:${getColumnInfo(x, z).height}`);
+    return `${WORLD_SEED}|${samples.join(";")}`;
+}
+
+function getMedian(values) {
+    if (!Array.isArray(values) || values.length === 0) {
+        return 0;
+    }
+
+    const sorted = [...values].sort((a, b) => a - b);
+    const middle = Math.floor(sorted.length / 2);
+    if (sorted.length % 2 === 0) {
+        return (sorted[middle - 1] + sorted[middle]) * 0.5;
+    }
+
+    return sorted[middle];
+}
+
+function computeTerrainReacomodoShift(edits, props = []) {
+    const foundationByColumn = new Map();
+    for (const item of edits) {
+        if (!Array.isArray(item) || item.length !== 2) {
+            continue;
+        }
+
+        const key = String(item[0] || "");
+        const id = Number(item[1]);
+        const parsed = parseBlockKey(key);
+        if (!parsed || !isValidBlockId(id) || id === BLOCK.AIR || id === BLOCK.WATER) {
+            continue;
+        }
+
+        const columnKey = `${parsed.x}|${parsed.z}`;
+        const current = foundationByColumn.get(columnKey);
+        if (current === undefined || parsed.y < current) {
+            foundationByColumn.set(columnKey, parsed.y);
+        }
+    }
+
+    const deltas = [];
+    for (const [columnKey, minY] of foundationByColumn.entries()) {
+        const [xText, zText] = columnKey.split("|");
+        const x = Number(xText);
+        const z = Number(zText);
+        if (!Number.isFinite(x) || !Number.isFinite(z)) {
+            continue;
+        }
+
+        const surfaceY = getColumnInfo(x, z).height;
+        deltas.push(minY - (surfaceY + 1));
+    }
+
+    if (deltas.length < TERRAIN_REACOMODO_MIN_COLUMNS) {
+        for (const prop of props) {
+            const x = Math.floor(Number(prop?.x));
+            const y = Math.floor(Number(prop?.y));
+            const z = Math.floor(Number(prop?.z));
+            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+                continue;
+            }
+
+            const surfaceY = getColumnInfo(x, z).height;
+            deltas.push(y - (surfaceY + 1));
+        }
+    }
+
+    if (deltas.length < TERRAIN_REACOMODO_MIN_COLUMNS) {
+        return 0;
+    }
+
+    const sorted = [...deltas].sort((a, b) => a - b);
+    const trim = Math.floor(sorted.length * 0.2);
+    const core = sorted.slice(trim, sorted.length - trim);
+    const median = getMedian(core.length > 0 ? core : sorted);
+    const shift = clampInt(-median, -TERRAIN_REACOMODO_MAX_SHIFT, TERRAIN_REACOMODO_MAX_SHIFT);
+    if (Math.abs(shift) < TERRAIN_REACOMODO_MIN_ABS_SHIFT) {
+        return 0;
+    }
+
+    return shift;
+}
+
+function remapEditsWithVerticalShift(edits, shiftY) {
+    if (!Number.isFinite(shiftY) || shiftY === 0) {
+        return edits
+            .filter((item) => Array.isArray(item) && item.length === 2)
+            .map((item) => [String(item[0] || ""), Number(item[1])]);
+    }
+
+    const next = new Map();
+    for (const item of edits) {
+        if (!Array.isArray(item) || item.length !== 2) {
+            continue;
+        }
+
+        const key = String(item[0] || "");
+        const id = Number(item[1]);
+        const parsed = parseBlockKey(key);
+        if (!parsed || !isValidBlockId(id)) {
+            continue;
+        }
+
+        const y = parsed.y + shiftY;
+        if (!inWorldBounds(parsed.x, y, parsed.z)) {
+            continue;
+        }
+
+        const nextKey = blockKey(parsed.x, y, parsed.z);
+        const procedural = getProceduralBlock(parsed.x, y, parsed.z);
+        if (id === procedural) {
+            next.delete(nextKey);
+        } else {
+            next.set(nextKey, id);
+        }
+    }
+
+    return Array.from(next.entries()).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function remapPropsWithVerticalShift(props, shiftY) {
+    if (!Number.isFinite(shiftY) || shiftY === 0) {
+        return Array.isArray(props) ? props : [];
+    }
+
+    const next = [];
+    for (const rawProp of Array.isArray(props) ? props : []) {
+        const x = Number(rawProp?.x);
+        const y = Number(rawProp?.y) + shiftY;
+        const z = Number(rawProp?.z);
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+            continue;
+        }
+
+        if (!inWorldBounds(Math.floor(x), Math.floor(y), Math.floor(z))) {
+            continue;
+        }
+
+        next.push({
+            ...rawProp,
+            x,
+            y,
+            z
+        });
+    }
+
+    return next;
+}
+
+function applyTerrainReacomodoToPayload(edits, props, previousFingerprint, showFeedback = false) {
+    const currentFingerprint = getTerrainFingerprint();
+    const sourceEdits = Array.isArray(edits) ? edits : [];
+    const sourceProps = Array.isArray(props) ? props : [];
+    const fingerprintChanged = String(previousFingerprint || "") !== currentFingerprint;
+
+    if (!fingerprintChanged) {
+        return {
+            edits: sourceEdits,
+            props: sourceProps,
+            fingerprint: currentFingerprint,
+            shiftY: 0,
+            migrated: false
+        };
+    }
+
+    const shiftY = computeTerrainReacomodoShift(sourceEdits, sourceProps);
+    if (!shiftY) {
+        return {
+            edits: sourceEdits,
+            props: sourceProps,
+            fingerprint: currentFingerprint,
+            shiftY: 0,
+            migrated: false
+        };
+    }
+
+    const migratedEdits = remapEditsWithVerticalShift(sourceEdits, shiftY);
+    const migratedProps = remapPropsWithVerticalShift(sourceProps, shiftY);
+    if (showFeedback) {
+        const prefix = shiftY > 0 ? "+" : "";
+        showToast(`Terreno actualizado: reacomodo vertical ${prefix}${shiftY}`, "info", 2600);
+    }
+
+    return {
+        edits: migratedEdits,
+        props: migratedProps,
+        fingerprint: currentFingerprint,
+        shiftY,
+        migrated: true
+    };
+}
+
+function collectChunkEditEntriesFromPayload(chunksPayload) {
+    const entries = [];
+    for (const [, chunk] of Object.entries(chunksPayload || {})) {
+        const edits = chunk?.edits;
+        if (!edits || typeof edits !== "object") {
+            continue;
+        }
+
+        for (const [key, value] of Object.entries(edits)) {
+            const parsed = parseBlockKey(key);
+            const id = Number(value);
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+                continue;
+            }
+            entries.push([key, id]);
+        }
+    }
+
+    return entries;
+}
+
+function collectPropEntriesFromPayload(propsPayload) {
+    const entries = [];
+    for (const [propId, rawProp] of Object.entries(propsPayload || {})) {
+        const normalized = normalizePropEntry({
+            ...(rawProp || {}),
+            id: propId
+        }, propId);
+        if (!normalized) {
+            continue;
+        }
+        entries.push(normalized);
+    }
+
+    return entries;
+}
+
+function buildChunkUpdatePatch(previousEntries, nextEntries) {
+    const patch = {};
+    const previous = new Map(previousEntries);
+    const next = new Map(nextEntries);
+
+    for (const [key, previousId] of previous.entries()) {
+        const parsed = parseBlockKey(key);
+        if (!parsed) {
+            continue;
+        }
+
+        const nextId = next.get(key);
+        if (nextId === previousId) {
+            continue;
+        }
+
+        const ck = chunkKey(worldToChunkCoord(parsed.x), worldToChunkCoord(parsed.z));
+        patch[`chunks/${ck}/edits/${key}`] = null;
+    }
+
+    for (const [key, nextId] of next.entries()) {
+        const parsed = parseBlockKey(key);
+        if (!parsed) {
+            continue;
+        }
+
+        const previousId = previous.get(key);
+        if (previousId === nextId) {
+            continue;
+        }
+
+        const ck = chunkKey(worldToChunkCoord(parsed.x), worldToChunkCoord(parsed.z));
+        patch[`chunks/${ck}/edits/${key}`] = nextId;
+    }
+
+    return patch;
+}
+
+function buildPropUpdatePatch(previousProps, nextProps) {
+    const patch = {};
+    const previousById = new Map();
+    const nextById = new Map();
+
+    for (const prop of Array.isArray(previousProps) ? previousProps : []) {
+        const normalized = normalizePropEntry(prop, prop?.id);
+        if (normalized) {
+            previousById.set(normalized.id, normalized);
+        }
+    }
+
+    for (const prop of Array.isArray(nextProps) ? nextProps : []) {
+        const normalized = normalizePropEntry(prop, prop?.id);
+        if (normalized) {
+            nextById.set(normalized.id, normalized);
+        }
+    }
+
+    for (const propId of previousById.keys()) {
+        if (!nextById.has(propId)) {
+            patch[`props/${propId}`] = null;
+        }
+    }
+
+    for (const [propId, prop] of nextById.entries()) {
+        const serialized = serializePropForCloud(prop, propId);
+        if (serialized) {
+            patch[`props/${propId}`] = serialized;
+        }
+    }
+
+    return patch;
+}
+
+function serializePlacedPropsForSave() {
+    return Array.from(placedProps.values())
+        .map((prop) => normalizePropEntry(prop, prop?.id))
+        .filter((prop) => Boolean(prop));
 }
 
 function flushWorldSave(force = false) {
@@ -1213,13 +2723,29 @@ function flushWorldSave(force = false) {
 
     try {
         if (edits.length === 0) {
-            window.localStorage.removeItem(WORLD_SAVE_KEY);
+            const props = serializePlacedPropsForSave();
+            if (props.length === 0) {
+                window.localStorage.removeItem(WORLD_SAVE_KEY);
+            } else {
+                const payload = {
+                    version: WORLD_SAVE_VERSION,
+                    seed: WORLD_SEED,
+                    terrainFingerprint: getTerrainFingerprint(),
+                    savedAt: Date.now(),
+                    edits: [],
+                    props
+                };
+                window.localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(payload));
+            }
         } else {
+            const props = serializePlacedPropsForSave();
             const payload = {
                 version: WORLD_SAVE_VERSION,
                 seed: WORLD_SEED,
+                terrainFingerprint: getTerrainFingerprint(),
                 savedAt: Date.now(),
-                edits
+                edits,
+                props
             };
 
             window.localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(payload));
@@ -1259,9 +2785,15 @@ function loadWorldFromStorage() {
 
     try {
         const payload = JSON.parse(raw);
-        const edits = Array.isArray(payload?.edits) ? payload.edits : [];
+        const rawEdits = Array.isArray(payload?.edits) ? payload.edits : [];
+        const rawProps = Array.isArray(payload?.props) ? payload.props : [];
+        const reacomodo = applyTerrainReacomodoToPayload(rawEdits, rawProps, payload?.terrainFingerprint, true);
+        const edits = reacomodo.edits;
+        const props = reacomodo.props;
 
         editedBlocks.clear();
+        clearPlacedProps();
+        propState.nextId = 1;
         let loaded = 0;
 
         for (const item of edits) {
@@ -1279,6 +2811,34 @@ function loadWorldFromStorage() {
 
             editedBlocks.set(key, id);
             loaded += 1;
+        }
+
+        for (const rawProp of props) {
+            const id = addPlacedPropEntry(rawProp, "remote");
+            if (!id) {
+                continue;
+            }
+
+            const numericPart = Number(String(id).replace(/^prop-/, ""));
+            if (Number.isFinite(numericPart) && numericPart >= propState.nextId) {
+                propState.nextId = numericPart + 1;
+            }
+        }
+
+        const previousFingerprint = String(payload?.terrainFingerprint || "");
+        if (previousFingerprint !== reacomodo.fingerprint || reacomodo.migrated) {
+            try {
+                const refreshedPayload = {
+                    version: WORLD_SAVE_VERSION,
+                    seed: WORLD_SEED,
+                    terrainFingerprint: reacomodo.fingerprint,
+                    savedAt: Date.now(),
+                    edits,
+                    props
+                };
+                window.localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(refreshedPayload));
+            } catch (error) {
+            }
         }
 
         return loaded;
@@ -1369,74 +2929,237 @@ function addAvatarPart(root, size, position, material, rotation = null) {
     return part;
 }
 
+function buildStylizedMinecraftAvatar(root, materials, style = "default") {
+    const isFemale = style === "valentina";
+    const isMauricio = style === "mauricio";
+
+    const bodyWidth = isFemale ? 0.56 : 0.62;
+    const bodyHeight = isFemale ? 0.72 : 0.76;
+    const bodyDepth = 0.32;
+    const legWidth = 0.24;
+    const legHeight = 0.78;
+    const legDepth = 0.26;
+    const armWidth = 0.2;
+    const armHeight = 0.66;
+    const armDepth = 0.22;
+    const headSize = 0.5;
+
+    const hipY = legHeight;
+    const torsoCenterY = hipY + bodyHeight * 0.5;
+    const shoulderY = hipY + bodyHeight - 0.03;
+    const headCenterY = hipY + bodyHeight + headSize * 0.52;
+    const shoulderOffsetX = bodyWidth * 0.5 + armWidth * 0.5 + 0.02;
+    const legOffsetX = legWidth * 0.55;
+
+    const rig = {
+        leftArmPivot: null,
+        rightArmPivot: null,
+        leftLegPivot: null,
+        rightLegPivot: null,
+        body: null,
+        head: null,
+        bodyBaseY: 0,
+        headBaseY: 0,
+        walkPhase: Math.random() * Math.PI * 2,
+        walkBlend: 0
+    };
+
+    rig.body = addAvatarPart(
+        root,
+        { x: bodyWidth, y: bodyHeight, z: bodyDepth },
+        { x: 0, y: torsoCenterY, z: 0 },
+        materials.cloth
+    );
+    addAvatarPart(
+        root,
+        { x: 0.22, y: 0.1, z: 0.18 },
+        { x: 0, y: hipY + bodyHeight - 0.03, z: 0.06 },
+        materials.skin
+    );
+    rig.head = addAvatarPart(
+        root,
+        { x: headSize, y: headSize, z: headSize },
+        { x: 0, y: headCenterY, z: 0 },
+        materials.skin
+    );
+
+    if (isFemale) {
+        addAvatarPart(root, { x: 0.54, y: 0.2, z: 0.54 }, { x: 0, y: headCenterY + 0.15, z: 0 }, materials.hair);
+        addAvatarPart(root, { x: 0.56, y: 0.58, z: 0.2 }, { x: 0, y: headCenterY - 0.07, z: -0.18 }, materials.hair);
+        addAvatarPart(root, { x: 0.14, y: 0.44, z: 0.18 }, { x: -0.22, y: headCenterY - 0.05, z: -0.04 }, materials.hair);
+        addAvatarPart(root, { x: 0.14, y: 0.44, z: 0.18 }, { x: 0.22, y: headCenterY - 0.05, z: -0.04 }, materials.hair);
+        addAvatarPart(root, { x: bodyWidth + 0.02, y: 0.1, z: bodyDepth + 0.02 }, { x: 0, y: torsoCenterY + 0.22, z: 0 }, materials.detailAccent);
+        addAvatarPart(root, { x: 0.08, y: 0.04, z: 0.04 }, { x: -0.1, y: headCenterY + 0.03, z: 0.26 }, materials.detailDark);
+        addAvatarPart(root, { x: 0.08, y: 0.04, z: 0.04 }, { x: 0.1, y: headCenterY + 0.03, z: 0.26 }, materials.detailDark);
+        addAvatarPart(root, { x: 0.1, y: 0.03, z: 0.03 }, { x: 0, y: headCenterY - 0.1, z: 0.26 }, materials.detailAccent);
+    } else {
+        addAvatarPart(root, { x: 0.54, y: 0.24, z: 0.54 }, { x: 0, y: headCenterY + 0.14, z: 0 }, materials.hair);
+        addAvatarPart(root, { x: 0.52, y: 0.26, z: 0.14 }, { x: 0, y: headCenterY + 0.02, z: 0.2 }, materials.hair);
+        addAvatarPart(root, { x: 0.14, y: 0.24, z: 0.14 }, { x: -0.23, y: headCenterY + 0.02, z: 0.06 }, materials.hair);
+        addAvatarPart(root, { x: 0.14, y: 0.24, z: 0.14 }, { x: 0.23, y: headCenterY + 0.02, z: 0.06 }, materials.hair);
+        if (isMauricio) {
+            addAvatarPart(root, { x: 0.46, y: 0.18, z: 0.05 }, { x: 0, y: headCenterY + 0.03, z: 0.27 }, materials.detailDark);
+            addAvatarPart(root, { x: 0.16, y: 0.11, z: 0.03 }, { x: -0.12, y: headCenterY + 0.03, z: 0.29 }, materials.lens);
+            addAvatarPart(root, { x: 0.16, y: 0.11, z: 0.03 }, { x: 0.12, y: headCenterY + 0.03, z: 0.29 }, materials.lens);
+            addAvatarPart(root, { x: 0.22, y: 0.05, z: 0.05 }, { x: 0, y: headCenterY - 0.09, z: 0.26 }, materials.detailDark);
+            addAvatarPart(root, { x: 0.12, y: 0.06, z: 0.05 }, { x: 0, y: headCenterY - 0.18, z: 0.25 }, materials.detailDark);
+        } else {
+            addAvatarPart(root, { x: 0.08, y: 0.04, z: 0.04 }, { x: -0.1, y: headCenterY + 0.03, z: 0.26 }, materials.detailDark);
+            addAvatarPart(root, { x: 0.08, y: 0.04, z: 0.04 }, { x: 0.1, y: headCenterY + 0.03, z: 0.26 }, materials.detailDark);
+        }
+    }
+
+    const buildLeg = (side) => {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * legOffsetX, hipY, 0);
+        root.add(pivot);
+        addAvatarPart(
+            pivot,
+            { x: legWidth, y: legHeight, z: legDepth },
+            { x: 0, y: -legHeight * 0.5, z: 0 },
+            materials.pants
+        );
+        addAvatarPart(
+            pivot,
+            { x: legWidth + 0.08, y: 0.14, z: legDepth + 0.1 },
+            { x: 0, y: -legHeight - 0.05, z: 0.04 },
+            materials.shoe
+        );
+        addAvatarPart(
+            pivot,
+            { x: legWidth + 0.07, y: 0.05, z: legDepth + 0.09 },
+            { x: 0, y: -legHeight - 0.12, z: 0.05 },
+            materials.sole
+        );
+        return pivot;
+    };
+
+    const buildArm = (side) => {
+        const pivot = new THREE.Group();
+        pivot.position.set(side * shoulderOffsetX, shoulderY, 0);
+        root.add(pivot);
+        addAvatarPart(
+            pivot,
+            { x: armWidth, y: armHeight, z: armDepth },
+            { x: 0, y: -armHeight * 0.5, z: 0 },
+            materials.skin
+        );
+        addAvatarPart(
+            pivot,
+            { x: armWidth + 0.01, y: 0.24, z: armDepth + 0.01 },
+            { x: 0, y: -0.13, z: 0 },
+            materials.cloth
+        );
+        return pivot;
+    };
+
+    rig.leftLegPivot = buildLeg(-1);
+    rig.rightLegPivot = buildLeg(1);
+    rig.leftArmPivot = buildArm(-1);
+    rig.rightArmPivot = buildArm(1);
+
+    rig.bodyBaseY = rig.body.position.y;
+    rig.headBaseY = rig.head.position.y;
+    root.userData.walkRig = rig;
+    return rig;
+}
+
+function updateAvatarWalkAnimation(avatarRoot, movementSpeed, deltaSeconds) {
+    const rig = avatarRoot?.userData?.walkRig;
+    if (!rig) {
+        return;
+    }
+
+    const normalizedSpeed = THREE.MathUtils.clamp((Number(movementSpeed) || 0) / BASE_SPEED, 0, 1.5);
+    const targetBlend = normalizedSpeed > AVATAR_WALK_MIN_SPEED ? Math.min(1, normalizedSpeed) : 0;
+    const blendStep = Math.min(1, deltaSeconds * AVATAR_WALK_BLEND_SPEED);
+    rig.walkBlend = THREE.MathUtils.lerp(rig.walkBlend, targetBlend, blendStep);
+
+    if (rig.walkBlend > 0.001) {
+        rig.walkPhase += deltaSeconds * (5.2 + normalizedSpeed * 8.4);
+    }
+
+    const wave = Math.sin(rig.walkPhase);
+    const legSwing = wave * AVATAR_WALK_SWING * rig.walkBlend;
+    const armSwing = -wave * (AVATAR_WALK_SWING * 0.82) * rig.walkBlend;
+
+    rig.leftLegPivot.rotation.x = legSwing;
+    rig.rightLegPivot.rotation.x = -legSwing;
+    rig.leftArmPivot.rotation.x = armSwing;
+    rig.rightArmPivot.rotation.x = -armSwing;
+
+    const bob = Math.abs(Math.sin(rig.walkPhase * 2)) * 0.035 * rig.walkBlend;
+    if (rig.body) {
+        rig.body.position.y = rig.bodyBaseY + bob * 0.35;
+    }
+    if (rig.head) {
+        rig.head.position.y = rig.headBaseY + bob * 0.48;
+    }
+}
+
+function clearAvatarRoot(root) {
+    if (!root) {
+        return;
+    }
+
+    while (root.children.length > 0) {
+        const child = root.children[0];
+        root.remove(child);
+
+        if (!child || !child.isObject3D) {
+            continue;
+        }
+
+        child.traverse((node) => {
+            if (!node.isMesh) {
+                return;
+            }
+
+            node.geometry?.dispose?.();
+            if (Array.isArray(node.material)) {
+                node.material.forEach((material) => material?.dispose?.());
+            } else {
+                node.material?.dispose?.();
+            }
+        });
+    }
+}
+
+function normalizeAvatarHeight(root, targetHeight = AVATAR_VOXEL_TARGET_HEIGHT, alignGround = true) {
+    if (!root) {
+        return;
+    }
+
+    root.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(root);
+    if (!Number.isFinite(bounds.min.y) || !Number.isFinite(bounds.max.y)) {
+        return;
+    }
+
+    const currentHeight = bounds.max.y - bounds.min.y;
+    if (!(currentHeight > 0.0001)) {
+        return;
+    }
+
+    const scaleFactor = targetHeight / currentHeight;
+    root.scale.multiplyScalar(scaleFactor);
+    root.updateMatrixWorld(true);
+
+    if (!alignGround) {
+        return;
+    }
+
+    const groundedBounds = new THREE.Box3().setFromObject(root);
+    if (Number.isFinite(groundedBounds.min.y)) {
+        root.position.y -= groundedBounds.min.y;
+    }
+}
 function buildMauricioAvatar(root, materials) {
-    addAvatarPart(root, { x: 0.5, y: 0.5, z: 0.5 }, { x: 0, y: 1.68, z: 0 }, materials.skin);
-    addAvatarPart(root, { x: 0.62, y: 0.78, z: 0.34 }, { x: 0, y: 1.08, z: 0 }, materials.cloth);
-    addAvatarPart(root, { x: 0.21, y: 0.72, z: 0.22 }, { x: -0.41, y: 1.09, z: 0 }, materials.skin, { z: 0.06 });
-    addAvatarPart(root, { x: 0.21, y: 0.72, z: 0.22 }, { x: 0.41, y: 1.09, z: 0 }, materials.skin, { z: -0.06 });
-
-    addAvatarPart(root, { x: 0.24, y: 0.78, z: 0.25 }, { x: -0.14, y: 0.4, z: 0 }, materials.pants);
-    addAvatarPart(root, { x: 0.24, y: 0.78, z: 0.25 }, { x: 0.14, y: 0.4, z: 0 }, materials.pants);
-
-    addAvatarPart(root, { x: 0.27, y: 0.12, z: 0.31 }, { x: -0.14, y: 0.06, z: 0.02 }, materials.shoe);
-    addAvatarPart(root, { x: 0.27, y: 0.12, z: 0.31 }, { x: 0.14, y: 0.06, z: 0.02 }, materials.shoe);
-    addAvatarPart(root, { x: 0.23, y: 0.05, z: 0.28 }, { x: -0.14, y: 0.0, z: 0.03 }, materials.sole);
-    addAvatarPart(root, { x: 0.23, y: 0.05, z: 0.28 }, { x: 0.14, y: 0.0, z: 0.03 }, materials.sole);
-
-    addAvatarPart(root, { x: 0.56, y: 0.23, z: 0.56 }, { x: 0, y: 2.03, z: 0 }, materials.hair);
-    addAvatarPart(root, { x: 0.58, y: 0.21, z: 0.2 }, { x: 0, y: 1.88, z: -0.19 }, materials.hair);
-    addAvatarPart(root, { x: 0.16, y: 0.26, z: 0.38 }, { x: -0.24, y: 1.88, z: 0.02 }, materials.hair);
-    addAvatarPart(root, { x: 0.16, y: 0.26, z: 0.38 }, { x: 0.24, y: 1.88, z: 0.02 }, materials.hair);
-    addAvatarPart(root, { x: 0.12, y: 0.23, z: 0.2 }, { x: -0.17, y: 1.86, z: 0.26 }, materials.hair);
-    addAvatarPart(root, { x: 0.12, y: 0.26, z: 0.2 }, { x: -0.04, y: 1.83, z: 0.26 }, materials.hair);
-    addAvatarPart(root, { x: 0.12, y: 0.24, z: 0.2 }, { x: 0.09, y: 1.84, z: 0.26 }, materials.hair);
-    addAvatarPart(root, { x: 0.11, y: 0.2, z: 0.2 }, { x: 0.2, y: 1.87, z: 0.24 }, materials.hair);
-
-    addAvatarPart(root, { x: 0.21, y: 0.17, z: 0.05 }, { x: -0.12, y: 1.71, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.21, y: 0.17, z: 0.05 }, { x: 0.12, y: 1.71, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.08, y: 0.05, z: 0.05 }, { x: 0, y: 1.71, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.15, y: 0.11, z: 0.03 }, { x: -0.12, y: 1.71, z: 0.29 }, materials.lens);
-    addAvatarPart(root, { x: 0.15, y: 0.11, z: 0.03 }, { x: 0.12, y: 1.71, z: 0.29 }, materials.lens);
-
-    addAvatarPart(root, { x: 0.06, y: 0.03, z: 0.04 }, { x: -0.08, y: 1.61, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.06, y: 0.03, z: 0.04 }, { x: 0.08, y: 1.61, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.12, y: 0.03, z: 0.04 }, { x: 0, y: 1.49, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.07, y: 0.11, z: 0.04 }, { x: 0, y: 1.43, z: 0.27 }, materials.detailDark);
+    buildStylizedMinecraftAvatar(root, materials, "mauricio");
 }
 
 function buildValentinaAvatar(root, materials) {
-    addAvatarPart(root, { x: 0.5, y: 0.5, z: 0.5 }, { x: 0, y: 1.68, z: 0 }, materials.skin);
-    addAvatarPart(root, { x: 0.6, y: 0.74, z: 0.34 }, { x: 0, y: 1.1, z: 0 }, materials.cloth);
-    addAvatarPart(root, { x: 0.17, y: 0.17, z: 0.04 }, { x: 0, y: 1.31, z: 0.19 }, materials.skin);
-    addAvatarPart(root, { x: 0.21, y: 0.72, z: 0.22 }, { x: -0.41, y: 1.09, z: 0 }, materials.skin, { z: 0.04 });
-    addAvatarPart(root, { x: 0.21, y: 0.72, z: 0.22 }, { x: 0.41, y: 1.09, z: 0 }, materials.skin, { z: -0.04 });
-
-    addAvatarPart(root, { x: 0.24, y: 0.78, z: 0.25 }, { x: -0.14, y: 0.4, z: 0 }, materials.pants);
-    addAvatarPart(root, { x: 0.24, y: 0.78, z: 0.25 }, { x: 0.14, y: 0.4, z: 0 }, materials.pants);
-    addAvatarPart(root, { x: 0.07, y: 0.06, z: 0.04 }, { x: 0, y: 0.78, z: 0.17 }, materials.detailAccent);
-
-    addAvatarPart(root, { x: 0.27, y: 0.12, z: 0.31 }, { x: -0.14, y: 0.06, z: 0.02 }, materials.shoe);
-    addAvatarPart(root, { x: 0.27, y: 0.12, z: 0.31 }, { x: 0.14, y: 0.06, z: 0.02 }, materials.shoe);
-    addAvatarPart(root, { x: 0.23, y: 0.05, z: 0.28 }, { x: -0.14, y: 0.0, z: 0.03 }, materials.sole);
-    addAvatarPart(root, { x: 0.23, y: 0.05, z: 0.28 }, { x: 0.14, y: 0.0, z: 0.03 }, materials.sole);
-
-    addAvatarPart(root, { x: 0.58, y: 0.22, z: 0.58 }, { x: 0, y: 2.03, z: 0 }, materials.hair);
-    addAvatarPart(root, { x: 0.56, y: 0.2, z: 0.2 }, { x: 0, y: 1.88, z: -0.19 }, materials.hair);
-    addAvatarPart(root, { x: 0.56, y: 0.86, z: 0.2 }, { x: 0, y: 1.47, z: -0.2 }, materials.hair);
-    addAvatarPart(root, { x: 0.16, y: 0.8, z: 0.22 }, { x: -0.26, y: 1.46, z: -0.02 }, materials.hair);
-    addAvatarPart(root, { x: 0.16, y: 0.8, z: 0.22 }, { x: 0.26, y: 1.46, z: -0.02 }, materials.hair);
-    addAvatarPart(root, { x: 0.12, y: 0.55, z: 0.2 }, { x: -0.19, y: 1.38, z: 0.24 }, materials.hair, { z: 0.14 });
-    addAvatarPart(root, { x: 0.12, y: 0.55, z: 0.2 }, { x: 0.19, y: 1.38, z: 0.24 }, materials.hair, { z: -0.14 });
-
-    addAvatarPart(root, { x: 0.21, y: 0.17, z: 0.05 }, { x: -0.12, y: 1.71, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.21, y: 0.17, z: 0.05 }, { x: 0.12, y: 1.71, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.08, y: 0.05, z: 0.05 }, { x: 0, y: 1.71, z: 0.27 }, materials.detailDark);
-    addAvatarPart(root, { x: 0.15, y: 0.11, z: 0.03 }, { x: -0.12, y: 1.71, z: 0.29 }, materials.lens);
-    addAvatarPart(root, { x: 0.15, y: 0.11, z: 0.03 }, { x: 0.12, y: 1.71, z: 0.29 }, materials.lens);
-
-    addAvatarPart(root, { x: 0.04, y: 0.06, z: 0.04 }, { x: -0.29, y: 1.64, z: 0.03 }, materials.detailAccent);
-    addAvatarPart(root, { x: 0.04, y: 0.06, z: 0.04 }, { x: 0.29, y: 1.64, z: 0.03 }, materials.detailAccent);
-    addAvatarPart(root, { x: 0.09, y: 0.02, z: 0.04 }, { x: 0, y: 1.52, z: 0.27 }, materials.detailAccent);
+    buildStylizedMinecraftAvatar(root, materials, "valentina");
 }
 
 function resolveAvatarPreset(payload) {
@@ -1464,14 +3187,14 @@ function resolveAvatarPreset(payload) {
             style: "valentina",
             palette: {
                 skin: 0xf0b073,
-                cloth: 0x1f1f26,
-                pants: 0x292a30,
-                shoe: 0x2a2421,
-                sole: 0xe8e3dc,
-                hair: 0x2c211d,
-                detailDark: 0x151219,
-                detailAccent: 0xc19843,
-                lens: 0x7a66ca
+                cloth: 0xe7d4e9,
+                pants: 0x3a2e45,
+                shoe: 0x2f2732,
+                sole: 0xede7e6,
+                hair: 0x2b211d,
+                detailDark: 0x1c1520,
+                detailAccent: 0xc078b3,
+                lens: 0xb487cf
             }
         };
     }
@@ -1499,27 +3222,43 @@ function createBlockyAvatar(payload) {
 
     if (preset.style === "mauricio") {
         buildMauricioAvatar(avatarRoot, materials);
+        normalizeAvatarHeight(avatarRoot);
         return avatarRoot;
     }
 
     if (preset.style === "valentina") {
         buildValentinaAvatar(avatarRoot, materials);
+        normalizeAvatarHeight(avatarRoot);
         return avatarRoot;
     }
 
-    addAvatarPart(avatarRoot, { x: 0.48, y: 0.46, z: 0.48 }, { x: 0, y: 1.67, z: 0 }, materials.skin);
-    addAvatarPart(avatarRoot, { x: 0.54, y: 0.72, z: 0.28 }, { x: 0, y: 1.08, z: 0 }, materials.cloth);
-    addAvatarPart(avatarRoot, { x: 0.2, y: 0.68, z: 0.2 }, { x: -0.37, y: 1.08, z: 0 }, materials.skin);
-    addAvatarPart(avatarRoot, { x: 0.2, y: 0.68, z: 0.2 }, { x: 0.37, y: 1.08, z: 0 }, materials.skin);
-    addAvatarPart(avatarRoot, { x: 0.23, y: 0.72, z: 0.23 }, { x: -0.13, y: 0.36, z: 0 }, materials.pants);
-    addAvatarPart(avatarRoot, { x: 0.23, y: 0.72, z: 0.23 }, { x: 0.13, y: 0.36, z: 0 }, materials.pants);
-
+    buildStylizedMinecraftAvatar(avatarRoot, materials, "default");
+    normalizeAvatarHeight(avatarRoot);
     return avatarRoot;
+}
+
+function getAvatarModelKey(payload) {
+    const profileLabel = normalizeProfileLabel(payload?.label || payload?.displayName || "Invitado");
+    return `${profileLabel}|${String(payload?.color || "")}`;
+}
+
+function ensureLocalAvatarPreviewModel() {
+    const payload = multiplayer.profile || resolvePlayerIdentity();
+    const modelKey = getAvatarModelKey(payload);
+
+    if (localAvatarPreviewState.modelKey === modelKey && localAvatarPreviewRoot.children.length > 0) {
+        return;
+    }
+
+    clearAvatarRoot(localAvatarPreviewRoot);
+    localAvatarPreviewRoot.add(createBlockyAvatar(payload));
+    localAvatarPreviewState.modelKey = modelKey;
 }
 
 function createRemotePlayerNode(playerId, payload) {
     const group = new THREE.Group();
-    group.add(createBlockyAvatar(payload || {}));
+    const avatarModel = createBlockyAvatar(payload || {});
+    group.add(avatarModel);
 
     const nameTag = createNameTagSprite(payload.displayName || playerId, payload.color || "#8ad1ff");
     if (nameTag) {
@@ -1539,10 +3278,12 @@ function createRemotePlayerNode(playerId, payload) {
     return {
         id: playerId,
         group,
+        avatarModel,
         targetPosition: group.position.clone(),
         targetYaw: group.rotation.y,
         nameTag,
-        lastSeenAt: Date.now()
+        lastSeenAt: Date.now(),
+        moveSpeed: 0
     };
 }
 
@@ -1590,12 +3331,18 @@ function removeRemotePlayer(playerId) {
 function updateRemotePlayers(deltaSeconds) {
     const lerpFactor = Math.min(1, 12 * deltaSeconds);
     for (const node of multiplayer.remotePlayers.values()) {
+        const prevX = node.group.position.x;
+        const prevZ = node.group.position.z;
         node.group.position.lerp(node.targetPosition, lerpFactor);
 
         let yawDelta = node.targetYaw - node.group.rotation.y;
         while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
         while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
         node.group.rotation.y += yawDelta * lerpFactor;
+
+        const distance = Math.hypot(node.group.position.x - prevX, node.group.position.z - prevZ);
+        node.moveSpeed = distance / Math.max(deltaSeconds, 1e-4);
+        updateAvatarWalkAnimation(node.avatarModel, node.moveSpeed, deltaSeconds);
     }
 }
 
@@ -1664,6 +3411,139 @@ function queueCloudEditWrite(key, value) {
         multiplayer.writeTimerId = null;
         flushCloudEditWrites();
     }, CLOUD_EDIT_WRITE_BATCH_MS);
+}
+
+function flushCloudPropWrites() {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.refs.propsRootRef) {
+        return;
+    }
+
+    if (!multiplayer.pendingPropWrites.size) {
+        return;
+    }
+
+    const updates = {};
+    for (const [key, value] of multiplayer.pendingPropWrites.entries()) {
+        updates[key] = value;
+    }
+
+    multiplayer.pendingPropWrites.clear();
+    multiplayer.firebase.dbModule.update(multiplayer.refs.propsRootRef, updates).catch((error) => {
+        console.warn("No pude sincronizar cambios de objetos/lamparas (batch)", error);
+
+        for (const [key, value] of Object.entries(updates)) {
+            if (!multiplayer.pendingPropWrites.has(key)) {
+                multiplayer.pendingPropWrites.set(key, value);
+            }
+        }
+
+        if (multiplayer.propWriteTimerId === null) {
+            multiplayer.propWriteTimerId = window.setTimeout(() => {
+                multiplayer.propWriteTimerId = null;
+                flushCloudPropWrites();
+            }, CLOUD_EDIT_RETRY_MS);
+        }
+    });
+}
+
+function queueCloudPropWrite(propId, value) {
+    const key = String(propId || "");
+    if (!key) {
+        return;
+    }
+
+    multiplayer.pendingPropWrites.set(key, value === undefined ? null : value);
+    if (multiplayer.propWriteTimerId !== null) {
+        return;
+    }
+
+    multiplayer.propWriteTimerId = window.setTimeout(() => {
+        multiplayer.propWriteTimerId = null;
+        flushCloudPropWrites();
+    }, CLOUD_EDIT_WRITE_BATCH_MS);
+}
+
+function publishPropUpsert(propId) {
+    if (!multiplayer.ready || !multiplayer.refs.propsRootRef) {
+        return;
+    }
+
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+
+    const placed = placedProps.get(id);
+    const payload = placed ? serializePropForCloud(placed, id) : null;
+    queueCloudPropWrite(id, payload);
+}
+
+function publishPropRemoval(propId) {
+    if (!multiplayer.ready || !multiplayer.refs.propsRootRef) {
+        return;
+    }
+
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+
+    queueCloudPropWrite(id, null);
+}
+
+function applyRemotePropsSnapshot(rawPayload) {
+    const payload = rawPayload && typeof rawPayload === "object" ? rawPayload : {};
+    const seenIds = new Set();
+
+    for (const [propId, rawProp] of Object.entries(payload)) {
+        if (multiplayer.pendingPropWrites.get(propId) === null) {
+            continue;
+        }
+
+        const normalized = normalizePropEntry({
+            ...(rawProp || {}),
+            id: propId
+        }, propId);
+        if (!normalized) {
+            continue;
+        }
+
+        addPlacedPropEntry(normalized, "remote");
+        seenIds.add(normalized.id);
+    }
+
+    for (const propId of Array.from(placedProps.keys())) {
+        const pendingValue = multiplayer.pendingPropWrites.get(propId);
+        const hasPendingCreateOrUpdate = pendingValue !== undefined && pendingValue !== null;
+        if (!seenIds.has(propId) && !hasPendingCreateOrUpdate) {
+            removePlacedPropEntry(propId, "remote", false);
+        }
+    }
+}
+
+function clearPropSnapshotSubscription() {
+    if (typeof multiplayer.propSnapshotUnsubscribe === "function") {
+        multiplayer.propSnapshotUnsubscribe();
+    }
+    multiplayer.propSnapshotUnsubscribe = null;
+}
+
+function subscribePropSnapshot() {
+    if (!multiplayer.ready || multiplayer.propSnapshotUnsubscribe) {
+        return;
+    }
+
+    const dbModule = multiplayer.firebase?.dbModule;
+    const db = multiplayer.firebase?.db;
+    if (!dbModule || !db) {
+        return;
+    }
+
+    const propsRef = multiplayer.refs.propsRootRef || dbModule.ref(db, `${multiplayer.worldPath}/props`);
+    multiplayer.refs.propsRootRef = propsRef;
+    multiplayer.propSnapshotUnsubscribe = dbModule.onValue(propsRef, (snapshot) => {
+        applyRemotePropsSnapshot(snapshot.val() || {});
+    });
 }
 
 function subscribeChunkEditStream(chunkId) {
@@ -1850,16 +3730,73 @@ async function migrateLegacyOpsIfNeeded(dbModule, db, worldPath) {
     await dbModule.remove(opsRef);
 }
 
+async function migrateTerrainLayoutIfNeeded(dbModule, db, worldPath) {
+    const worldRef = dbModule.ref(db, worldPath);
+    const chunksRef = dbModule.ref(db, `${worldPath}/chunks`);
+    const propsRef = dbModule.ref(db, `${worldPath}/props`);
+    const metaRef = dbModule.ref(db, `${worldPath}/meta`);
+    const currentFingerprint = getTerrainFingerprint();
+
+    const metaSnap = await dbModule.get(metaRef);
+    const meta = metaSnap.exists() ? (metaSnap.val() || {}) : {};
+    const storedFingerprint = String(meta?.terrainFingerprint || "");
+    if (storedFingerprint === currentFingerprint) {
+        return { migrated: false, shiftY: 0 };
+    }
+
+    const [chunksSnap, propsSnap] = await Promise.all([
+        dbModule.get(chunksRef),
+        dbModule.get(propsRef)
+    ]);
+
+    const entries = chunksSnap.exists() ? collectChunkEditEntriesFromPayload(chunksSnap.val()) : [];
+    const props = propsSnap.exists() ? collectPropEntriesFromPayload(propsSnap.val()) : [];
+    if (entries.length === 0 && props.length === 0) {
+        if (storedFingerprint !== currentFingerprint) {
+            await dbModule.update(worldRef, {
+                "meta/terrainFingerprint": currentFingerprint,
+                "meta/terrainShiftY": 0,
+                "meta/terrainMigratedAt": Date.now()
+            });
+        }
+        return { migrated: false, shiftY: 0 };
+    }
+
+    const shiftY = computeTerrainReacomodoShift(entries, props);
+    const patch = {
+        "meta/terrainFingerprint": currentFingerprint,
+        "meta/terrainShiftY": shiftY,
+        "meta/terrainMigratedAt": Date.now()
+    };
+
+    if (!shiftY) {
+        await dbModule.update(worldRef, patch);
+        return { migrated: false, shiftY: 0 };
+    }
+
+    const migratedEntries = remapEditsWithVerticalShift(entries, shiftY);
+    const migratedProps = remapPropsWithVerticalShift(props, shiftY);
+    const chunkPatch = buildChunkUpdatePatch(entries, migratedEntries);
+    const propPatch = buildPropUpdatePatch(props, migratedProps);
+    const fullPatch = { ...chunkPatch, ...propPatch, ...patch };
+    await dbModule.update(worldRef, fullPatch);
+    return { migrated: true, shiftY };
+}
+
 function updateAdaptiveQuality(deltaSeconds) {
     const fpsInstant = deltaSeconds > 0 ? 1 / deltaSeconds : 60;
     perfState.fpsEma = perfState.fpsEma * 0.92 + fpsInstant * 0.08;
     perfState.adjustCooldown -= deltaSeconds;
 
+    if (!perfState.adaptiveEnabled) {
+        return;
+    }
+
     if (perfState.adjustCooldown > 0) {
         return;
     }
 
-    const minRatio = 0.72;
+    const minRatio = perfState.minPixelRatio;
     let nextRatio = perfState.dynamicPixelRatio;
 
     if (perfState.fpsEma < 47 && nextRatio > minRatio) {
@@ -1928,8 +3865,9 @@ async function resolveFirebaseConfig() {
 
 async function setupRealtimeMultiplayer() {
     multiplayer.profile = resolvePlayerIdentity();
+    ensureLocalAvatarPreviewModel();
     const profileLabel = multiplayer.profile.displayName || multiplayer.profile.label;
-    setOnlineStatus(`Jugador: ${profileLabel} · modo solo`);
+    setOnlineStatus(`Jugador: ${profileLabel} - modo solo`);
 
     if (!multiplayerConfig?.enabled) {
         return;
@@ -1955,12 +3893,15 @@ async function setupRealtimeMultiplayer() {
         const worldPath = `worlds/${multiplayer.roomId}`;
 
         await migrateLegacyOpsIfNeeded(dbModule, db, worldPath);
+        const terrainMigration = await migrateTerrainLayoutIfNeeded(dbModule, db, worldPath);
 
         multiplayer.firebase = { dbModule, db };
         multiplayer.worldPath = worldPath;
         multiplayer.refs.playersRef = dbModule.ref(db, `${worldPath}/players`);
         multiplayer.refs.myPlayerRef = dbModule.ref(db, `${worldPath}/players/${multiplayer.profile.id}`);
         multiplayer.refs.chunksRootRef = dbModule.ref(db, `${worldPath}/chunks`);
+        multiplayer.refs.propsRootRef = dbModule.ref(db, `${worldPath}/props`);
+        multiplayer.refs.metaRef = dbModule.ref(db, `${worldPath}/meta`);
 
         const connectedRef = dbModule.ref(db, ".info/connected");
         const unsubConnected = dbModule.onValue(connectedRef, (snapshot) => {
@@ -1996,7 +3937,12 @@ async function setupRealtimeMultiplayer() {
         multiplayer.enabled = true;
         multiplayer.ready = true;
         syncChunkEditSubscriptions();
+        subscribePropSnapshot();
         setOnlineStatus(`Sala ${multiplayer.roomId}: multijugador activo`);
+        if (terrainMigration.migrated) {
+            const prefix = terrainMigration.shiftY > 0 ? "+" : "";
+            showToast(`Terreno actualizado en nube: reacomodo ${prefix}${terrainMigration.shiftY}`, "info", 2800);
+        }
     } catch (error) {
         console.error("No se pudo conectar multijugador", error);
         setOnlineStatus("Multijugador no disponible. Sigues en modo solo.");
@@ -2343,6 +4289,38 @@ function setBlock(x, y, z, id) {
     markChunksDirtyAroundBlock(x, z);
 }
 
+function isSeeThroughBlock(id) {
+    return id === BLOCK.WATER || id === BLOCK.GLASS || id === BLOCK.LEAVES;
+}
+
+function isTranslucentBlock(id) {
+    return id === BLOCK.WATER || id === BLOCK.GLASS;
+}
+
+function doesNeighborOccludeFace(id, neighborId) {
+    if (neighborId === BLOCK.AIR) {
+        return false;
+    }
+
+    if (id === BLOCK.WATER) {
+        return neighborId === BLOCK.WATER;
+    }
+
+    if (id === BLOCK.GLASS) {
+        return neighborId === BLOCK.GLASS;
+    }
+
+    if (id === BLOCK.LEAVES) {
+        return neighborId === BLOCK.LEAVES;
+    }
+
+    if (isSeeThroughBlock(neighborId)) {
+        return false;
+    }
+
+    return true;
+}
+
 function isBlockVisible(x, y, z, id) {
     const neighbors = [
         [1, 0, 0],
@@ -2355,11 +4333,7 @@ function isBlockVisible(x, y, z, id) {
 
     for (const [dx, dy, dz] of neighbors) {
         const neighborId = getBlock(x + dx, y + dy, z + dz);
-        if (neighborId === BLOCK.AIR) {
-            return true;
-        }
-
-        if (id === BLOCK.LEAVES && neighborId !== BLOCK.LEAVES) {
+        if (!doesNeighborOccludeFace(id, neighborId)) {
             return true;
         }
     }
@@ -2431,8 +4405,10 @@ function rebuildChunkMesh(chunk) {
         }
 
         const mesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
-        mesh.castShadow = false;
-        mesh.receiveShadow = false;
+        const transparentBlock = isTranslucentBlock(id);
+        mesh.castShadow = !transparentBlock;
+        mesh.receiveShadow = true;
+        mesh.renderOrder = transparentBlock ? 3 : 1;
         mesh.userData.blockId = id;
         mesh.userData.lookupKeys = [];
 
@@ -2563,11 +4539,16 @@ function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
 
 function setChunkRadius(nextRadius) {
     const clamped = clampInt(nextRadius, 2, 8);
-    if (clamped === state.chunkRadius) {
-        return;
-    }
+    const changed = clamped !== state.chunkRadius;
 
     state.chunkRadius = clamped;
+    updateGameplaySettingsUi();
+
+    writeStorageValue(CHUNK_RADIUS_STORAGE_KEY, clamped);
+
+    if (!changed) {
+        return;
+    }
     updateChunkStreaming(true);
     setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount}`);
 }
@@ -2593,6 +4574,9 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
     }
 
     setBlock(x, y, z, id);
+    if (id === BLOCK.AIR || id === BLOCK.WATER) {
+        removePropsSupportedByBlock(x, y, z, origin);
+    }
     scheduleWorldSave();
 
     if (origin === "local") {
@@ -2698,6 +4682,7 @@ function getForwardRightVectors() {
 function updatePlayer(deltaSeconds) {
     const turnSpeed = 1.6 * deltaSeconds;
     const pitchSpeed = 1.25 * deltaSeconds;
+    const isSprinting = state.keyDown.has("ShiftLeft");
 
     if (!controls.isLocked) {
         if (state.keyDown.has("ArrowLeft")) {
@@ -2725,7 +4710,7 @@ function updatePlayer(deltaSeconds) {
         }
     }
 
-    const speed = state.keyDown.has("ShiftLeft") ? SPRINT_SPEED : BASE_SPEED;
+    const speed = isSprinting ? SPRINT_SPEED : BASE_SPEED;
     const { forward, right } = getForwardRightVectors();
 
     let moveForward = 0;
@@ -2765,39 +4750,276 @@ function updatePlayer(deltaSeconds) {
 
 function updateHud() {
     const p = state.playerPosition;
-    coordsEl.textContent = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}`;
-    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Conejos: ${wildlifeState.rabbits.size} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`);
+    const previewSuffix = state.avatarPreviewOpen ? " | Vista avatar" : "";
+    coordsEl.textContent = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}${previewSuffix}`;
+    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Flores: ${floraState.sunflowers.size} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`);
 }
 
 function updateSelectedMaterialHud() {
-    const blockInfo = PLACEABLE_BLOCKS[state.selectedHotbarIndex];
-    const label = blockInfo?.label || "Material";
+    const item = getSelectedHotbarItem();
+    const label = item?.label || "Material";
+    const kindLabel = item?.kind === ITEM_KIND.PROP ? "Objeto" : "Material";
 
     if (selectedMaterialHudEl) {
-        selectedMaterialHudEl.textContent = `Material: ${label}`;
+        selectedMaterialHudEl.textContent = `${kindLabel}: ${label}`;
     }
 
     if (hotbarSelectedMaterialEl) {
-        hotbarSelectedMaterialEl.textContent = `Material seleccionado: ${label}`;
+        hotbarSelectedMaterialEl.textContent = `Seleccionado: ${label}`;
+    }
+}
+
+function renderInventoryUi() {
+    if (!inventoryGridEl) {
+        return;
+    }
+
+    inventoryGridEl.innerHTML = "";
+    for (const category of INVENTORY_CATEGORY_ORDER) {
+        const items = INVENTORY_ITEMS.filter((item) => item.category === category);
+        if (items.length === 0) {
+            continue;
+        }
+
+        const section = document.createElement("section");
+        section.className = "inventory-section";
+        const title = document.createElement("p");
+        title.className = "inventory-section-title";
+        title.textContent = INVENTORY_CATEGORY_LABELS[category] || "Otros";
+        section.appendChild(title);
+
+        const sectionGrid = document.createElement("div");
+        sectionGrid.className = "inventory-section-grid";
+
+        for (const item of items) {
+            const card = document.createElement("button");
+            card.type = "button";
+            card.className = "inventory-item";
+            card.draggable = true;
+            card.style.backgroundColor = getInventoryItemTint(item);
+            card.innerHTML = `<span class="inventory-item-label">${item.label}</span><span class="inventory-item-meta">${item.kind === ITEM_KIND.PROP ? "Objeto decorativo" : "Bloque"}</span>`;
+
+            card.addEventListener("dragstart", (event) => {
+                draggedInventoryItemId = item.id;
+                if (event.dataTransfer) {
+                    event.dataTransfer.effectAllowed = "copy";
+                    event.dataTransfer.setData("text/plain", item.id);
+                }
+            });
+            card.addEventListener("dragend", () => {
+                draggedInventoryItemId = "";
+            });
+
+            card.addEventListener("click", () => {
+                assignHotbarSlot(state.selectedHotbarIndex, item.id, true);
+            });
+
+            sectionGrid.appendChild(card);
+        }
+
+        section.appendChild(sectionGrid);
+        inventoryGridEl.appendChild(section);
+    }
+}
+
+function setInventoryOpen(open, showFeedback = false) {
+    const next = Boolean(open);
+    if (next === state.inventoryOpen) {
+        return;
+    }
+
+    state.inventoryOpen = next;
+    state.keyDown.clear();
+    if (inventoryPanelEl) {
+        inventoryPanelEl.classList.toggle("hidden", !state.inventoryOpen);
+    }
+
+    if (state.inventoryOpen) {
+        if (crosshairEl) {
+            crosshairEl.classList.add("hidden");
+        }
+
+        if (controls.isLocked) {
+            try {
+                controls.unlock();
+            } catch (error) {
+            }
+        }
+
+        renderInventoryUi();
+        if (showFeedback) {
+            showToast("Inventario abierto", "info", 900);
+        }
+        return;
+    }
+
+    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible) {
+        if (crosshairEl) {
+            crosshairEl.classList.remove("hidden");
+        }
+
+        if (state.worldStarted && !controls.isLocked) {
+            try {
+                controls.lock();
+            } catch (error) {
+            }
+        }
+    }
+
+    if (showFeedback) {
+        showToast("Inventario cerrado", "info", 800);
+    }
+}
+
+function assignHotbarSlot(slotIndex, itemId, showFeedback = false) {
+    const index = THREE.MathUtils.clamp(Math.floor(Number(slotIndex) || 0), 0, HOTBAR_SIZE - 1);
+    const normalizedId = String(itemId || "");
+    if (!INVENTORY_ITEM_BY_ID.has(normalizedId)) {
+        return;
+    }
+
+    state.hotbarItemIds[index] = normalizedId;
+    saveHotbarConfiguration();
+    refreshHotbarUi();
+
+    if (showFeedback) {
+        const item = INVENTORY_ITEM_BY_ID.get(normalizedId);
+        showToast(`Slot ${index + 1}: ${item?.label || "Item"}`, "success", 900);
     }
 }
 
 function refreshHotbarUi() {
+    if (!hotbarEl) {
+        return;
+    }
+
     hotbarEl.innerHTML = "";
-    PLACEABLE_BLOCKS.forEach((blockInfo, index) => {
+    for (let index = 0; index < HOTBAR_SIZE; index += 1) {
+        const item = getHotbarItemByIndex(index);
         const slot = document.createElement("div");
         slot.className = `slot${index === state.selectedHotbarIndex ? " selected" : ""}`;
-        slot.setAttribute("aria-label", `${index + 1} ${blockInfo.label}`);
-        slot.style.backgroundColor = `#${BLOCK_COLORS[blockInfo.id].toString(16).padStart(6, "0")}33`;
-        slot.textContent = `${index + 1}\n${blockInfo.label}`;
+        slot.setAttribute("aria-label", `${index + 1} ${item.label}`);
+        slot.style.backgroundColor = getInventoryItemTint(item);
+        slot.textContent = `${index + 1}\n${item.label}`;
+
+        slot.addEventListener("click", () => {
+            setSelectedHotbar(index);
+        });
+
+        slot.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            slot.classList.add("drag-target");
+        });
+
+        slot.addEventListener("dragleave", () => {
+            slot.classList.remove("drag-target");
+        });
+
+        slot.addEventListener("drop", (event) => {
+            event.preventDefault();
+            slot.classList.remove("drag-target");
+            const droppedId = event.dataTransfer?.getData("text/plain") || draggedInventoryItemId;
+            assignHotbarSlot(index, droppedId, true);
+            draggedInventoryItemId = "";
+        });
+
         hotbarEl.appendChild(slot);
-    });
+    }
 
     updateSelectedMaterialHud();
 }
 
 function selectedBlockId() {
-    return PLACEABLE_BLOCKS[state.selectedHotbarIndex].id;
+    const selected = getSelectedHotbarItem();
+    if (!selected || selected.kind !== ITEM_KIND.BLOCK) {
+        return null;
+    }
+
+    return selected.blockId;
+}
+
+function selectedPropType() {
+    const selected = getSelectedHotbarItem();
+    if (!selected || selected.kind !== ITEM_KIND.PROP) {
+        return "";
+    }
+
+    return selected.propType || "";
+}
+
+function findTargetedBlockHit() {
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    raycaster.far = MAX_REACH;
+    const intersects = raycaster.intersectObjects(blockMeshes, false);
+    if (!intersects.length) {
+        return null;
+    }
+
+    const hit = intersects[0];
+    const instanceId = hit.instanceId;
+    if (instanceId === undefined || instanceId === null) {
+        return null;
+    }
+
+    const lookup = blockPositionLookup.get(`${hit.object.id}:${instanceId}`);
+    if (!lookup) {
+        return null;
+    }
+
+    return { hit, lookup };
+}
+
+function findTargetedPropHit(blockingDistance = null) {
+    if (propsRoot.children.length === 0) {
+        return null;
+    }
+
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    raycaster.far = MAX_REACH;
+    const propHits = raycaster.intersectObjects(propsRoot.children, true);
+    if (!propHits.length) {
+        return null;
+    }
+
+    const blockHit = blockingDistance === null ? findTargetedBlockHit() : null;
+    const nearestProp = propHits[0];
+    const blockerDistance = blockingDistance === null
+        ? (blockHit ? blockHit.hit.distance : Number.POSITIVE_INFINITY)
+        : blockingDistance;
+    if (nearestProp.distance > blockerDistance + 0.001) {
+        return null;
+    }
+
+    const propId = String(findAncestorUserDataValue(nearestProp.object, "propId") || "");
+    if (!propId) {
+        return null;
+    }
+
+    const placed = placedProps.get(propId);
+    if (!placed) {
+        return null;
+    }
+
+    return {
+        propId,
+        placed,
+        hit: nearestProp,
+        distance: nearestProp.distance
+    };
+}
+
+function hasPropNearPosition(x, y, z, radius = 0.32) {
+    const radiusSq = radius * radius;
+    for (const prop of placedProps.values()) {
+        const dx = prop.x - x;
+        const dy = prop.y - y;
+        const dz = prop.z - z;
+        if (dx * dx + dy * dy + dz * dz <= radiusSq) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function attemptMineOrPlace(isPlacing) {
@@ -2805,24 +5027,12 @@ function attemptMineOrPlace(isPlacing) {
         return;
     }
 
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
-    raycaster.far = MAX_REACH;
-
-    const intersects = raycaster.intersectObjects(blockMeshes, false);
-    if (!intersects.length) {
+    const targeted = findTargetedBlockHit();
+    if (!targeted) {
         return;
     }
 
-    const hit = intersects[0];
-    const instanceId = hit.instanceId;
-    if (instanceId === undefined || instanceId === null) {
-        return;
-    }
-
-    const lookup = blockPositionLookup.get(`${hit.object.id}:${instanceId}`);
-    if (!lookup) {
-        return;
-    }
+    const { hit, lookup } = targeted;
 
     if (!isPlacing) {
         if (lookup.id === BLOCK.BEDROCK || lookup.id === BLOCK.WATER) {
@@ -2869,23 +5079,125 @@ function attemptMineOrPlace(isPlacing) {
         return;
     }
 
-    applyBlockMutation(placeX, placeY, placeZ, selectedBlockId(), "local");
+    const propType = selectedPropType();
+    if (propType) {
+        if (normal.y < 0.4) {
+            showToast("Los objetos se colocan sobre una superficie", "warning", 900);
+            return;
+        }
+
+        const propX = placeX + 0.5;
+        const propY = placeY;
+        const propZ = placeZ + 0.5;
+        if (hasPropNearPosition(propX, propY, propZ, 0.34)) {
+            showToast("Ya hay un objeto en ese espacio", "warning", 900);
+            return;
+        }
+
+        const propId = addPlacedPropEntry({
+            propType,
+            x: propX,
+            y: propY,
+            z: propZ,
+            lampLevel: propType === PROP_TYPE.LAMP ? 0 : undefined,
+            yaw: controls.getObject().rotation.y || 0
+        }, "local");
+
+        if (propId) {
+            showToast(`${getPropLabel(propType)} colocada`, "success", 900);
+        }
+        return;
+    }
+
+    const placeId = selectedBlockId();
+    if (placeId === null) {
+        return;
+    }
+    applyBlockMutation(placeX, placeY, placeZ, placeId, "local");
 }
 
 function setSelectedHotbar(index) {
-    const clamped = THREE.MathUtils.clamp(index, 0, PLACEABLE_BLOCKS.length - 1);
+    const clamped = THREE.MathUtils.clamp(index, 0, HOTBAR_SIZE - 1);
     if (clamped === state.selectedHotbarIndex) {
         return;
     }
 
     state.selectedHotbarIndex = clamped;
     refreshHotbarUi();
-    const label = PLACEABLE_BLOCKS[state.selectedHotbarIndex]?.label || "Material";
+    const label = getSelectedHotbarItem()?.label || "Material";
     showToast(`Material seleccionado: ${label}`, "success", 900);
 }
 
+function tryHarvestSunflowerAtCrosshair() {
+    if (sunflowerRoot.children.length === 0) {
+        return false;
+    }
+
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    raycaster.far = MAX_REACH;
+    const flowerHits = raycaster.intersectObjects(sunflowerRoot.children, true);
+    if (!flowerHits.length) {
+        return false;
+    }
+
+    const blockHit = findTargetedBlockHit();
+    const blockingDistance = blockHit ? blockHit.hit.distance : Number.POSITIVE_INFINITY;
+    const nearestFlower = flowerHits[0];
+    if (nearestFlower.distance > blockingDistance + 0.001) {
+        return false;
+    }
+
+    const flowerId = findAncestorUserDataValue(nearestFlower.object, "sunflowerId");
+    if (!flowerId) {
+        return false;
+    }
+
+    return harvestSunflower(flowerId);
+}
+
+function cycleLampIntensity(propId, showFeedback = true) {
+    const id = String(propId || "");
+    if (!id) {
+        return false;
+    }
+
+    const placed = placedProps.get(id);
+    if (!placed || placed.propType !== PROP_TYPE.LAMP) {
+        return false;
+    }
+
+    const nextLevel = (normalizeLampLevel(placed.lampLevel) + 1) % LAMP_INTENSITY_LEVELS.length;
+    if (!applyLampVisualState(placed, nextLevel, true)) {
+        return false;
+    }
+    publishPropUpsert(id);
+
+    if (showFeedback) {
+        showToast(`Lampara: ${getLampIntensityLabel(nextLevel)}`, "info", 900);
+    }
+    return true;
+}
+
+function tryCycleLampAtCrosshair() {
+    const propHit = findTargetedPropHit();
+    if (!propHit || propHit.placed.propType !== PROP_TYPE.LAMP) {
+        return false;
+    }
+
+    return cycleLampIntensity(propHit.propId, true);
+}
+
+function tryRemovePlacedPropAtCrosshair() {
+    const propHit = findTargetedPropHit();
+    if (!propHit) {
+        return false;
+    }
+
+    return removePlacedPropEntry(propHit.propId, "local", true);
+}
+
 function onMouseWheel(event) {
-    if (!state.worldStarted || !state.worldReady || state.paused || state.tutorialVisible || !controls.isLocked) {
+    if (!state.worldStarted || !state.worldReady || state.paused || state.tutorialVisible || state.inventoryOpen || !controls.isLocked) {
         return;
     }
 
@@ -2895,7 +5207,7 @@ function onMouseWheel(event) {
 
     event.preventDefault();
     const direction = event.deltaY > 0 ? 1 : -1;
-    const total = PLACEABLE_BLOCKS.length;
+    const total = HOTBAR_SIZE;
     const next = (state.selectedHotbarIndex + direction + total) % total;
     setSelectedHotbar(next);
 }
@@ -2907,10 +5219,61 @@ function onKeyDown(event) {
         return;
     }
 
+    if (event.code === "KeyV") {
+        event.preventDefault();
+
+        if (!state.worldStarted || !state.worldReady) {
+            return;
+        }
+
+        if (state.tutorialVisible) {
+            closeTutorial(true);
+        }
+
+        if (state.paused) {
+            setPauseMenuOpen(false);
+        }
+
+        setAvatarPreviewOpen(!state.avatarPreviewOpen, true);
+        return;
+    }
+
+    if (event.code === "KeyI") {
+        event.preventDefault();
+        if (!state.worldStarted || !state.worldReady) {
+            return;
+        }
+
+        if (state.tutorialVisible) {
+            closeTutorial(true);
+        }
+
+        if (state.paused) {
+            setPauseMenuOpen(false);
+        }
+
+        if (state.avatarPreviewOpen) {
+            setAvatarPreviewOpen(false);
+        }
+
+        setInventoryOpen(!state.inventoryOpen, true);
+        return;
+    }
+
     if (event.code === "Escape") {
         event.preventDefault();
 
         if (!state.worldStarted) {
+            return;
+        }
+
+        if (state.inventoryOpen) {
+            setInventoryOpen(false, true);
+            return;
+        }
+
+        if (state.avatarPreviewOpen) {
+            setAvatarPreviewOpen(false, true);
             return;
         }
 
@@ -2939,11 +5302,24 @@ function onKeyDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible) {
+    if (state.paused || state.tutorialVisible || state.inventoryOpen) {
         return;
     }
 
-    if (/^Digit[1-6]$/.test(event.code)) {
+    if (state.avatarPreviewOpen) {
+        if (
+            event.code === "KeyW"
+            || event.code === "KeyA"
+            || event.code === "KeyS"
+            || event.code === "KeyD"
+            || event.code === "ShiftLeft"
+        ) {
+            state.keyDown.add(event.code);
+        }
+        return;
+    }
+
+    if (/^Digit[1-8]$/.test(event.code)) {
         const idx = Number(event.code.slice(-1)) - 1;
         setSelectedHotbar(idx);
         return;
@@ -2971,7 +5347,7 @@ function onMouseDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible) {
+    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen) {
         return;
     }
 
@@ -2984,11 +5360,20 @@ function onMouseDown(event) {
     }
 
     if (event.button === 0) {
+        if (tryHarvestSunflowerAtCrosshair()) {
+            return;
+        }
+        if (tryRemovePlacedPropAtCrosshair()) {
+            return;
+        }
         attemptMineOrPlace(false);
         return;
     }
 
     if (event.button === 2) {
+        if (tryCycleLampAtCrosshair()) {
+            return;
+        }
         attemptMineOrPlace(true);
     }
 }
@@ -3014,6 +5399,9 @@ function setupEvents() {
     controls.addEventListener("lock", () => {
         overlayEl.classList.add("hidden");
         setPauseMenuOpen(false);
+        if (state.inventoryOpen) {
+            setInventoryOpen(false);
+        }
     });
 
     controls.addEventListener("unlock", () => {
@@ -3040,6 +5428,24 @@ function setupEvents() {
     if (pauseButton) {
         pauseButton.addEventListener("click", () => {
             setPauseMenuOpen(true);
+        });
+    }
+
+    if (inventoryToggleButtonEl) {
+        inventoryToggleButtonEl.addEventListener("click", () => {
+            if (!state.worldStarted || !state.worldReady) {
+                return;
+            }
+            if (state.avatarPreviewOpen) {
+                setAvatarPreviewOpen(false);
+            }
+            setInventoryOpen(!state.inventoryOpen, true);
+        });
+    }
+
+    if (inventoryCloseButtonEl) {
+        inventoryCloseButtonEl.addEventListener("click", () => {
+            setInventoryOpen(false, true);
         });
     }
 
@@ -3081,6 +5487,32 @@ function setupEvents() {
         });
     }
 
+    if (chunkRadiusSliderEl) {
+        chunkRadiusSliderEl.addEventListener("input", (event) => {
+            const value = Number(event.target?.value);
+            setChunkRadius(value);
+        });
+    }
+
+    if (qualityPresetSelectEl) {
+        qualityPresetSelectEl.addEventListener("change", (event) => {
+            const value = event.target?.value || "auto";
+            setQualityPreset(value, true, true);
+        });
+    }
+
+    if (pointerSensitivitySliderEl) {
+        pointerSensitivitySliderEl.addEventListener("input", (event) => {
+            const value = Number(event.target?.value);
+            setPointerSensitivity(value, true, false);
+        });
+
+        pointerSensitivitySliderEl.addEventListener("change", (event) => {
+            const value = Number(event.target?.value);
+            setPointerSensitivity(value, true, true);
+        });
+    }
+
     if (tutorialCloseButton) {
         tutorialCloseButton.addEventListener("click", () => {
             closeTutorial(true);
@@ -3090,8 +5522,13 @@ function setupEvents() {
     window.addEventListener("beforeunload", () => {
         flushWorldSave(true);
         flushCloudEditWrites();
+        flushCloudPropWrites();
         clearChunkEditSubscriptions();
+        clearPropSnapshotSubscription();
         clearWildlife();
+        clearSunflowers();
+        clearPlacedProps();
+        clearAvatarRoot(localAvatarPreviewRoot);
     });
 }
 
@@ -3105,13 +5542,14 @@ function animate() {
     }
     updateAdaptiveQuality(delta);
 
-    if (state.worldStarted && !state.paused) {
+    if (state.worldStarted && !state.paused && !state.avatarPreviewOpen && !state.inventoryOpen) {
         updatePlayer(delta);
     }
 
     updateSky(delta);
     if (!state.paused) {
         updateWildlife(delta);
+        updateSunflowers(delta);
     }
 
     updateChunkStreaming(false);
@@ -3128,7 +5566,9 @@ function animate() {
         flushWorldSave();
     }
 
+    updateAvatarPreviewCamera(delta);
     updateTargetedBlockUi();
+
     updateHud();
     renderer.render(scene, camera);
 }
@@ -3153,6 +5593,7 @@ function init() {
     setPauseMenuOpen(false);
     setPauseSettingsOpen(false);
     setDebugVisible(loadDebugVisibility(), false);
+    loadGameplayPreferences();
     if (pauseButton) {
         pauseButton.classList.add("hidden");
     }
@@ -3170,16 +5611,19 @@ function init() {
     camera.position.set(0, 0, 0);
 
     refreshHotbarUi();
+    renderInventoryUi();
+    updateSunflowerCurrencyHud();
     setupEvents();
 
     updateChunkStreaming(true);
     processChunkRebuildQueue(INITIAL_CHUNK_BUILD_BUDGET);
     initWildlife();
+    initSunflowers();
 
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover · Mouse mirar · Click izq minar · Click der colocar · Espacio saltar · Rueda/Numeros material · F3 debug · ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;
