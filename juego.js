@@ -1,5 +1,32 @@
 import * as THREE from "./vendor/three.module.js";
 import { PointerLockControls } from "./vendor/PointerLockControls.js";
+import {
+    BLOCK,
+    blockRegistry,
+    BLOCK_COLORS,
+    getBlockDefinitionById,
+    isValidBlockId as isValidBlockIdFromRegistry
+} from "./content/blockRegistry.js";
+import {
+    PROP_TYPE,
+    VALID_PROP_TYPES,
+    PROP_PROFILES,
+    propRegistry,
+    getPropDefinition,
+    isLightPropType
+} from "./content/propRegistry.js";
+import {
+    ITEM_KIND,
+    HOTBAR_SIZE,
+    INVENTORY_CATEGORY,
+    INVENTORY_CATEGORY_ORDER,
+    INVENTORY_CATEGORY_LABELS,
+    INVENTORY_ITEMS,
+    DEFAULT_HOTBAR_ITEM_IDS,
+    INVENTORY_ITEM_BY_ID,
+    getInventoryItemTintByDefinition,
+    validateContentRegistry
+} from "./content/contentRegistry.js";
 
 function clampInt(value, min, max) {
     if (!Number.isFinite(value)) {
@@ -46,124 +73,8 @@ const JUMP_SPEED = 9.2;
 const MAX_REACH = 6;
 const DEFAULT_POINTER_SPEED = 0.68;
 const TARGET_UI_SCAN_INTERVAL = 0.055;
-
-const BLOCK = {
-    AIR: 0,
-    BEDROCK: 1,
-    STONE: 2,
-    DIRT: 3,
-    GRASS: 4,
-    WOOD: 5,
-    LEAVES: 6,
-    SAND: 7,
-    WATER: 8,
-    GLASS: 9
-};
-
-const ITEM_KIND = {
-    BLOCK: "block",
-    PROP: "prop"
-};
-
-const PROP_TYPE = {
-    CHAIR: "chair",
-    TABLE: "table",
-    LAMP: "lamp",
-    PLANTER: "planter"
-};
-const VALID_PROP_TYPES = new Set(Object.values(PROP_TYPE));
-const PROP_PROFILES = {
-    [PROP_TYPE.CHAIR]: {
-        halfExtents: { x: 0.28, z: 0.28 },
-        minY: 0,
-        maxY: 0.99,
-        supportY: 0.49
-    },
-    [PROP_TYPE.TABLE]: {
-        halfExtents: { x: 0.49, z: 0.47 },
-        minY: 0,
-        maxY: 0.78,
-        supportY: 0.76
-    },
-    [PROP_TYPE.LAMP]: {
-        halfExtents: { x: 0.16, z: 0.16 },
-        minY: 0,
-        maxY: 1.02,
-        supportY: 1
-    },
-    [PROP_TYPE.PLANTER]: {
-        halfExtents: { x: 0.27, z: 0.27 },
-        minY: 0,
-        maxY: 0.62,
-        supportY: 0.42
-    }
-};
-
-const HOTBAR_SIZE = 8;
-
-const INVENTORY_CATEGORY = {
-    TERRAIN: "terrain",
-    NATURE: "nature",
-    LIQUIDS: "liquids",
-    FURNITURE: "furniture"
-};
-
-const INVENTORY_CATEGORY_ORDER = [
-    INVENTORY_CATEGORY.TERRAIN,
-    INVENTORY_CATEGORY.NATURE,
-    INVENTORY_CATEGORY.LIQUIDS,
-    INVENTORY_CATEGORY.FURNITURE
-];
-
-const INVENTORY_CATEGORY_LABELS = {
-    [INVENTORY_CATEGORY.TERRAIN]: "Terreno",
-    [INVENTORY_CATEGORY.NATURE]: "Naturaleza",
-    [INVENTORY_CATEGORY.LIQUIDS]: "Liquidos y transparentes",
-    [INVENTORY_CATEGORY.FURNITURE]: "Muebles y decoracion"
-};
-
-const INVENTORY_ITEMS = [
-    { id: "stone", kind: ITEM_KIND.BLOCK, blockId: BLOCK.STONE, label: "Piedra", category: INVENTORY_CATEGORY.TERRAIN },
-    { id: "dirt", kind: ITEM_KIND.BLOCK, blockId: BLOCK.DIRT, label: "Tierra", category: INVENTORY_CATEGORY.TERRAIN },
-    { id: "sand", kind: ITEM_KIND.BLOCK, blockId: BLOCK.SAND, label: "Arena", category: INVENTORY_CATEGORY.TERRAIN },
-    { id: "grass", kind: ITEM_KIND.BLOCK, blockId: BLOCK.GRASS, label: "Cesped", category: INVENTORY_CATEGORY.NATURE },
-    { id: "wood", kind: ITEM_KIND.BLOCK, blockId: BLOCK.WOOD, label: "Madera", category: INVENTORY_CATEGORY.NATURE },
-    { id: "leaves", kind: ITEM_KIND.BLOCK, blockId: BLOCK.LEAVES, label: "Hojas", category: INVENTORY_CATEGORY.NATURE },
-    { id: "glass", kind: ITEM_KIND.BLOCK, blockId: BLOCK.GLASS, label: "Vidrio", category: INVENTORY_CATEGORY.LIQUIDS },
-    { id: "water", kind: ITEM_KIND.BLOCK, blockId: BLOCK.WATER, label: "Agua", category: INVENTORY_CATEGORY.LIQUIDS },
-    { id: "chair", kind: ITEM_KIND.PROP, propType: PROP_TYPE.CHAIR, label: "Silla", category: INVENTORY_CATEGORY.FURNITURE },
-    { id: "table", kind: ITEM_KIND.PROP, propType: PROP_TYPE.TABLE, label: "Mesa", category: INVENTORY_CATEGORY.FURNITURE },
-    { id: "lamp", kind: ITEM_KIND.PROP, propType: PROP_TYPE.LAMP, label: "Lampara", category: INVENTORY_CATEGORY.FURNITURE },
-    { id: "planter", kind: ITEM_KIND.PROP, propType: PROP_TYPE.PLANTER, label: "Maceta", category: INVENTORY_CATEGORY.FURNITURE }
-];
-
-const DEFAULT_HOTBAR_ITEM_IDS = ["stone", "dirt", "grass", "wood", "glass", "water", "chair", "lamp"];
-const INVENTORY_ITEM_BY_ID = new Map(INVENTORY_ITEMS.map((item) => [item.id, item]));
-
-const BLOCK_COLORS = {
-    [BLOCK.BEDROCK]: 0x3b3b41,
-    [BLOCK.STONE]: 0x77777f,
-    [BLOCK.DIRT]: 0x6c4d31,
-    [BLOCK.GRASS]: 0x4d8a3f,
-    [BLOCK.WOOD]: 0x8b633d,
-    [BLOCK.LEAVES]: 0x3c7b3f,
-    [BLOCK.SAND]: 0xd4bf8d,
-    [BLOCK.WATER]: 0x4f8dff,
-    [BLOCK.GLASS]: 0xc8e8ff
-};
-
-const BLOCK_LABELS = {
-    [BLOCK.AIR]: "Aire",
-    [BLOCK.BEDROCK]: "Roca base",
-    [BLOCK.STONE]: "Piedra",
-    [BLOCK.DIRT]: "Tierra",
-    [BLOCK.GRASS]: "Cesped",
-    [BLOCK.WOOD]: "Madera",
-    [BLOCK.LEAVES]: "Hojas",
-    [BLOCK.SAND]: "Arena",
-    [BLOCK.WATER]: "Agua",
-    [BLOCK.GLASS]: "Vidrio"
-};
+const HUD_UPDATE_INTERVAL = 0.12;
+const PROP_SPATIAL_CELL_SIZE = 1.5;
 
 const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
 const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
@@ -459,6 +370,8 @@ function drawRockCracks(ctx, size, rng, colorHex, alpha, lines) {
 }
 
 function createProceduralBlockTexture(blockId, fallbackColor) {
+    const definition = getBlockDefinitionById(blockId);
+    const textureStyle = String(definition?.visual?.textureStyle || "default");
     const size = 64;
     const canvasTexture = document.createElement("canvas");
     canvasTexture.width = size;
@@ -474,19 +387,19 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
     const rng = makeTextureRng(blockId * 7919 + WORLD_SEED * 17);
     const fallbackRgb = hexToRgb(fallbackColor);
 
-    if (blockId === BLOCK.BEDROCK) {
+    if (textureStyle === "bedrock") {
         fillNoisyBase(ctx, size, hexToRgb(0x3d3e45), 30, rng);
         drawSpeckles(ctx, size, 280, 0x4c4e55, 0.42, rng, 1, 2);
         drawRockCracks(ctx, size, rng, 0x2a2b30, 0.35, 8);
-    } else if (blockId === BLOCK.STONE) {
+    } else if (textureStyle === "stone") {
         fillNoisyBase(ctx, size, hexToRgb(0x787b84), 24, rng);
         drawSpeckles(ctx, size, 240, 0x8f949e, 0.32, rng, 1, 2);
         drawRockCracks(ctx, size, rng, 0x535861, 0.28, 10);
-    } else if (blockId === BLOCK.DIRT) {
+    } else if (textureStyle === "dirt") {
         fillNoisyBase(ctx, size, hexToRgb(0x704f33), 22, rng);
         drawSpeckles(ctx, size, 280, 0x4e3522, 0.33, rng, 1, 2);
         drawSpeckles(ctx, size, 180, 0x876341, 0.2, rng, 1, 1);
-    } else if (blockId === BLOCK.GRASS) {
+    } else if (textureStyle === "grass") {
         fillNoisyBase(ctx, size, hexToRgb(0x4f8f42), 18, rng);
         const grad = ctx.createLinearGradient(0, 0, 0, size);
         grad.addColorStop(0, "rgba(170, 220, 125, 0.22)");
@@ -495,7 +408,7 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, size, size);
         drawSpeckles(ctx, size, 260, 0x376f2f, 0.18, rng, 1, 1);
-    } else if (blockId === BLOCK.WOOD) {
+    } else if (textureStyle === "wood") {
         fillNoisyBase(ctx, size, hexToRgb(0x91663f), 16, rng);
         for (let y = 0; y < size; y += 5) {
             const shade = 0.13 + rng() * 0.08;
@@ -503,15 +416,15 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
             ctx.fillRect(0, y, size, 2);
         }
         drawSpeckles(ctx, size, 170, 0xb18355, 0.2, rng, 1, 1);
-    } else if (blockId === BLOCK.LEAVES) {
+    } else if (textureStyle === "leaves") {
         fillNoisyBase(ctx, size, hexToRgb(0x3f7f43), 24, rng);
         drawSpeckles(ctx, size, 320, 0x2f5f34, 0.22, rng, 1, 2);
         drawSpeckles(ctx, size, 170, 0x6aa85d, 0.2, rng, 1, 1);
-    } else if (blockId === BLOCK.SAND) {
+    } else if (textureStyle === "sand") {
         fillNoisyBase(ctx, size, hexToRgb(0xd8c595), 16, rng);
         drawSpeckles(ctx, size, 330, 0xbba777, 0.2, rng, 1, 1);
         drawSpeckles(ctx, size, 170, 0xf2e2b4, 0.15, rng, 1, 1);
-    } else if (blockId === BLOCK.WATER) {
+    } else if (textureStyle === "water") {
         fillNoisyBase(ctx, size, hexToRgb(0x5a92ff), 10, rng, 235);
         ctx.strokeStyle = "rgba(188, 220, 255, 0.32)";
         ctx.lineWidth = 1;
@@ -522,7 +435,7 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
             ctx.bezierCurveTo(size * 0.25, y + 2, size * 0.5, y - 2, size, y + 1);
             ctx.stroke();
         }
-    } else if (blockId === BLOCK.GLASS) {
+    } else if (textureStyle === "glass" || textureStyle === "tinted_glass") {
         fillNoisyBase(ctx, size, hexToRgb(0xcde7ff), 8, rng, 212);
         ctx.strokeStyle = "rgba(240, 250, 255, 0.42)";
         ctx.lineWidth = 1;
@@ -533,6 +446,112 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
             ctx.lineTo(x + Math.sin(i) * 2, size);
             ctx.stroke();
         }
+        if (textureStyle === "tinted_glass") {
+            ctx.fillStyle = "rgba(74, 95, 142, 0.36)";
+            ctx.fillRect(0, 0, size, size);
+        }
+    } else if (textureStyle === "cobblestone") {
+        fillNoisyBase(ctx, size, hexToRgb(0x7b7f86), 28, rng);
+        drawSpeckles(ctx, size, 280, 0x5a5e66, 0.26, rng, 1, 2);
+        drawRockCracks(ctx, size, rng, 0x4d5159, 0.35, 12);
+    } else if (textureStyle === "stone_bricks") {
+        fillNoisyBase(ctx, size, hexToRgb(0x8a8f98), 16, rng);
+        ctx.strokeStyle = "rgba(67, 72, 80, 0.44)";
+        ctx.lineWidth = 2;
+        const step = 16;
+        for (let i = 0; i <= size; i += step) {
+            ctx.beginPath();
+            ctx.moveTo(0, i + ((Math.floor(i / step) % 2) ? 2 : 0));
+            ctx.lineTo(size, i + ((Math.floor(i / step) % 2) ? 2 : 0));
+            ctx.stroke();
+        }
+        for (let x = 0; x <= size; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, size);
+            ctx.stroke();
+        }
+        drawSpeckles(ctx, size, 140, 0xacb2bb, 0.22, rng, 1, 1);
+    } else if (textureStyle === "marble") {
+        fillNoisyBase(ctx, size, hexToRgb(0xe6e9ef), 10, rng);
+        ctx.strokeStyle = "rgba(150, 158, 173, 0.34)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 10; i += 1) {
+            const y = Math.floor(rng() * size);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.bezierCurveTo(size * 0.3, y - 6, size * 0.65, y + 8, size, y + Math.floor(rng() * 6) - 3);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "basalt") {
+        fillNoisyBase(ctx, size, hexToRgb(0x3d4148), 16, rng);
+        ctx.strokeStyle = "rgba(90, 96, 108, 0.24)";
+        ctx.lineWidth = 2;
+        for (let x = 0; x <= size; x += 6) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x + Math.sin(x * 0.2) * 2, size);
+            ctx.stroke();
+        }
+        drawSpeckles(ctx, size, 110, 0x525863, 0.18, rng, 1, 1);
+    } else if (textureStyle === "gravel") {
+        fillNoisyBase(ctx, size, hexToRgb(0x8c8e96), 22, rng);
+        drawSpeckles(ctx, size, 420, 0x6f727a, 0.28, rng, 1, 2);
+        drawSpeckles(ctx, size, 220, 0xa8abb4, 0.2, rng, 1, 1);
+    } else if (textureStyle === "mud") {
+        fillNoisyBase(ctx, size, hexToRgb(0x5b4334), 14, rng);
+        drawSpeckles(ctx, size, 220, 0x3f2f24, 0.24, rng, 1, 2);
+        ctx.fillStyle = "rgba(190, 145, 95, 0.08)";
+        for (let i = 0; i < 7; i += 1) {
+            const px = Math.floor(rng() * size);
+            const py = Math.floor(rng() * size);
+            const w = 5 + Math.floor(rng() * 11);
+            const h = 3 + Math.floor(rng() * 8);
+            ctx.fillRect(px, py, w, h);
+        }
+    } else if (textureStyle === "snow") {
+        fillNoisyBase(ctx, size, hexToRgb(0xf2f6ff), 8, rng);
+        drawSpeckles(ctx, size, 260, 0xdde7fb, 0.24, rng, 1, 1);
+        drawSpeckles(ctx, size, 140, 0xbecfe8, 0.16, rng, 1, 1);
+    } else if (textureStyle === "ice") {
+        fillNoisyBase(ctx, size, hexToRgb(0xb9dcff), 10, rng, 214);
+        ctx.strokeStyle = "rgba(224, 244, 255, 0.38)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 11; i += 1) {
+            const startX = Math.floor(rng() * size);
+            const startY = Math.floor(rng() * size);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(startX + (rng() - 0.5) * 24, startY + (rng() - 0.5) * 24);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "dark_planks") {
+        fillNoisyBase(ctx, size, hexToRgb(0x4b3525), 14, rng);
+        for (let y = 0; y < size; y += 5) {
+            const shade = 0.15 + rng() * 0.1;
+            ctx.fillStyle = `rgba(35, 24, 16, ${shade})`;
+            ctx.fillRect(0, y, size, 2);
+        }
+        drawSpeckles(ctx, size, 130, 0x6a4d34, 0.22, rng, 1, 1);
+    } else if (textureStyle === "bamboo") {
+        fillNoisyBase(ctx, size, hexToRgb(0xa6c46c), 12, rng);
+        for (let x = 0; x < size; x += 8) {
+            ctx.fillStyle = "rgba(108, 134, 66, 0.26)";
+            ctx.fillRect(x, 0, 2, size);
+        }
+        for (let y = 0; y < size; y += 10) {
+            ctx.fillStyle = "rgba(72, 99, 47, 0.24)";
+            ctx.fillRect(0, y, size, 2);
+        }
+    } else if (textureStyle === "glow_block") {
+        fillNoisyBase(ctx, size, hexToRgb(0xffd98f), 12, rng);
+        drawSpeckles(ctx, size, 230, 0xffedba, 0.28, rng, 1, 2);
+        drawSpeckles(ctx, size, 150, 0xc58f3a, 0.2, rng, 1, 1);
+        const glow = ctx.createRadialGradient(size * 0.5, size * 0.5, 6, size * 0.5, size * 0.5, size * 0.58);
+        glow.addColorStop(0, "rgba(255, 240, 190, 0.34)");
+        glow.addColorStop(1, "rgba(255, 216, 139, 0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, size, size);
     } else {
         fillNoisyBase(ctx, size, fallbackRgb, 18, rng);
     }
@@ -550,46 +569,38 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
 }
 
 function createBlockMaterial(blockId, color) {
-    const texture = createProceduralBlockTexture(blockId, color);
+    const definition = getBlockDefinitionById(blockId);
+    const visual = definition?.visual || {};
+    const useTexture = visual.useTexture !== false;
+    const texture = useTexture ? createProceduralBlockTexture(blockId, color) : null;
+    const baseColor = Number.isFinite(visual.color) ? visual.color : color;
     const material = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
+        color: useTexture ? 0xffffff : baseColor,
         map: texture,
-        roughness: blockId === BLOCK.WATER ? 0.08 : blockId === BLOCK.GLASS ? 0.18 : 0.92,
-        metalness: blockId === BLOCK.WATER ? 0.02 : blockId === BLOCK.GLASS ? 0.01 : 0
+        roughness: THREE.MathUtils.clamp(Number(visual.roughness ?? 0.9), 0, 1),
+        metalness: THREE.MathUtils.clamp(Number(visual.metalness ?? 0), 0, 1),
+        emissive: Number(visual.emissive ?? 0x000000),
+        emissiveIntensity: Math.max(0, Number(visual.emissiveIntensity ?? 0))
     });
 
-    if (blockId === BLOCK.GRASS || blockId === BLOCK.LEAVES) {
-        material.roughness = 0.86;
-    }
-
-    if (blockId === BLOCK.WOOD || blockId === BLOCK.DIRT || blockId === BLOCK.SAND) {
-        material.roughness = 0.95;
-    }
-
-    if (blockId === BLOCK.WATER) {
-        if (material.map) {
-            material.map.dispose();
-            material.map = null;
-        }
-        material.color.setHex(0x4b86ea);
-        material.emissive.setHex(0x123a74);
-        material.emissiveIntensity = 0.14;
-        material.roughness = 0.18;
-        material.metalness = 0.03;
+    const opacity = THREE.MathUtils.clamp(Number(visual.opacity ?? 1), 0, 1);
+    const isTransparent = Boolean(definition?.transparent) || opacity < 0.999 || Boolean(definition?.liquid);
+    if (isTransparent) {
         material.transparent = true;
-        material.opacity = 0.76;
+        material.opacity = opacity;
         material.depthWrite = false;
+        material.side = THREE.DoubleSide;
+    }
+
+    if (definition?.liquid) {
         material.depthTest = true;
         material.alphaTest = 0.01;
         material.premultipliedAlpha = true;
-        material.side = THREE.DoubleSide;
     }
 
-    if (blockId === BLOCK.GLASS) {
-        material.transparent = true;
-        material.opacity = 0.34;
-        material.depthWrite = false;
-        material.side = THREE.DoubleSide;
+    if (definition?.emitsLight && material.emissiveIntensity <= 0) {
+        material.emissive.setHex(baseColor);
+        material.emissiveIntensity = 0.32;
     }
 
     return material;
@@ -599,10 +610,17 @@ const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
 const detailUnitGeometry = new THREE.BoxGeometry(1, 1, 1);
 const detailMaterialCache = new Map();
 const blockMaterials = Object.fromEntries(
-    Object.entries(BLOCK_COLORS).map(([id, color]) => [
-        Number(id),
-        createBlockMaterial(Number(id), color)
-    ])
+    blockRegistry.definitions
+        .filter((definition) => definition.id !== BLOCK.AIR)
+        .map((definition) => {
+            const color = Number.isFinite(definition.visual?.color) ? Number(definition.visual.color) : 0x8fa3bf;
+            return [definition.id, createBlockMaterial(definition.id, color)];
+        })
+);
+const LIQUID_BLOCK_IDS = new Set(
+    blockRegistry.definitions
+        .filter((definition) => definition.liquid)
+        .map((definition) => definition.id)
 );
 
 function getDetailMaterial(colorHex) {
@@ -635,6 +653,8 @@ const chunkRebuildQueue = new Set();
 const editedBlocks = new Map();
 const columnCache = new Map();
 const placedProps = new Map();
+const propSpatialGrid = new Map();
+const propTypeIndex = new Map(Object.values(PROP_TYPE).map((type) => [type, new Set()]));
 
 const blockMeshes = [];
 const blockPositionLookup = new Map();
@@ -642,6 +662,27 @@ const blockPositionLookup = new Map();
 const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
 const cameraYawScratch = new THREE.Vector3();
+const blockRayCenterNdc = new THREE.Vector2(0, 0);
+const cameraForwardScratch = new THREE.Vector3();
+const cameraRightScratch = new THREE.Vector3();
+const moveVectorScratch = new THREE.Vector3();
+const worldUpVector = new THREE.Vector3(0, 1, 0);
+const worldNormalScratch = new THREE.Vector3();
+const blockSamplePointScratch = new THREE.Vector3();
+const propSpatialQueryIds = new Set();
+const propRaycastCandidates = [];
+const playerCollisionBoundsScratch = {
+    minX: 0,
+    maxX: 0,
+    minY: 0,
+    maxY: 0,
+    minZ: 0,
+    maxZ: 0
+};
+const forwardRightResult = {
+    forward: cameraForwardScratch,
+    right: cameraRightScratch
+};
 const targetHighlight = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(BLOCK_HIGHLIGHT_SIZE, BLOCK_HIGHLIGHT_SIZE, BLOCK_HIGHLIGHT_SIZE)),
     new THREE.LineBasicMaterial({ color: 0xffd789, transparent: true, opacity: 0.92 })
@@ -671,7 +712,8 @@ const state = {
     pendingChunkBuildCount: 0,
     lastForward: new THREE.Vector3(0, 0, -1),
     autoSaveTick: 0,
-    targetUiTick: 0
+    targetUiTick: 0,
+    hudTick: 0
 };
 
 const multiplayer = {
@@ -698,7 +740,9 @@ const multiplayer = {
     pendingEditWrites: new Map(),
     pendingPropWrites: new Map(),
     writeTimerId: null,
-    propWriteTimerId: null
+    propWriteTimerId: null,
+    idleHeartbeatMs: 1200,
+    lastSentState: null
 };
 
 const saveState = {
@@ -733,8 +777,13 @@ const skyState = {
 
 const uiState = {
     toastHideTimerId: null,
-    noSpaceToastAt: 0
+    noSpaceToastAt: 0,
+    lastCoordsText: "",
+    lastChunkInfoText: ""
 };
+
+const warnedUnknownBlockIds = new Set();
+const warnedUnknownPropTypes = new Set();
 
 const wildlifeState = {
     rabbits: new Map(),
@@ -942,19 +991,7 @@ function getSelectedHotbarItem() {
 }
 
 function getInventoryItemTint(item) {
-    if (!item) {
-        return "rgba(255, 255, 255, 0.08)";
-    }
-
-    if (item.kind === ITEM_KIND.BLOCK) {
-        const color = BLOCK_COLORS[item.blockId] || 0x8fa3bf;
-        return `#${color.toString(16).padStart(6, "0")}44`;
-    }
-
-    if (item.propType === PROP_TYPE.CHAIR) return "rgba(177, 140, 92, 0.42)";
-    if (item.propType === PROP_TYPE.TABLE) return "rgba(194, 152, 104, 0.42)";
-    if (item.propType === PROP_TYPE.LAMP) return "rgba(221, 192, 122, 0.42)";
-    return "rgba(150, 196, 132, 0.42)";
+    return getInventoryItemTintByDefinition(item, BLOCK_COLORS);
 }
 
 function updateSunflowerCurrencyHud() {
@@ -1274,7 +1311,8 @@ function saveWorldNow(showFeedback = false) {
 }
 
 function getBlockLabel(blockId) {
-    return BLOCK_LABELS[blockId] || `Bloque ${blockId}`;
+    const definition = getBlockDefinitionById(Number(blockId));
+    return definition?.label || `Bloque ${blockId}`;
 }
 
 function updateTargetedBlockUi(deltaSeconds = 0) {
@@ -1300,7 +1338,7 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     let flowerDistance = Number.POSITIVE_INFINITY;
     let flowerId = "";
     if (sunflowerRoot.children.length > 0) {
-        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        raycaster.setFromCamera(blockRayCenterNdc, camera);
         raycaster.far = MAX_REACH;
         const flowerHits = raycaster.intersectObjects(sunflowerRoot.children, true);
         const nearestFlowerHit = getFirstVisibleRayHit(flowerHits);
@@ -1324,8 +1362,8 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     if (propHit && propDistance <= blockDistance + 0.001) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
-            if (propHit.placed.propType === PROP_TYPE.LAMP) {
-                targetBlockLabelEl.textContent = `Lampara ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (click der cambiar luz, click izq quitar)`;
+            if (isLightPropType(propHit.placed.propType)) {
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (click der cambiar luz, click izq quitar)`;
             } else {
                 targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq para quitar)`;
             }
@@ -1969,15 +2007,18 @@ function findAncestorUserDataValue(object, key) {
 }
 
 function getPropLabel(propType) {
-    if (propType === PROP_TYPE.CHAIR) return "Silla";
-    if (propType === PROP_TYPE.TABLE) return "Mesa";
-    if (propType === PROP_TYPE.LAMP) return "Lampara";
-    if (propType === PROP_TYPE.PLANTER) return "Maceta";
-    return "Objeto";
+    const definition = getPropDefinition(propType);
+    return definition?.label || "Objeto";
 }
 
 function getPropProfile(propType) {
-    return PROP_PROFILES[propType] || PROP_PROFILES[PROP_TYPE.PLANTER];
+    const fallbackProfile = PROP_PROFILES[PROP_TYPE.PLANTER] || {
+        halfExtents: { x: 0.25, z: 0.25 },
+        minY: 0,
+        maxY: 1,
+        supportY: 0.5
+    };
+    return getPropDefinition(propType)?.profile || fallbackProfile;
 }
 
 function getRotatedPropHalfExtents(propType, yaw = 0) {
@@ -2024,6 +2065,136 @@ function getPlacedPropSupportY(placed) {
     }
     const profile = getPropProfile(placed.propType);
     return (Number(placed.y) || 0) + profile.supportY;
+}
+
+function getPropSpatialCellCoord(value) {
+    return Math.floor((Number(value) || 0) / PROP_SPATIAL_CELL_SIZE);
+}
+
+function getPropSpatialCellKey(cx, cy, cz) {
+    return `${cx}|${cy}|${cz}`;
+}
+
+function addPropIdToSpatialCell(cellKey, propId) {
+    let bucket = propSpatialGrid.get(cellKey);
+    if (!bucket) {
+        bucket = new Set();
+        propSpatialGrid.set(cellKey, bucket);
+    }
+    bucket.add(propId);
+}
+
+function removePropIdFromSpatialCell(cellKey, propId) {
+    const bucket = propSpatialGrid.get(cellKey);
+    if (!bucket) {
+        return;
+    }
+
+    bucket.delete(propId);
+    if (bucket.size === 0) {
+        propSpatialGrid.delete(cellKey);
+    }
+}
+
+function setIndexedPropType(propType, propId, shouldInclude) {
+    const byType = propTypeIndex.get(propType);
+    if (!byType) {
+        return;
+    }
+
+    if (shouldInclude) {
+        byType.add(propId);
+    } else {
+        byType.delete(propId);
+    }
+}
+
+function indexPlacedProp(placed) {
+    if (!placed) {
+        return;
+    }
+
+    const bounds = getPlacedPropBounds(placed, 0);
+    if (!bounds) {
+        return;
+    }
+
+    const minCx = getPropSpatialCellCoord(bounds.minX);
+    const maxCx = getPropSpatialCellCoord(bounds.maxX);
+    const minCy = getPropSpatialCellCoord(bounds.minY);
+    const maxCy = getPropSpatialCellCoord(bounds.maxY);
+    const minCz = getPropSpatialCellCoord(bounds.minZ);
+    const maxCz = getPropSpatialCellCoord(bounds.maxZ);
+    const occupiedCells = [];
+
+    for (let cx = minCx; cx <= maxCx; cx += 1) {
+        for (let cy = minCy; cy <= maxCy; cy += 1) {
+            for (let cz = minCz; cz <= maxCz; cz += 1) {
+                const cellKey = getPropSpatialCellKey(cx, cy, cz);
+                occupiedCells.push(cellKey);
+                addPropIdToSpatialCell(cellKey, placed.id);
+            }
+        }
+    }
+
+    placed.spatialCells = occupiedCells;
+    setIndexedPropType(placed.propType, placed.id, true);
+}
+
+function unindexPlacedProp(placed) {
+    if (!placed) {
+        return;
+    }
+
+    if (Array.isArray(placed.spatialCells)) {
+        for (const cellKey of placed.spatialCells) {
+            removePropIdFromSpatialCell(cellKey, placed.id);
+        }
+    }
+
+    placed.spatialCells = [];
+    setIndexedPropType(placed.propType, placed.id, false);
+}
+
+function fillNearbyPropIds(minX, maxX, minY, maxY, minZ, maxZ, targetSet) {
+    if (!targetSet) {
+        return;
+    }
+
+    const loX = Math.min(minX, maxX);
+    const hiX = Math.max(minX, maxX);
+    const loY = Math.min(minY, maxY);
+    const hiY = Math.max(minY, maxY);
+    const loZ = Math.min(minZ, maxZ);
+    const hiZ = Math.max(minZ, maxZ);
+
+    const minCx = getPropSpatialCellCoord(loX);
+    const maxCx = getPropSpatialCellCoord(hiX);
+    const minCy = getPropSpatialCellCoord(loY);
+    const maxCy = getPropSpatialCellCoord(hiY);
+    const minCz = getPropSpatialCellCoord(loZ);
+    const maxCz = getPropSpatialCellCoord(hiZ);
+
+    for (let cx = minCx; cx <= maxCx; cx += 1) {
+        for (let cy = minCy; cy <= maxCy; cy += 1) {
+            for (let cz = minCz; cz <= maxCz; cz += 1) {
+                const bucket = propSpatialGrid.get(getPropSpatialCellKey(cx, cy, cz));
+                if (!bucket || bucket.size === 0) {
+                    continue;
+                }
+
+                for (const propId of bucket) {
+                    targetSet.add(propId);
+                }
+            }
+        }
+    }
+}
+
+function queryNearbyPropIdsReusable(minX, maxX, minY, maxY, minZ, maxZ) {
+    propSpatialQueryIds.clear();
+    fillNearbyPropIds(minX, maxX, minY, maxY, minZ, maxZ, propSpatialQueryIds);
+    return propSpatialQueryIds;
 }
 
 function isWorldPositionChunkLoaded(x, z) {
@@ -2087,7 +2258,7 @@ function getWorldNormalFromRayHit(hit) {
         return null;
     }
 
-    const worldNormal = localNormal.clone();
+    const worldNormal = worldNormalScratch.copy(localNormal);
     if (hit.object?.matrixWorld) {
         worldNormal.transformDirection(hit.object.matrixWorld);
     }
@@ -2098,8 +2269,14 @@ function findNearestPlacedPropOfType(propType, x, z, maxDistance = 2.3) {
     const maxDistanceSq = maxDistance * maxDistance;
     let nearest = null;
     let nearestSq = Number.POSITIVE_INFINITY;
-    for (const placed of placedProps.values()) {
-        if (placed.propType !== propType) {
+    const byType = propTypeIndex.get(propType);
+    if (!byType || byType.size === 0) {
+        return null;
+    }
+
+    for (const propId of byType) {
+        const placed = placedProps.get(propId);
+        if (!placed) {
             continue;
         }
         const dx = placed.x - x;
@@ -2144,6 +2321,13 @@ function normalizeYawRadians(value) {
     return yaw;
 }
 
+function getAngularDistanceRadians(a, b) {
+    let delta = (Number(a) || 0) - (Number(b) || 0);
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    return Math.abs(delta);
+}
+
 function snapYawToStep(value, step = PROP_ROTATION_STEP) {
     const normalized = normalizeYawRadians(value);
     const snapped = Math.round(normalized / step) * step;
@@ -2185,70 +2369,154 @@ function resolvePropPlacementYaw(propType, propX, propZ) {
     return snapYawToStep(yaw);
 }
 
+function createLampPointLightRig(root, {
+    baseColor = 0xffe6b4,
+    emissiveColor = 0xffd185,
+    pointLightColor = 0xffe6aa,
+    bulbScale = { x: 0.12, y: 0.11, z: 0.12 },
+    bulbPosition = { x: 0, y: 0.82, z: 0 }
+} = {}) {
+    const bulbMaterial = new THREE.MeshStandardMaterial({
+        color: baseColor,
+        roughness: 0.26,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    bulbMaterial.userData.disposeOnRemove = true;
+    bulbMaterial.userData.lampEmissiveColor = emissiveColor;
+    const bulb = new THREE.Mesh(detailUnitGeometry, bulbMaterial);
+    bulb.scale.set(bulbScale.x, bulbScale.y, bulbScale.z);
+    bulb.position.set(bulbPosition.x, bulbPosition.y, bulbPosition.z);
+    bulb.castShadow = false;
+    bulb.receiveShadow = false;
+    bulb.userData.isLampBulb = true;
+    root.add(bulb);
+
+    const pointLight = new THREE.PointLight(pointLightColor, 0, 0, 2);
+    pointLight.position.set(bulbPosition.x, bulbPosition.y, bulbPosition.z);
+    pointLight.castShadow = false;
+    pointLight.shadow.mapSize.set(LAMP_SHADOW_MAP_SIZE, LAMP_SHADOW_MAP_SIZE);
+    pointLight.shadow.bias = -0.0006;
+    pointLight.shadow.normalBias = 0.022;
+    pointLight.shadow.camera.near = 0.1;
+    pointLight.shadow.camera.far = 24;
+    pointLight.shadow.autoUpdate = false;
+    pointLight.shadow.needsUpdate = true;
+    root.add(pointLight);
+    root.userData.lampPointLight = pointLight;
+    root.userData.lampBulbMaterial = bulbMaterial;
+}
+
+function buildChairNode(root) {
+    root.add(createDetailPart({ x: 0.5, y: 0.08, z: 0.5 }, { x: 0, y: 0.45, z: 0 }, 0x986f45));
+    root.add(createDetailPart({ x: 0.5, y: 0.5, z: 0.08 }, { x: 0, y: 0.74, z: -0.21 }, 0x8b643e));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: -0.2 }, 0x7e5836));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: -0.2 }, 0x7e5836));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: 0.2 }, 0x7e5836));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: 0.2 }, 0x7e5836));
+}
+
+function buildTableNode(root) {
+    root.add(createDetailPart({ x: 0.98, y: 0.08, z: 0.94 }, { x: 0, y: 0.72, z: 0 }, 0xb58657));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: -0.36 }, 0x8c633e));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: -0.36 }, 0x8c633e));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: 0.36 }, 0x8c633e));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: 0.36 }, 0x8c633e));
+}
+
+function buildLampNode(root) {
+    root.add(createDetailPart({ x: 0.2, y: 0.05, z: 0.2 }, { x: 0, y: 0.03, z: 0 }, 0x6f573b));
+    root.add(createDetailPart({ x: 0.06, y: 0.68, z: 0.06 }, { x: 0, y: 0.37, z: 0 }, 0x5d4a35));
+    root.add(createDetailPart({ x: 0.3, y: 0.2, z: 0.3 }, { x: 0, y: 0.84, z: 0 }, 0xffd890));
+    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.18 }, { x: 0, y: 0.96, z: 0 }, 0xcf9d56));
+    createLampPointLightRig(root, {
+        baseColor: 0xffe6b4,
+        emissiveColor: 0xffd185,
+        pointLightColor: 0xffe6aa,
+        bulbScale: { x: 0.12, y: 0.11, z: 0.12 },
+        bulbPosition: { x: 0, y: 0.82, z: 0 }
+    });
+}
+
+function buildPlanterNode(root) {
+    root.add(createDetailPart({ x: 0.5, y: 0.22, z: 0.5 }, { x: 0, y: 0.11, z: 0 }, 0x8a6540));
+    root.add(createDetailPart({ x: 0.38, y: 0.2, z: 0.38 }, { x: 0, y: 0.32, z: 0 }, 0x3f8947));
+    root.add(createDetailPart({ x: 0.16, y: 0.34, z: 0.16 }, { x: 0, y: 0.45, z: 0 }, 0x4f9f51));
+}
+
+function buildChestNode(root) {
+    root.add(createDetailPart({ x: 0.78, y: 0.34, z: 0.56 }, { x: 0, y: 0.17, z: 0 }, 0x8e613a));
+    root.add(createDetailPart({ x: 0.8, y: 0.18, z: 0.58 }, { x: 0, y: 0.43, z: 0 }, 0xaa7a4a));
+    root.add(createDetailPart({ x: 0.1, y: 0.16, z: 0.06 }, { x: 0, y: 0.34, z: 0.31 }, 0xccb57a));
+    root.add(createDetailPart({ x: 0.82, y: 0.02, z: 0.02 }, { x: 0, y: 0.25, z: 0.29 }, 0x6c482a));
+}
+
+function buildBedNode(root) {
+    root.add(createDetailPart({ x: 0.92, y: 0.12, z: 1.82 }, { x: 0, y: 0.18, z: 0 }, 0x8c603b));
+    root.add(createDetailPart({ x: 0.82, y: 0.18, z: 1.68 }, { x: 0, y: 0.34, z: 0 }, 0xd8d7da));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.6 }, { x: 0, y: 0.46, z: 0.34 }, 0xb77a88));
+    root.add(createDetailPart({ x: 0.82, y: 0.08, z: 0.28 }, { x: 0, y: 0.47, z: -0.63 }, 0xf0ecdf));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: -0.37, y: 0.12, z: -0.8 }, 0x6d482a));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: 0.37, y: 0.12, z: -0.8 }, 0x6d482a));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: -0.37, y: 0.12, z: 0.8 }, 0x6d482a));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: 0.37, y: 0.12, z: 0.8 }, 0x6d482a));
+}
+
+function buildFenceNode(root) {
+    root.add(createDetailPart({ x: 0.16, y: 1, z: 0.16 }, { x: 0, y: 0.5, z: 0 }, 0x8c623d));
+    root.add(createDetailPart({ x: 0.84, y: 0.1, z: 0.1 }, { x: 0, y: 0.68, z: 0 }, 0x9f7045));
+    root.add(createDetailPart({ x: 0.84, y: 0.1, z: 0.1 }, { x: 0, y: 0.38, z: 0 }, 0x9f7045));
+}
+
+function buildLanternNode(root) {
+    root.add(createDetailPart({ x: 0.14, y: 0.05, z: 0.14 }, { x: 0, y: 0.03, z: 0 }, 0x58442f));
+    root.add(createDetailPart({ x: 0.26, y: 0.06, z: 0.26 }, { x: 0, y: 0.18, z: 0 }, 0x2f2a28));
+    root.add(createDetailPart({ x: 0.2, y: 0.32, z: 0.2 }, { x: 0, y: 0.38, z: 0 }, 0xcda868));
+    root.add(createDetailPart({ x: 0.26, y: 0.06, z: 0.26 }, { x: 0, y: 0.58, z: 0 }, 0x2f2a28));
+    root.add(createDetailPart({ x: 0.06, y: 0.22, z: 0.06 }, { x: 0, y: 0.74, z: 0 }, 0x4a3b2d));
+    root.add(createDetailPart({ x: 0.22, y: 0.04, z: 0.22 }, { x: 0, y: 0.86, z: 0 }, 0x2f2a28));
+    createLampPointLightRig(root, {
+        baseColor: 0xffe2a8,
+        emissiveColor: 0xffc873,
+        pointLightColor: 0xffd892,
+        bulbScale: { x: 0.1, y: 0.1, z: 0.1 },
+        bulbPosition: { x: 0, y: 0.39, z: 0 }
+    });
+}
+
+const PROP_NODE_BUILDERS = Object.freeze({
+    [PROP_TYPE.CHAIR]: buildChairNode,
+    [PROP_TYPE.TABLE]: buildTableNode,
+    [PROP_TYPE.LAMP]: buildLampNode,
+    [PROP_TYPE.PLANTER]: buildPlanterNode,
+    [PROP_TYPE.CHEST]: buildChestNode,
+    [PROP_TYPE.BED]: buildBedNode,
+    [PROP_TYPE.FENCE]: buildFenceNode,
+    [PROP_TYPE.LANTERN]: buildLanternNode
+});
+
+const registryValidationIssues = [
+    ...validateContentRegistry(),
+    ...propRegistry.definitions
+        .filter((definition) => !PROP_NODE_BUILDERS[definition.builderKey])
+        .map((definition) => `Prop sin builder/factory: ${definition.id} (${definition.builderKey})`)
+];
+
 function createPlacedPropNode(propType) {
     const root = new THREE.Group();
-
-    if (propType === PROP_TYPE.CHAIR) {
-        root.add(createDetailPart({ x: 0.5, y: 0.08, z: 0.5 }, { x: 0, y: 0.45, z: 0 }, 0x986f45));
-        root.add(createDetailPart({ x: 0.5, y: 0.5, z: 0.08 }, { x: 0, y: 0.74, z: -0.21 }, 0x8b643e));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: -0.2 }, 0x7e5836));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: -0.2 }, 0x7e5836));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: 0.2 }, 0x7e5836));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: 0.2 }, 0x7e5836));
-    } else if (propType === PROP_TYPE.TABLE) {
-        root.add(createDetailPart({ x: 0.98, y: 0.08, z: 0.94 }, { x: 0, y: 0.72, z: 0 }, 0xb58657));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: -0.36 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: -0.36 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: 0.36 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: 0.36 }, 0x8c633e));
-    } else if (propType === PROP_TYPE.LAMP) {
-        root.add(createDetailPart({ x: 0.2, y: 0.05, z: 0.2 }, { x: 0, y: 0.03, z: 0 }, 0x6f573b));
-        root.add(createDetailPart({ x: 0.06, y: 0.68, z: 0.06 }, { x: 0, y: 0.37, z: 0 }, 0x5d4a35));
-        const shade = createDetailPart({ x: 0.3, y: 0.2, z: 0.3 }, { x: 0, y: 0.84, z: 0 }, 0xffd890);
-        root.add(shade);
-        root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.18 }, { x: 0, y: 0.96, z: 0 }, 0xcf9d56));
-
-        const bulbMaterial = new THREE.MeshStandardMaterial({
-            color: 0xffe6b4,
-            roughness: 0.26,
-            metalness: 0.02,
-            emissive: 0x000000,
-            emissiveIntensity: 0
-        });
-        bulbMaterial.userData.disposeOnRemove = true;
-        const bulb = new THREE.Mesh(detailUnitGeometry, bulbMaterial);
-        bulb.scale.set(0.12, 0.11, 0.12);
-        bulb.position.set(0, 0.82, 0);
-        bulb.castShadow = false;
-        bulb.receiveShadow = false;
-        bulb.userData.isLampBulb = true;
-        root.add(bulb);
-
-        const pointLight = new THREE.PointLight(0xffe6aa, 0, 0, 2);
-        pointLight.position.set(0, 0.82, 0);
-        pointLight.castShadow = false;
-        pointLight.shadow.mapSize.set(LAMP_SHADOW_MAP_SIZE, LAMP_SHADOW_MAP_SIZE);
-        pointLight.shadow.bias = -0.0006;
-        pointLight.shadow.normalBias = 0.022;
-        pointLight.shadow.camera.near = 0.1;
-        pointLight.shadow.camera.far = 24;
-        pointLight.shadow.autoUpdate = false;
-        pointLight.shadow.needsUpdate = true;
-        root.add(pointLight);
-        root.userData.lampPointLight = pointLight;
-        root.userData.lampBulbMaterial = bulbMaterial;
-    } else {
-        root.add(createDetailPart({ x: 0.5, y: 0.22, z: 0.5 }, { x: 0, y: 0.11, z: 0 }, 0x8a6540));
-        root.add(createDetailPart({ x: 0.38, y: 0.2, z: 0.38 }, { x: 0, y: 0.32, z: 0 }, 0x3f8947));
-        root.add(createDetailPart({ x: 0.16, y: 0.34, z: 0.16 }, { x: 0, y: 0.45, z: 0 }, 0x4f9f51));
+    const definition = getPropDefinition(propType);
+    const builderKey = definition?.builderKey || PROP_TYPE.PLANTER;
+    const builder = PROP_NODE_BUILDERS[builderKey] || PROP_NODE_BUILDERS[PROP_TYPE.PLANTER];
+    if (builder) {
+        builder(root);
     }
-
     root.userData.propType = propType;
     return root;
 }
 
 function applyLampVisualState(placed, lampLevel, persist = true) {
-    if (!placed || placed.propType !== PROP_TYPE.LAMP) {
+    if (!placed || !isLightPropType(placed.propType)) {
         return false;
     }
 
@@ -2264,7 +2532,8 @@ function applyLampVisualState(placed, lampLevel, persist = true) {
     }
 
     if (bulbMaterial) {
-        bulbMaterial.emissive.setHex(0xffd185);
+        const emissiveColor = Number(bulbMaterial.userData?.lampEmissiveColor ?? 0xffd185);
+        bulbMaterial.emissive.setHex(emissiveColor);
         bulbMaterial.emissiveIntensity = LAMP_BULB_EMISSIVE_LEVELS[normalizedLevel];
     }
 
@@ -2295,9 +2564,22 @@ function updateActiveLampShadowCasters(deltaSeconds) {
     const playerX = state.playerPosition.x;
     const playerY = state.playerPosition.y;
     const playerZ = state.playerPosition.z;
+    const lightPropIds = [];
+    for (const [type, ids] of propTypeIndex.entries()) {
+        if (!isLightPropType(type) || !ids || ids.size === 0) {
+            continue;
+        }
+        for (const propId of ids) {
+            lightPropIds.push(propId);
+        }
+    }
+    if (lightPropIds.length === 0) {
+        return;
+    }
 
-    for (const placed of placedProps.values()) {
-        if (placed.propType !== PROP_TYPE.LAMP) {
+    for (const lampId of lightPropIds) {
+        const placed = placedProps.get(lampId);
+        if (!placed) {
             continue;
         }
 
@@ -2362,6 +2644,9 @@ function normalizePropEntry(rawEntry, fallbackId = "") {
     const yawRaw = Number(rawEntry?.yaw);
     const yaw = Number.isFinite(yawRaw) ? snapYawToStep(yawRaw) : 0;
     if (!id || !VALID_PROP_TYPES.has(propType) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(yaw)) {
+        if (id && propType && !VALID_PROP_TYPES.has(propType)) {
+            warnUnknownPropType(propType, "normalizePropEntry");
+        }
         return null;
     }
 
@@ -2369,15 +2654,20 @@ function normalizePropEntry(rawEntry, fallbackId = "") {
         return null;
     }
 
-    return {
+    const normalized = {
         id,
         propType,
         x,
         y,
         z,
-        yaw,
-        lampLevel: propType === PROP_TYPE.LAMP ? normalizeLampLevel(rawEntry?.lampLevel) : 0
+        yaw
     };
+
+    if (isLightPropType(propType)) {
+        normalized.lampLevel = normalizeLampLevel(rawEntry?.lampLevel);
+    }
+
+    return normalized;
 }
 
 function serializePropForCloud(rawEntry, fallbackId = "") {
@@ -2386,14 +2676,19 @@ function serializePropForCloud(rawEntry, fallbackId = "") {
         return null;
     }
 
-    return {
+    const serialized = {
         propType: normalized.propType,
         x: normalized.x,
         y: normalized.y,
         z: normalized.z,
-        yaw: normalized.yaw,
-        lampLevel: normalized.lampLevel
+        yaw: normalized.yaw
     };
+
+    if (isLightPropType(normalized.propType)) {
+        serialized.lampLevel = normalizeLampLevel(normalized.lampLevel);
+    }
+
+    return serialized;
 }
 
 function registerPropNode(node, propId) {
@@ -2453,6 +2748,7 @@ function addPlacedPropEntry(entry, origin = "local") {
         if (existing.propType !== propType) {
             removePlacedPropEntry(id, "remote", false);
         } else {
+            unindexPlacedProp(existing);
             existing.x = x;
             existing.y = y;
             existing.z = z;
@@ -2460,7 +2756,8 @@ function addPlacedPropEntry(entry, origin = "local") {
             existing.node.position.set(x, y, z);
             existing.node.rotation.y = yaw;
             refreshSinglePropVisibility(existing);
-            if (propType === PROP_TYPE.LAMP) {
+            indexPlacedProp(existing);
+            if (isLightPropType(propType)) {
                 applyLampVisualState(existing, lampLevel, false);
             } else {
                 existing.lampLevel = 0;
@@ -2496,8 +2793,9 @@ function addPlacedPropEntry(entry, origin = "local") {
     };
     placedProps.set(id, placedEntry);
     refreshSinglePropVisibility(placedEntry);
+    indexPlacedProp(placedEntry);
 
-    if (propType === PROP_TYPE.LAMP) {
+    if (isLightPropType(propType)) {
         applyLampVisualState(placedEntry, placedEntry.lampLevel, false);
     }
 
@@ -2526,26 +2824,39 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
     const supportY = getPlacedPropSupportY(placed);
     const supportBounds = getPlacedPropBounds(placed, 0.02);
     const dependentIds = [];
-    for (const other of placedProps.values()) {
-        if (other.id === id) {
-            continue;
-        }
-        if (Math.abs(other.y - supportY) > 0.12) {
-            continue;
-        }
-        if (
-            supportBounds
-            && other.x > supportBounds.minX
-            && other.x < supportBounds.maxX
-            && other.z > supportBounds.minZ
-            && other.z < supportBounds.maxZ
-        ) {
-            dependentIds.push(other.id);
+    if (supportBounds) {
+        const nearbyIds = new Set();
+        fillNearbyPropIds(
+            supportBounds.minX,
+            supportBounds.maxX,
+            supportY - 0.12,
+            supportY + 0.12,
+            supportBounds.minZ,
+            supportBounds.maxZ,
+            nearbyIds
+        );
+        for (const otherId of nearbyIds) {
+            const other = placedProps.get(otherId);
+            if (!other || other.id === id) {
+                continue;
+            }
+            if (Math.abs(other.y - supportY) > 0.12) {
+                continue;
+            }
+            if (
+                other.x > supportBounds.minX
+                && other.x < supportBounds.maxX
+                && other.z > supportBounds.minZ
+                && other.z < supportBounds.maxZ
+            ) {
+                dependentIds.push(other.id);
+            }
         }
     }
 
     disposePropNodeResources(placed.node);
     propsRoot.remove(placed.node);
+    unindexPlacedProp(placed);
     placedProps.delete(id);
     markLampShadowsDirty();
     propState.cullingDirty = true;
@@ -2578,7 +2889,21 @@ function removePropsSupportedByBlock(x, y, z, origin = "local") {
     const supportY = Math.floor(y);
     const supportZ = Math.floor(z);
 
-    for (const [propId, prop] of Array.from(placedProps.entries())) {
+    const nearbyIds = queryNearbyPropIdsReusable(
+        supportX,
+        supportX + 1,
+        supportY + 0.5,
+        supportY + 2.2,
+        supportZ,
+        supportZ + 1
+    );
+
+    for (const propId of Array.from(nearbyIds)) {
+        const prop = placedProps.get(propId);
+        if (!prop) {
+            continue;
+        }
+
         const propSupportX = Math.floor(prop.x);
         const propSupportY = Math.floor(prop.y) - 1;
         const propSupportZ = Math.floor(prop.z);
@@ -2867,8 +3192,39 @@ function sanitizeRoomId(value) {
     return normalized || "mundo-principal";
 }
 
+function warnUnknownBlockId(blockId, context = "runtime") {
+    const numericId = Number(blockId);
+    if (!Number.isInteger(numericId) || warnedUnknownBlockIds.has(numericId)) {
+        return;
+    }
+
+    warnedUnknownBlockIds.add(numericId);
+    console.warn(`[BlockRegistry] bloque desconocido (${numericId}) en ${context}. Se ignora por seguridad.`);
+}
+
+function warnUnknownPropType(propType, context = "runtime") {
+    const normalized = String(propType || "");
+    if (!normalized || warnedUnknownPropTypes.has(normalized)) {
+        return;
+    }
+
+    warnedUnknownPropTypes.add(normalized);
+    console.warn(`[PropRegistry] prop desconocido (${normalized}) en ${context}. Se ignora por seguridad.`);
+}
+
+function logRegistryValidationIssues() {
+    if (!Array.isArray(registryValidationIssues) || registryValidationIssues.length === 0) {
+        return;
+    }
+
+    console.warn("[Registry] Se detectaron inconsistencias de contenido:");
+    for (const issue of registryValidationIssues) {
+        console.warn(`- ${issue}`);
+    }
+}
+
 function isValidBlockId(id) {
-    return Number.isInteger(id) && id >= BLOCK.AIR && id <= BLOCK.GLASS;
+    return isValidBlockIdFromRegistry(id);
 }
 
 function parseBlockKey(key) {
@@ -2913,7 +3269,14 @@ function computeTerrainReacomodoShift(edits, props = []) {
         const key = String(item[0] || "");
         const id = Number(item[1]);
         const parsed = parseBlockKey(key);
-        if (!parsed || !isValidBlockId(id) || id === BLOCK.AIR || id === BLOCK.WATER) {
+        if (!parsed) {
+            continue;
+        }
+        if (!isValidBlockId(id)) {
+            warnUnknownBlockId(id, "computeTerrainReacomodoShift");
+            continue;
+        }
+        if (!isSolidBlock(id)) {
             continue;
         }
 
@@ -3008,7 +3371,11 @@ function remapEditsWithVerticalShift(edits, shiftY) {
         const key = String(item[0] || "");
         const id = Number(item[1]);
         const parsed = parseBlockKey(key);
-        if (!parsed || !isValidBlockId(id)) {
+        if (!parsed) {
+            continue;
+        }
+        if (!isValidBlockId(id)) {
+            warnUnknownBlockId(id, "remapEditsWithVerticalShift");
             continue;
         }
 
@@ -3112,7 +3479,11 @@ function collectChunkEditEntriesFromPayload(chunksPayload) {
         for (const [key, value] of Object.entries(edits)) {
             const parsed = parseBlockKey(key);
             const id = Number(value);
-            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+                continue;
+            }
+            if (!isValidBlockId(id)) {
+                warnUnknownBlockId(id, "collectChunkEditEntriesFromPayload");
                 continue;
             }
             entries.push([key, id]);
@@ -3315,7 +3686,11 @@ function loadWorldFromStorage() {
             const id = Number(item[1]);
             const parsed = parseBlockKey(key);
 
-            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+                continue;
+            }
+            if (!isValidBlockId(id)) {
+                warnUnknownBlockId(id, "loadWorldFromStorage");
                 continue;
             }
 
@@ -4195,6 +4570,7 @@ function applyRemoteEditEntry(key, rawValue) {
 
     const id = Number(rawValue);
     if (!isValidBlockId(id)) {
+        warnUnknownBlockId(id, "applyRemoteEditEntry");
         return;
     }
 
@@ -4221,7 +4597,11 @@ function collectCompactEditsFromLegacyOps(opsPayload) {
         const z = Number(op?.z);
         const id = Number(op?.id);
 
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !isValidBlockId(id)) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+            continue;
+        }
+        if (!isValidBlockId(id)) {
+            warnUnknownBlockId(id, "collectCompactEditsFromLegacyOps");
             continue;
         }
 
@@ -4259,7 +4639,11 @@ async function migrateLegacyOpsIfNeeded(dbModule, db, worldPath) {
             const parsed = parseBlockKey(key);
             const id = Number(rawId);
 
-            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+                continue;
+            }
+            if (!isValidBlockId(id)) {
+                warnUnknownBlockId(id, "migrateLegacyOpsIfNeeded");
                 continue;
             }
 
@@ -4575,6 +4959,7 @@ async function setupRealtimeMultiplayer() {
         multiplayer.unsubscribers.push(unsubConnected, unsubPlayers);
         multiplayer.enabled = true;
         multiplayer.ready = true;
+        multiplayer.lastSentState = null;
         syncChunkEditSubscriptions();
         subscribePropSnapshot();
         setOnlineStatus(`Sala ${multiplayer.roomId}: multijugador activo`);
@@ -4600,18 +4985,47 @@ function broadcastLocalPlayerState(force = false) {
 
     multiplayer.lastBroadcastMs = now;
     const cameraYaw = getCameraYawForMultiplayer();
+    const x = Number(state.playerPosition.x.toFixed(3));
+    const y = Number(state.playerPosition.y.toFixed(3));
+    const z = Number(state.playerPosition.z.toFixed(3));
+    const yaw = Number(cameraYaw.toFixed(4));
+    const pitch = Number(camera.rotation.x.toFixed(4));
+    const sentAt = Date.now();
+
+    if (!force && multiplayer.lastSentState) {
+        const previous = multiplayer.lastSentState;
+        const moved = Math.abs(x - previous.x) > 0.01
+            || Math.abs(y - previous.y) > 0.01
+            || Math.abs(z - previous.z) > 0.01;
+        const turned = getAngularDistanceRadians(yaw, previous.yaw) > 0.012
+            || Math.abs(pitch - previous.pitch) > 0.012;
+        const heartbeatDue = sentAt - previous.sentAt >= multiplayer.idleHeartbeatMs;
+
+        if (!moved && !turned && !heartbeatDue) {
+            return;
+        }
+    }
 
     const payload = {
         label: multiplayer.profile.label,
         displayName: multiplayer.profile.displayName,
         color: multiplayer.profile.color,
-        x: Number(state.playerPosition.x.toFixed(3)),
-        y: Number(state.playerPosition.y.toFixed(3)),
-        z: Number(state.playerPosition.z.toFixed(3)),
-        yaw: Number(cameraYaw.toFixed(4)),
-        pitch: Number(camera.rotation.x.toFixed(4)),
+        x,
+        y,
+        z,
+        yaw,
+        pitch,
         started: state.worldStarted,
-        updatedAt: Date.now()
+        updatedAt: sentAt
+    };
+
+    multiplayer.lastSentState = {
+        x,
+        y,
+        z,
+        yaw,
+        pitch,
+        sentAt
     };
 
     multiplayer.firebase.dbModule.set(multiplayer.refs.myPlayerRef, payload).catch((error) => {
@@ -4929,11 +5343,22 @@ function setBlock(x, y, z, id) {
 }
 
 function isSeeThroughBlock(id) {
-    return id === BLOCK.WATER || id === BLOCK.GLASS || id === BLOCK.LEAVES;
+    const definition = getBlockDefinitionById(id);
+    if (!definition) {
+        return false;
+    }
+
+    return Boolean(
+        definition.transparent
+        || definition.liquid
+        || definition.tags.includes("foliage")
+        || definition.tags.includes("leaves")
+    );
 }
 
 function isTranslucentBlock(id) {
-    return id === BLOCK.WATER || id === BLOCK.GLASS;
+    const definition = getBlockDefinitionById(id);
+    return Boolean(definition?.transparent || definition?.liquid);
 }
 
 function doesNeighborOccludeFace(id, neighborId) {
@@ -4941,23 +5366,21 @@ function doesNeighborOccludeFace(id, neighborId) {
         return false;
     }
 
-    if (id === BLOCK.WATER) {
-        return neighborId === BLOCK.WATER;
+    const definition = getBlockDefinitionById(id);
+    if (!definition) {
+        return neighborId !== BLOCK.AIR;
     }
 
-    if (id === BLOCK.GLASS) {
-        return neighborId === BLOCK.GLASS;
-    }
-
-    if (id === BLOCK.LEAVES) {
-        return neighborId === BLOCK.LEAVES;
+    if (definition.liquid || definition.transparent || definition.tags.includes("foliage")) {
+        return neighborId === id;
     }
 
     if (isSeeThroughBlock(neighborId)) {
         return false;
     }
 
-    return true;
+    const neighborDefinition = getBlockDefinitionById(neighborId);
+    return neighborDefinition?.solid !== false;
 }
 
 function isBlockVisible(x, y, z, id) {
@@ -5012,7 +5435,7 @@ function appendWaterFaceGeometry(positions, normals, indices, x, y, z, corners, 
     );
 }
 
-function buildWaterChunkMesh(positions) {
+function buildLiquidChunkMesh(liquidBlockId, positions) {
     if (!Array.isArray(positions) || positions.length === 0) {
         return null;
     }
@@ -5041,7 +5464,7 @@ function buildWaterChunkMesh(positions) {
                 y + face.offset[1],
                 z + face.offset[2]
             );
-            if (neighborId === BLOCK.WATER) {
+            if (neighborId === liquidBlockId) {
                 continue;
             }
 
@@ -5060,11 +5483,11 @@ function buildWaterChunkMesh(positions) {
     geometry.computeBoundingSphere();
     geometry.computeBoundingBox();
 
-    const mesh = new THREE.Mesh(geometry, blockMaterials[BLOCK.WATER]);
+    const mesh = new THREE.Mesh(geometry, blockMaterials[liquidBlockId]);
     mesh.castShadow = false;
     mesh.receiveShadow = false;
-    mesh.renderOrder = 4;
-    mesh.userData.blockId = BLOCK.WATER;
+    mesh.renderOrder = Number(getBlockDefinitionById(liquidBlockId)?.visual?.renderOrder ?? 4);
+    mesh.userData.blockId = liquidBlockId;
     mesh.userData.lookupKeys = [];
     return mesh;
 }
@@ -5117,22 +5540,25 @@ function rebuildChunkMesh(chunk) {
             return;
         }
 
-        if (id === BLOCK.WATER) {
-            const waterMesh = buildWaterChunkMesh(positions);
-            if (!waterMesh) {
+        if (LIQUID_BLOCK_IDS.has(id)) {
+            const liquidMesh = buildLiquidChunkMesh(id, positions);
+            if (!liquidMesh) {
                 return;
             }
-            worldRoot.add(waterMesh);
-            blockMeshes.push(waterMesh);
-            chunk.meshes.push(waterMesh);
+            worldRoot.add(liquidMesh);
+            blockMeshes.push(liquidMesh);
+            chunk.meshes.push(liquidMesh);
             return;
         }
 
         const mesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
         const transparentBlock = isTranslucentBlock(id);
-        mesh.castShadow = !transparentBlock && id !== BLOCK.LEAVES;
-        mesh.receiveShadow = id !== BLOCK.WATER && id !== BLOCK.LEAVES;
-        mesh.renderOrder = id === BLOCK.WATER ? 4 : id === BLOCK.GLASS ? 3 : transparentBlock ? 2 : 1;
+        const definition = getBlockDefinitionById(id);
+        const isFoliage = Boolean(definition?.tags?.includes("foliage"));
+        const renderOrder = Number(definition?.visual?.renderOrder ?? (transparentBlock ? 2 : 1));
+        mesh.castShadow = !transparentBlock && !isFoliage;
+        mesh.receiveShadow = !LIQUID_BLOCK_IDS.has(id) && !isFoliage;
+        mesh.renderOrder = renderOrder;
         mesh.userData.blockId = id;
         mesh.userData.lookupKeys = [];
 
@@ -5206,6 +5632,7 @@ function updateChunkStreaming(force = false) {
 
     const desired = new Set();
     const orderedTargets = [];
+    let chunksChanged = false;
 
     for (let dx = -state.chunkRadius; dx <= state.chunkRadius; dx += 1) {
         for (let dz = -state.chunkRadius; dz <= state.chunkRadius; dz += 1) {
@@ -5221,11 +5648,15 @@ function updateChunkStreaming(force = false) {
     orderedTargets.sort((a, b) => a.dist - b.dist);
 
     for (const target of orderedTargets) {
+        if (!chunkMap.has(target.key)) {
+            chunksChanged = true;
+        }
         ensureChunk(target.cx, target.cz);
     }
 
     for (const key of chunkMap.keys()) {
         if (!desired.has(key)) {
+            chunksChanged = true;
             unloadChunk(key);
         }
     }
@@ -5236,8 +5667,10 @@ function updateChunkStreaming(force = false) {
 
     state.loadedChunkCount = chunkMap.size;
     state.pendingChunkBuildCount = chunkRebuildQueue.size;
-    propState.cullingDirty = true;
-    updatePlacedPropCulling();
+    if (chunksChanged) {
+        propState.cullingDirty = true;
+        updatePlacedPropCulling();
+    }
 }
 
 function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
@@ -5284,6 +5717,11 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
         return;
     }
 
+    if (!isValidBlockId(id)) {
+        warnUnknownBlockId(id, `applyBlockMutation:${origin}`);
+        return;
+    }
+
     if (getBlock(x, y, z) === id) {
         return;
     }
@@ -5300,7 +5738,7 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
     }
 
     setBlock(x, y, z, id);
-    if (id === BLOCK.AIR || id === BLOCK.WATER) {
+    if (id === BLOCK.AIR || !isSolidBlock(id)) {
         removePropsSupportedByBlock(x, y, z, origin);
     }
     markLampShadowsDirty();
@@ -5312,7 +5750,8 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
 }
 
 function isSolidBlock(id) {
-    return id !== BLOCK.AIR && id !== BLOCK.WATER;
+    const definition = getBlockDefinitionById(id);
+    return Boolean(definition && definition.solid && !definition.liquid);
 }
 
 function collidesAt(x, y, z) {
@@ -5341,16 +5780,32 @@ function collidesAt(x, y, z) {
         }
     }
 
-    const playerBounds = {
-        minX: x - PLAYER_RADIUS,
-        maxX: x + PLAYER_RADIUS,
-        minY: y,
-        maxY: y + PLAYER_HEIGHT - 0.001,
-        minZ: z - PLAYER_RADIUS,
-        maxZ: z + PLAYER_RADIUS
-    };
+    if (placedProps.size === 0) {
+        return false;
+    }
 
-    for (const placed of placedProps.values()) {
+    const playerBounds = playerCollisionBoundsScratch;
+    playerBounds.minX = x - PLAYER_RADIUS;
+    playerBounds.maxX = x + PLAYER_RADIUS;
+    playerBounds.minY = y;
+    playerBounds.maxY = y + PLAYER_HEIGHT - 0.001;
+    playerBounds.minZ = z - PLAYER_RADIUS;
+    playerBounds.maxZ = z + PLAYER_RADIUS;
+
+    const nearbyIds = queryNearbyPropIdsReusable(
+        playerBounds.minX,
+        playerBounds.maxX,
+        playerBounds.minY,
+        playerBounds.maxY,
+        playerBounds.minZ,
+        playerBounds.maxZ
+    );
+
+    for (const propId of nearbyIds) {
+        const placed = placedProps.get(propId);
+        if (!placed) {
+            continue;
+        }
         if (!placed?.node || placed.node.visible === false) {
             continue;
         }
@@ -5408,7 +5863,7 @@ function clampPlayerToWorld() {
 }
 
 function getForwardRightVectors() {
-    const direction = new THREE.Vector3();
+    const direction = cameraForwardScratch;
     camera.getWorldDirection(direction);
     direction.y = 0;
 
@@ -5419,10 +5874,10 @@ function getForwardRightVectors() {
         state.lastForward.copy(direction);
     }
 
-    const right = new THREE.Vector3();
-    right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
+    const right = cameraRightScratch;
+    right.crossVectors(direction, worldUpVector).normalize();
 
-    return { forward: direction, right };
+    return forwardRightResult;
 }
 
 function updatePlayer(deltaSeconds) {
@@ -5450,7 +5905,8 @@ function updatePlayer(deltaSeconds) {
     if (state.keyDown.has("KeyD")) moveRight += 1;
     if (state.keyDown.has("KeyA")) moveRight -= 1;
 
-    const moveVector = new THREE.Vector3();
+    const moveVector = moveVectorScratch;
+    moveVector.set(0, 0, 0);
     if (moveForward !== 0) moveVector.addScaledVector(forward, moveForward);
     if (moveRight !== 0) moveVector.addScaledVector(right, moveRight);
 
@@ -5480,8 +5936,17 @@ function updatePlayer(deltaSeconds) {
 function updateHud() {
     const p = state.playerPosition;
     const previewSuffix = state.avatarPreviewOpen ? " | Vista avatar" : "";
-    coordsEl.textContent = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}${previewSuffix}`;
-    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Flores activas: ${floraState.sunflowers.size} | Girasoles (moneda): ${economyState.sunflowers} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`);
+    const coordsText = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}${previewSuffix}`;
+    if (coordsText !== uiState.lastCoordsText) {
+        coordsEl.textContent = coordsText;
+        uiState.lastCoordsText = coordsText;
+    }
+
+    const chunkInfoText = `Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Flores activas: ${floraState.sunflowers.size} | Girasoles (moneda): ${economyState.sunflowers} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`;
+    if (chunkInfoText !== uiState.lastChunkInfoText) {
+        setChunkInfo(chunkInfoText);
+        uiState.lastChunkInfoText = chunkInfoText;
+    }
 }
 
 function updateSelectedMaterialHud() {
@@ -5526,7 +5991,7 @@ function renderInventoryUi() {
             card.className = "inventory-item";
             card.draggable = true;
             card.style.backgroundColor = getInventoryItemTint(item);
-            card.innerHTML = `<span class="inventory-item-label">${item.label}</span><span class="inventory-item-meta">${item.kind === ITEM_KIND.PROP ? "Objeto decorativo" : "Bloque"}</span>`;
+            card.innerHTML = `<span class="inventory-item-label">${item.label}</span><span class="inventory-item-meta">${item.meta || (item.kind === ITEM_KIND.PROP ? "Objeto decorativo" : "Bloque")}</span>`;
 
             card.addEventListener("dragstart", (event) => {
                 draggedInventoryItemId = item.id;
@@ -5681,12 +6146,12 @@ function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
         return null;
     }
 
-    const normal = getWorldNormalFromRayHit(hit) || hit.face?.normal?.clone() || null;
+    const normal = getWorldNormalFromRayHit(hit) || (hit.face?.normal ? worldNormalScratch.copy(hit.face.normal).normalize() : null);
     if (!normal) {
         return null;
     }
 
-    const samplePoint = hit.point.clone().addScaledVector(normal, -0.0012);
+    const samplePoint = blockSamplePointScratch.copy(hit.point).addScaledVector(normal, -0.0012);
     const x = Math.floor(samplePoint.x);
     const y = Math.floor(samplePoint.y);
     const z = Math.floor(samplePoint.z);
@@ -5703,7 +6168,7 @@ function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
 }
 
 function findTargetedBlockHit() {
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    raycaster.setFromCamera(blockRayCenterNdc, camera);
     raycaster.far = MAX_REACH;
     const intersects = raycaster.intersectObjects(blockMeshes, false);
     if (!intersects.length) {
@@ -5735,13 +6200,34 @@ function findTargetedBlockHit() {
 }
 
 function findTargetedPropHit(blockingDistance = null) {
-    if (propsRoot.children.length === 0) {
+    if (placedProps.size === 0 || propsRoot.children.length === 0) {
         return null;
     }
 
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const searchRadius = MAX_REACH + 1.2;
+    const nearbyIds = queryNearbyPropIdsReusable(
+        state.playerPosition.x - searchRadius,
+        state.playerPosition.x + searchRadius,
+        state.playerPosition.y - searchRadius,
+        state.playerPosition.y + searchRadius,
+        state.playerPosition.z - searchRadius,
+        state.playerPosition.z + searchRadius
+    );
+    propRaycastCandidates.length = 0;
+    for (const propId of nearbyIds) {
+        const placed = placedProps.get(propId);
+        if (!placed?.node || placed.node.visible === false) {
+            continue;
+        }
+        propRaycastCandidates.push(placed.node);
+    }
+    if (propRaycastCandidates.length === 0) {
+        return null;
+    }
+
+    raycaster.setFromCamera(blockRayCenterNdc, camera);
     raycaster.far = MAX_REACH;
-    const propHits = raycaster.intersectObjects(propsRoot.children, true);
+    const propHits = raycaster.intersectObjects(propRaycastCandidates, true);
     if (!propHits.length) {
         return null;
     }
@@ -5777,8 +6263,24 @@ function findTargetedPropHit(blockingDistance = null) {
 }
 
 function hasPropNearPosition(x, y, z, radius = 0.32) {
+    if (placedProps.size === 0) {
+        return false;
+    }
+
     const radiusSq = radius * radius;
-    for (const prop of placedProps.values()) {
+    const nearbyIds = queryNearbyPropIdsReusable(
+        x - radius,
+        x + radius,
+        y - radius,
+        y + radius,
+        z - radius,
+        z + radius
+    );
+    for (const propId of nearbyIds) {
+        const prop = placedProps.get(propId);
+        if (!prop) {
+            continue;
+        }
         const dx = prop.x - x;
         const dy = prop.y - y;
         const dz = prop.z - z;
@@ -5852,7 +6354,7 @@ function attemptMineOrPlace(isPlacing) {
             }
 
             const targetId = getBlock(placeX, placeY, placeZ);
-            if (targetId !== BLOCK.AIR && targetId !== BLOCK.WATER) {
+            if (targetId !== BLOCK.AIR && isSolidBlock(targetId)) {
                 const now = performance.now();
                 if (now - uiState.noSpaceToastAt > 700) {
                     showToast("No hay espacio", "warning", 800);
@@ -5895,7 +6397,7 @@ function attemptMineOrPlace(isPlacing) {
             x: propX,
             y: propY,
             z: propZ,
-            lampLevel: propType === PROP_TYPE.LAMP ? 0 : undefined,
+            lampLevel: isLightPropType(propType) ? 0 : undefined,
             yaw: propYaw
         }, "local");
 
@@ -5924,7 +6426,7 @@ function attemptMineOrPlace(isPlacing) {
     }
 
     const targetId = getBlock(placeX, placeY, placeZ);
-    if (targetId !== BLOCK.AIR && targetId !== BLOCK.WATER) {
+    if (targetId !== BLOCK.AIR && isSolidBlock(targetId)) {
         const now = performance.now();
         if (now - uiState.noSpaceToastAt > 700) {
             showToast("No hay espacio", "warning", 800);
@@ -6008,7 +6510,7 @@ function cycleLampIntensity(propId, showFeedback = true) {
     }
 
     const placed = placedProps.get(id);
-    if (!placed || placed.propType !== PROP_TYPE.LAMP) {
+    if (!placed || !isLightPropType(placed.propType)) {
         return false;
     }
 
@@ -6019,14 +6521,14 @@ function cycleLampIntensity(propId, showFeedback = true) {
     publishPropUpsert(id);
 
     if (showFeedback) {
-        showToast(`Lampara: ${getLampIntensityLabel(nextLevel)}`, "info", 900);
+        showToast(`${getPropLabel(placed.propType)}: ${getLampIntensityLabel(nextLevel)}`, "info", 900);
     }
     return true;
 }
 
 function tryCycleLampAtCrosshair() {
     const propHit = findTargetedPropHit();
-    if (!propHit || propHit.placed.propType !== PROP_TYPE.LAMP) {
+    if (!propHit || !isLightPropType(propHit.placed.propType)) {
         return false;
     }
 
@@ -6439,8 +6941,11 @@ function animate() {
 
     updateAvatarPreviewCamera(delta);
     updateTargetedBlockUi(delta);
-
-    updateHud();
+    state.hudTick -= delta;
+    if (state.hudTick <= 0) {
+        updateHud();
+        state.hudTick = HUD_UPDATE_INTERVAL;
+    }
     renderer.render(scene, camera);
 }
 
@@ -6450,7 +6955,7 @@ function findSpawnPoint() {
 
     for (let y = WORLD_MAX_Y - 1; y >= 1; y -= 1) {
         const id = getBlock(sx, y, sz);
-        if (id !== BLOCK.AIR && id !== BLOCK.WATER) {
+        if (isSolidBlock(id)) {
             return new THREE.Vector3(sx + 0.5, y + 1.01, sz + 0.5);
         }
     }
@@ -6460,6 +6965,7 @@ function findSpawnPoint() {
 
 function init() {
     setBootStatus("Cargando mundo guardado...");
+    logRegistryValidationIssues();
     initDayNightClockFromStorage();
     createSkyDecor();
     setPauseMenuOpen(false);
