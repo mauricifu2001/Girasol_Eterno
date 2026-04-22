@@ -1,5 +1,32 @@
 import * as THREE from "./vendor/three.module.js";
 import { PointerLockControls } from "./vendor/PointerLockControls.js";
+import {
+    BLOCK,
+    blockRegistry,
+    BLOCK_COLORS,
+    getBlockDefinitionById,
+    isValidBlockId as isValidBlockIdFromRegistry
+} from "./content/blockRegistry.js";
+import {
+    PROP_TYPE,
+    VALID_PROP_TYPES,
+    PROP_PROFILES,
+    propRegistry,
+    getPropDefinition,
+    isLightPropType
+} from "./content/propRegistry.js";
+import {
+    ITEM_KIND,
+    HOTBAR_SIZE,
+    INVENTORY_CATEGORY,
+    INVENTORY_CATEGORY_ORDER,
+    INVENTORY_CATEGORY_LABELS,
+    INVENTORY_ITEMS,
+    DEFAULT_HOTBAR_ITEM_IDS,
+    INVENTORY_ITEM_BY_ID,
+    getInventoryItemTintByDefinition,
+    validateContentRegistry
+} from "./content/contentRegistry.js";
 
 function clampInt(value, min, max) {
     if (!Number.isFinite(value)) {
@@ -46,124 +73,8 @@ const JUMP_SPEED = 9.2;
 const MAX_REACH = 6;
 const DEFAULT_POINTER_SPEED = 0.68;
 const TARGET_UI_SCAN_INTERVAL = 0.055;
-
-const BLOCK = {
-    AIR: 0,
-    BEDROCK: 1,
-    STONE: 2,
-    DIRT: 3,
-    GRASS: 4,
-    WOOD: 5,
-    LEAVES: 6,
-    SAND: 7,
-    WATER: 8,
-    GLASS: 9
-};
-
-const ITEM_KIND = {
-    BLOCK: "block",
-    PROP: "prop"
-};
-
-const PROP_TYPE = {
-    CHAIR: "chair",
-    TABLE: "table",
-    LAMP: "lamp",
-    PLANTER: "planter"
-};
-const VALID_PROP_TYPES = new Set(Object.values(PROP_TYPE));
-const PROP_PROFILES = {
-    [PROP_TYPE.CHAIR]: {
-        halfExtents: { x: 0.28, z: 0.28 },
-        minY: 0,
-        maxY: 0.99,
-        supportY: 0.49
-    },
-    [PROP_TYPE.TABLE]: {
-        halfExtents: { x: 0.49, z: 0.47 },
-        minY: 0,
-        maxY: 0.78,
-        supportY: 0.76
-    },
-    [PROP_TYPE.LAMP]: {
-        halfExtents: { x: 0.16, z: 0.16 },
-        minY: 0,
-        maxY: 1.02,
-        supportY: 1
-    },
-    [PROP_TYPE.PLANTER]: {
-        halfExtents: { x: 0.27, z: 0.27 },
-        minY: 0,
-        maxY: 0.62,
-        supportY: 0.42
-    }
-};
-
-const HOTBAR_SIZE = 8;
-
-const INVENTORY_CATEGORY = {
-    TERRAIN: "terrain",
-    NATURE: "nature",
-    LIQUIDS: "liquids",
-    FURNITURE: "furniture"
-};
-
-const INVENTORY_CATEGORY_ORDER = [
-    INVENTORY_CATEGORY.TERRAIN,
-    INVENTORY_CATEGORY.NATURE,
-    INVENTORY_CATEGORY.LIQUIDS,
-    INVENTORY_CATEGORY.FURNITURE
-];
-
-const INVENTORY_CATEGORY_LABELS = {
-    [INVENTORY_CATEGORY.TERRAIN]: "Terreno",
-    [INVENTORY_CATEGORY.NATURE]: "Naturaleza",
-    [INVENTORY_CATEGORY.LIQUIDS]: "Liquidos y transparentes",
-    [INVENTORY_CATEGORY.FURNITURE]: "Muebles y decoracion"
-};
-
-const INVENTORY_ITEMS = [
-    { id: "stone", kind: ITEM_KIND.BLOCK, blockId: BLOCK.STONE, label: "Piedra", category: INVENTORY_CATEGORY.TERRAIN },
-    { id: "dirt", kind: ITEM_KIND.BLOCK, blockId: BLOCK.DIRT, label: "Tierra", category: INVENTORY_CATEGORY.TERRAIN },
-    { id: "sand", kind: ITEM_KIND.BLOCK, blockId: BLOCK.SAND, label: "Arena", category: INVENTORY_CATEGORY.TERRAIN },
-    { id: "grass", kind: ITEM_KIND.BLOCK, blockId: BLOCK.GRASS, label: "Cesped", category: INVENTORY_CATEGORY.NATURE },
-    { id: "wood", kind: ITEM_KIND.BLOCK, blockId: BLOCK.WOOD, label: "Madera", category: INVENTORY_CATEGORY.NATURE },
-    { id: "leaves", kind: ITEM_KIND.BLOCK, blockId: BLOCK.LEAVES, label: "Hojas", category: INVENTORY_CATEGORY.NATURE },
-    { id: "glass", kind: ITEM_KIND.BLOCK, blockId: BLOCK.GLASS, label: "Vidrio", category: INVENTORY_CATEGORY.LIQUIDS },
-    { id: "water", kind: ITEM_KIND.BLOCK, blockId: BLOCK.WATER, label: "Agua", category: INVENTORY_CATEGORY.LIQUIDS },
-    { id: "chair", kind: ITEM_KIND.PROP, propType: PROP_TYPE.CHAIR, label: "Silla", category: INVENTORY_CATEGORY.FURNITURE },
-    { id: "table", kind: ITEM_KIND.PROP, propType: PROP_TYPE.TABLE, label: "Mesa", category: INVENTORY_CATEGORY.FURNITURE },
-    { id: "lamp", kind: ITEM_KIND.PROP, propType: PROP_TYPE.LAMP, label: "Lampara", category: INVENTORY_CATEGORY.FURNITURE },
-    { id: "planter", kind: ITEM_KIND.PROP, propType: PROP_TYPE.PLANTER, label: "Maceta", category: INVENTORY_CATEGORY.FURNITURE }
-];
-
-const DEFAULT_HOTBAR_ITEM_IDS = ["stone", "dirt", "grass", "wood", "glass", "water", "chair", "lamp"];
-const INVENTORY_ITEM_BY_ID = new Map(INVENTORY_ITEMS.map((item) => [item.id, item]));
-
-const BLOCK_COLORS = {
-    [BLOCK.BEDROCK]: 0x3b3b41,
-    [BLOCK.STONE]: 0x77777f,
-    [BLOCK.DIRT]: 0x6c4d31,
-    [BLOCK.GRASS]: 0x4d8a3f,
-    [BLOCK.WOOD]: 0x8b633d,
-    [BLOCK.LEAVES]: 0x3c7b3f,
-    [BLOCK.SAND]: 0xd4bf8d,
-    [BLOCK.WATER]: 0x4f8dff,
-    [BLOCK.GLASS]: 0xc8e8ff
-};
-
-const BLOCK_LABELS = {
-    [BLOCK.AIR]: "Aire",
-    [BLOCK.BEDROCK]: "Roca base",
-    [BLOCK.STONE]: "Piedra",
-    [BLOCK.DIRT]: "Tierra",
-    [BLOCK.GRASS]: "Cesped",
-    [BLOCK.WOOD]: "Madera",
-    [BLOCK.LEAVES]: "Hojas",
-    [BLOCK.SAND]: "Arena",
-    [BLOCK.WATER]: "Agua",
-    [BLOCK.GLASS]: "Vidrio"
-};
+const HUD_UPDATE_INTERVAL = 0.12;
+const PROP_SPATIAL_CELL_SIZE = 1.5;
 
 const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
 const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
@@ -224,9 +135,11 @@ const urlParams = new URLSearchParams(window.location.search);
 const MAX_EDITED_BLOCKS = clampInt(Number(gameConfig.maxEditedBlocks) || 120000, 2000, 500000);
 const MAX_PLACED_PROPS = clampInt(Number(gameConfig.maxPlacedProps) || 2400, 100, 10000);
 const WORLD_SAVE_KEY = `girasolWorldEdits:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
+const PLAYER_STATE_STORAGE_KEY = `girasolPlayerStateV1:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
 const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
 const WORLD_SAVE_VERSION = 2;
 const AUTO_SAVE_SECONDS = 12;
+const PLAYER_STATE_SAVE_INTERVAL_SECONDS = 1.8;
 const SUNFLOWER_MAX_COUNT = clampInt(Number(gameConfig.sunflowerMaxCount) || 68, 12, 300);
 const SUNFLOWER_SPAWN_INTERVAL_MIN = 3.6;
 const SUNFLOWER_SPAWN_INTERVAL_MAX = 8.9;
@@ -239,14 +152,19 @@ const NIGHT_DURATION_SECONDS = 10 * 60;
 const DAY_NIGHT_CYCLE_SECONDS = DAY_DURATION_SECONDS + NIGHT_DURATION_SECONDS;
 const SUN_ORBIT_RADIUS = 150;
 const SUN_ORBIT_HEIGHT = 98;
-const LAMP_INTENSITY_LEVELS = [0, 0.85, 1.7, 2.75];
-const LAMP_DISTANCE_LEVELS = [0, 8, 11, 14];
-const LAMP_BULB_EMISSIVE_LEVELS = [0.01, 0.28, 0.56, 0.92];
+const LAMP_INTENSITY_LEVELS = [0, 1.05, 2.35, 6.2];
+const LAMP_DISTANCE_LEVELS = [0, 9, 15, 24];
+const LAMP_BULB_EMISSIVE_LEVELS = [0.02, 0.42, 0.86, 1.52];
 const LAMP_SHADOW_MAP_SIZE = 96;
 const MAX_SHADOW_CASTING_LAMPS = 2;
 const LAMP_SHADOW_MAX_DISTANCE = 20;
 const LAMP_SHADOW_REFRESH_SECONDS = 0.45;
 const LAMP_SHADOW_MIN_LEVEL = 3;
+const SIGN_TEXT_MAX_LENGTH = 52;
+const JUKEBOX_TRACK_COUNT = 4;
+const INTERACTION_KEY = "KeyE";
+const INTERACTION_EXIT_KEY = "ShiftLeft";
+const INTERACTION_MAX_DISTANCE = 3.2;
 const SKY_SHADOW_REFRESH_SECONDS = 0.82;
 const PROP_ROTATION_STEP = Math.PI * 0.5;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
@@ -302,6 +220,11 @@ const pointerSensitivitySliderEl = document.getElementById("pointerSensitivitySl
 const pointerSensitivityValueEl = document.getElementById("pointerSensitivityValue");
 const tutorialPanelEl = document.getElementById("tutorialPanel");
 const tutorialCloseButton = document.getElementById("tutorialCloseButton");
+const interactionPanelEl = document.getElementById("interactionPanel");
+const interactionPanelTitleEl = document.getElementById("interactionPanelTitle");
+const interactionPanelHintEl = document.getElementById("interactionPanelHint");
+const interactionPanelBodyEl = document.getElementById("interactionPanelBody");
+const interactionCloseButtonEl = document.getElementById("interactionCloseButton");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
@@ -459,6 +382,8 @@ function drawRockCracks(ctx, size, rng, colorHex, alpha, lines) {
 }
 
 function createProceduralBlockTexture(blockId, fallbackColor) {
+    const definition = getBlockDefinitionById(blockId);
+    const textureStyle = String(definition?.visual?.textureStyle || "default");
     const size = 64;
     const canvasTexture = document.createElement("canvas");
     canvasTexture.width = size;
@@ -474,19 +399,19 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
     const rng = makeTextureRng(blockId * 7919 + WORLD_SEED * 17);
     const fallbackRgb = hexToRgb(fallbackColor);
 
-    if (blockId === BLOCK.BEDROCK) {
+    if (textureStyle === "bedrock") {
         fillNoisyBase(ctx, size, hexToRgb(0x3d3e45), 30, rng);
         drawSpeckles(ctx, size, 280, 0x4c4e55, 0.42, rng, 1, 2);
         drawRockCracks(ctx, size, rng, 0x2a2b30, 0.35, 8);
-    } else if (blockId === BLOCK.STONE) {
+    } else if (textureStyle === "stone") {
         fillNoisyBase(ctx, size, hexToRgb(0x787b84), 24, rng);
         drawSpeckles(ctx, size, 240, 0x8f949e, 0.32, rng, 1, 2);
         drawRockCracks(ctx, size, rng, 0x535861, 0.28, 10);
-    } else if (blockId === BLOCK.DIRT) {
+    } else if (textureStyle === "dirt") {
         fillNoisyBase(ctx, size, hexToRgb(0x704f33), 22, rng);
         drawSpeckles(ctx, size, 280, 0x4e3522, 0.33, rng, 1, 2);
         drawSpeckles(ctx, size, 180, 0x876341, 0.2, rng, 1, 1);
-    } else if (blockId === BLOCK.GRASS) {
+    } else if (textureStyle === "grass") {
         fillNoisyBase(ctx, size, hexToRgb(0x4f8f42), 18, rng);
         const grad = ctx.createLinearGradient(0, 0, 0, size);
         grad.addColorStop(0, "rgba(170, 220, 125, 0.22)");
@@ -495,7 +420,7 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, size, size);
         drawSpeckles(ctx, size, 260, 0x376f2f, 0.18, rng, 1, 1);
-    } else if (blockId === BLOCK.WOOD) {
+    } else if (textureStyle === "wood") {
         fillNoisyBase(ctx, size, hexToRgb(0x91663f), 16, rng);
         for (let y = 0; y < size; y += 5) {
             const shade = 0.13 + rng() * 0.08;
@@ -503,15 +428,15 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
             ctx.fillRect(0, y, size, 2);
         }
         drawSpeckles(ctx, size, 170, 0xb18355, 0.2, rng, 1, 1);
-    } else if (blockId === BLOCK.LEAVES) {
+    } else if (textureStyle === "leaves") {
         fillNoisyBase(ctx, size, hexToRgb(0x3f7f43), 24, rng);
         drawSpeckles(ctx, size, 320, 0x2f5f34, 0.22, rng, 1, 2);
         drawSpeckles(ctx, size, 170, 0x6aa85d, 0.2, rng, 1, 1);
-    } else if (blockId === BLOCK.SAND) {
+    } else if (textureStyle === "sand") {
         fillNoisyBase(ctx, size, hexToRgb(0xd8c595), 16, rng);
         drawSpeckles(ctx, size, 330, 0xbba777, 0.2, rng, 1, 1);
         drawSpeckles(ctx, size, 170, 0xf2e2b4, 0.15, rng, 1, 1);
-    } else if (blockId === BLOCK.WATER) {
+    } else if (textureStyle === "water") {
         fillNoisyBase(ctx, size, hexToRgb(0x5a92ff), 10, rng, 235);
         ctx.strokeStyle = "rgba(188, 220, 255, 0.32)";
         ctx.lineWidth = 1;
@@ -522,7 +447,7 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
             ctx.bezierCurveTo(size * 0.25, y + 2, size * 0.5, y - 2, size, y + 1);
             ctx.stroke();
         }
-    } else if (blockId === BLOCK.GLASS) {
+    } else if (textureStyle === "glass" || textureStyle === "tinted_glass") {
         fillNoisyBase(ctx, size, hexToRgb(0xcde7ff), 8, rng, 212);
         ctx.strokeStyle = "rgba(240, 250, 255, 0.42)";
         ctx.lineWidth = 1;
@@ -531,6 +456,216 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
             ctx.beginPath();
             ctx.moveTo(x, 0);
             ctx.lineTo(x + Math.sin(i) * 2, size);
+            ctx.stroke();
+        }
+        if (textureStyle === "tinted_glass") {
+            ctx.fillStyle = "rgba(74, 95, 142, 0.36)";
+            ctx.fillRect(0, 0, size, size);
+        }
+    } else if (textureStyle === "cobblestone") {
+        fillNoisyBase(ctx, size, hexToRgb(0x7b7f86), 28, rng);
+        drawSpeckles(ctx, size, 280, 0x5a5e66, 0.26, rng, 1, 2);
+        drawRockCracks(ctx, size, rng, 0x4d5159, 0.35, 12);
+    } else if (textureStyle === "stone_bricks") {
+        fillNoisyBase(ctx, size, hexToRgb(0x8a8f98), 16, rng);
+        ctx.strokeStyle = "rgba(67, 72, 80, 0.44)";
+        ctx.lineWidth = 2;
+        const step = 16;
+        for (let i = 0; i <= size; i += step) {
+            ctx.beginPath();
+            ctx.moveTo(0, i + ((Math.floor(i / step) % 2) ? 2 : 0));
+            ctx.lineTo(size, i + ((Math.floor(i / step) % 2) ? 2 : 0));
+            ctx.stroke();
+        }
+        for (let x = 0; x <= size; x += step) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, size);
+            ctx.stroke();
+        }
+        drawSpeckles(ctx, size, 140, 0xacb2bb, 0.22, rng, 1, 1);
+    } else if (textureStyle === "marble") {
+        fillNoisyBase(ctx, size, hexToRgb(0xe6e9ef), 10, rng);
+        ctx.strokeStyle = "rgba(150, 158, 173, 0.34)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 10; i += 1) {
+            const y = Math.floor(rng() * size);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.bezierCurveTo(size * 0.3, y - 6, size * 0.65, y + 8, size, y + Math.floor(rng() * 6) - 3);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "basalt") {
+        fillNoisyBase(ctx, size, hexToRgb(0x3d4148), 16, rng);
+        ctx.strokeStyle = "rgba(90, 96, 108, 0.24)";
+        ctx.lineWidth = 2;
+        for (let x = 0; x <= size; x += 6) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x + Math.sin(x * 0.2) * 2, size);
+            ctx.stroke();
+        }
+        drawSpeckles(ctx, size, 110, 0x525863, 0.18, rng, 1, 1);
+    } else if (textureStyle === "gravel") {
+        fillNoisyBase(ctx, size, hexToRgb(0x8c8e96), 22, rng);
+        drawSpeckles(ctx, size, 420, 0x6f727a, 0.28, rng, 1, 2);
+        drawSpeckles(ctx, size, 220, 0xa8abb4, 0.2, rng, 1, 1);
+    } else if (textureStyle === "mud") {
+        fillNoisyBase(ctx, size, hexToRgb(0x5b4334), 14, rng);
+        drawSpeckles(ctx, size, 220, 0x3f2f24, 0.24, rng, 1, 2);
+        ctx.fillStyle = "rgba(190, 145, 95, 0.08)";
+        for (let i = 0; i < 7; i += 1) {
+            const px = Math.floor(rng() * size);
+            const py = Math.floor(rng() * size);
+            const w = 5 + Math.floor(rng() * 11);
+            const h = 3 + Math.floor(rng() * 8);
+            ctx.fillRect(px, py, w, h);
+        }
+    } else if (textureStyle === "snow") {
+        fillNoisyBase(ctx, size, hexToRgb(0xf2f6ff), 8, rng);
+        drawSpeckles(ctx, size, 260, 0xdde7fb, 0.24, rng, 1, 1);
+        drawSpeckles(ctx, size, 140, 0xbecfe8, 0.16, rng, 1, 1);
+    } else if (textureStyle === "ice") {
+        fillNoisyBase(ctx, size, hexToRgb(0xb9dcff), 10, rng, 214);
+        ctx.strokeStyle = "rgba(224, 244, 255, 0.38)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 11; i += 1) {
+            const startX = Math.floor(rng() * size);
+            const startY = Math.floor(rng() * size);
+            ctx.beginPath();
+            ctx.moveTo(startX, startY);
+            ctx.lineTo(startX + (rng() - 0.5) * 24, startY + (rng() - 0.5) * 24);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "dark_planks") {
+        fillNoisyBase(ctx, size, hexToRgb(0x4b3525), 14, rng);
+        for (let y = 0; y < size; y += 5) {
+            const shade = 0.15 + rng() * 0.1;
+            ctx.fillStyle = `rgba(35, 24, 16, ${shade})`;
+            ctx.fillRect(0, y, size, 2);
+        }
+        drawSpeckles(ctx, size, 130, 0x6a4d34, 0.22, rng, 1, 1);
+    } else if (textureStyle === "bamboo") {
+        fillNoisyBase(ctx, size, hexToRgb(0xa6c46c), 12, rng);
+        for (let x = 0; x < size; x += 8) {
+            ctx.fillStyle = "rgba(108, 134, 66, 0.26)";
+            ctx.fillRect(x, 0, 2, size);
+        }
+        for (let y = 0; y < size; y += 10) {
+            ctx.fillStyle = "rgba(72, 99, 47, 0.24)";
+            ctx.fillRect(0, y, size, 2);
+        }
+    } else if (textureStyle === "glow_block") {
+        fillNoisyBase(ctx, size, hexToRgb(0xffd98f), 12, rng);
+        drawSpeckles(ctx, size, 230, 0xffedba, 0.28, rng, 1, 2);
+        drawSpeckles(ctx, size, 150, 0xc58f3a, 0.2, rng, 1, 1);
+        const glow = ctx.createRadialGradient(size * 0.5, size * 0.5, 6, size * 0.5, size * 0.5, size * 0.58);
+        glow.addColorStop(0, "rgba(255, 240, 190, 0.34)");
+        glow.addColorStop(1, "rgba(255, 216, 139, 0)");
+        ctx.fillStyle = glow;
+        ctx.fillRect(0, 0, size, size);
+    } else if (textureStyle === "mossy_cobblestone") {
+        fillNoisyBase(ctx, size, hexToRgb(0x6e7568), 24, rng);
+        drawSpeckles(ctx, size, 250, 0x555c50, 0.26, rng, 1, 2);
+        drawRockCracks(ctx, size, rng, 0x44493f, 0.3, 9);
+        drawSpeckles(ctx, size, 170, 0x4f7b49, 0.24, rng, 1, 2);
+    } else if (textureStyle === "dark_brick") {
+        fillNoisyBase(ctx, size, hexToRgb(0x553e43), 14, rng);
+        ctx.strokeStyle = "rgba(35, 24, 28, 0.45)";
+        ctx.lineWidth = 2;
+        const darkBrickStep = 16;
+        for (let y = 0; y <= size; y += darkBrickStep) {
+            const offset = (Math.floor(y / darkBrickStep) % 2) ? 2 : 0;
+            ctx.beginPath();
+            ctx.moveTo(0, y + offset);
+            ctx.lineTo(size, y + offset);
+            ctx.stroke();
+        }
+        for (let x = 0; x <= size; x += darkBrickStep) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, size);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "black_marble") {
+        fillNoisyBase(ctx, size, hexToRgb(0x2d3038), 8, rng);
+        ctx.strokeStyle = "rgba(98, 104, 119, 0.32)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i += 1) {
+            const y = Math.floor(rng() * size);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.bezierCurveTo(size * 0.32, y + 6, size * 0.66, y - 8, size, y + Math.floor(rng() * 5) - 2);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "slate") {
+        fillNoisyBase(ctx, size, hexToRgb(0x4d5663), 14, rng);
+        ctx.strokeStyle = "rgba(64, 73, 84, 0.3)";
+        ctx.lineWidth = 1;
+        for (let y = 0; y <= size; y += 6) {
+            ctx.beginPath();
+            ctx.moveTo(0, y + Math.floor(rng() * 2));
+            ctx.lineTo(size, y + Math.floor(rng() * 2));
+            ctx.stroke();
+        }
+    } else if (textureStyle === "volcanic_stone") {
+        fillNoisyBase(ctx, size, hexToRgb(0x2c2527), 18, rng);
+        drawSpeckles(ctx, size, 320, 0x1b1517, 0.3, rng, 1, 2);
+        drawSpeckles(ctx, size, 80, 0x7b3a2a, 0.2, rng, 1, 1);
+    } else if (textureStyle === "copper") {
+        fillNoisyBase(ctx, size, hexToRgb(0xbc6f45), 10, rng);
+        ctx.strokeStyle = "rgba(224, 157, 109, 0.3)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i += 1) {
+            const y = 4 + i * 7 + Math.floor(rng() * 3);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(size, y + Math.sin(i * 0.8) * 1.8);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "oxidized_copper") {
+        fillNoisyBase(ctx, size, hexToRgb(0x5f9f8d), 11, rng);
+        drawSpeckles(ctx, size, 220, 0x3a6e63, 0.22, rng, 1, 2);
+        drawSpeckles(ctx, size, 110, 0xbf7d55, 0.14, rng, 1, 1);
+    } else if (textureStyle === "terracotta") {
+        fillNoisyBase(ctx, size, hexToRgb(0xb66a4f), 12, rng);
+        drawSpeckles(ctx, size, 180, 0x8e513d, 0.22, rng, 1, 2);
+    } else if (textureStyle === "roof_tiles") {
+        fillNoisyBase(ctx, size, hexToRgb(0x7f3d31), 10, rng);
+        ctx.strokeStyle = "rgba(57, 24, 19, 0.44)";
+        ctx.lineWidth = 2;
+        for (let y = 0; y <= size; y += 8) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(size, y);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "white_plaster" || textureStyle === "pink_plaster") {
+        const plasterBase = textureStyle === "pink_plaster" ? 0xe6c2ce : 0xf4efe8;
+        fillNoisyBase(ctx, size, hexToRgb(plasterBase), 6, rng);
+        drawSpeckles(ctx, size, 120, textureStyle === "pink_plaster" ? 0xd5aebc : 0xd4cfc8, 0.17, rng, 1, 1);
+    } else if (textureStyle === "light_wood" || textureStyle === "reddish_wood") {
+        const woodBase = textureStyle === "reddish_wood" ? 0x9a503f : 0xcfa97c;
+        fillNoisyBase(ctx, size, hexToRgb(woodBase), 12, rng);
+        for (let y = 0; y < size; y += 5) {
+            const shade = textureStyle === "reddish_wood" ? 0.19 : 0.14;
+            ctx.fillStyle = `rgba(66, 35, 24, ${shade + rng() * 0.08})`;
+            ctx.fillRect(0, y, size, 2);
+        }
+    } else if (textureStyle === "pink_leaves") {
+        fillNoisyBase(ctx, size, hexToRgb(0xc97da4), 18, rng);
+        drawSpeckles(ctx, size, 260, 0xab648b, 0.24, rng, 1, 2);
+        drawSpeckles(ctx, size, 120, 0xe5b8cf, 0.2, rng, 1, 1);
+    } else if (textureStyle === "amber_glass" || textureStyle === "blue_glass") {
+        const glassBase = textureStyle === "amber_glass" ? 0xe3a63f : 0x61a6e5;
+        fillNoisyBase(ctx, size, hexToRgb(glassBase), 8, rng, 212);
+        ctx.strokeStyle = "rgba(240, 250, 255, 0.38)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 8; i += 1) {
+            const x = 4 + i * 8 + Math.floor(rng() * 2);
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x + Math.sin(i) * 1.8, size);
             ctx.stroke();
         }
     } else {
@@ -550,46 +685,38 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
 }
 
 function createBlockMaterial(blockId, color) {
-    const texture = createProceduralBlockTexture(blockId, color);
+    const definition = getBlockDefinitionById(blockId);
+    const visual = definition?.visual || {};
+    const useTexture = visual.useTexture !== false;
+    const texture = useTexture ? createProceduralBlockTexture(blockId, color) : null;
+    const baseColor = Number.isFinite(visual.color) ? visual.color : color;
     const material = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
+        color: useTexture ? 0xffffff : baseColor,
         map: texture,
-        roughness: blockId === BLOCK.WATER ? 0.08 : blockId === BLOCK.GLASS ? 0.18 : 0.92,
-        metalness: blockId === BLOCK.WATER ? 0.02 : blockId === BLOCK.GLASS ? 0.01 : 0
+        roughness: THREE.MathUtils.clamp(Number(visual.roughness ?? 0.9), 0, 1),
+        metalness: THREE.MathUtils.clamp(Number(visual.metalness ?? 0), 0, 1),
+        emissive: Number(visual.emissive ?? 0x000000),
+        emissiveIntensity: Math.max(0, Number(visual.emissiveIntensity ?? 0))
     });
 
-    if (blockId === BLOCK.GRASS || blockId === BLOCK.LEAVES) {
-        material.roughness = 0.86;
-    }
-
-    if (blockId === BLOCK.WOOD || blockId === BLOCK.DIRT || blockId === BLOCK.SAND) {
-        material.roughness = 0.95;
-    }
-
-    if (blockId === BLOCK.WATER) {
-        if (material.map) {
-            material.map.dispose();
-            material.map = null;
-        }
-        material.color.setHex(0x4b86ea);
-        material.emissive.setHex(0x123a74);
-        material.emissiveIntensity = 0.14;
-        material.roughness = 0.18;
-        material.metalness = 0.03;
+    const opacity = THREE.MathUtils.clamp(Number(visual.opacity ?? 1), 0, 1);
+    const isTransparent = Boolean(definition?.transparent) || opacity < 0.999 || Boolean(definition?.liquid);
+    if (isTransparent) {
         material.transparent = true;
-        material.opacity = 0.76;
+        material.opacity = opacity;
         material.depthWrite = false;
+        material.side = THREE.DoubleSide;
+    }
+
+    if (definition?.liquid) {
         material.depthTest = true;
         material.alphaTest = 0.01;
         material.premultipliedAlpha = true;
-        material.side = THREE.DoubleSide;
     }
 
-    if (blockId === BLOCK.GLASS) {
-        material.transparent = true;
-        material.opacity = 0.34;
-        material.depthWrite = false;
-        material.side = THREE.DoubleSide;
+    if (definition?.emitsLight && material.emissiveIntensity <= 0) {
+        material.emissive.setHex(baseColor);
+        material.emissiveIntensity = 0.32;
     }
 
     return material;
@@ -597,12 +724,20 @@ function createBlockMaterial(blockId, color) {
 
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
 const detailUnitGeometry = new THREE.BoxGeometry(1, 1, 1);
+const signFaceGeometry = new THREE.PlaneGeometry(0.62, 0.34);
 const detailMaterialCache = new Map();
 const blockMaterials = Object.fromEntries(
-    Object.entries(BLOCK_COLORS).map(([id, color]) => [
-        Number(id),
-        createBlockMaterial(Number(id), color)
-    ])
+    blockRegistry.definitions
+        .filter((definition) => definition.id !== BLOCK.AIR)
+        .map((definition) => {
+            const color = Number.isFinite(definition.visual?.color) ? Number(definition.visual.color) : 0x8fa3bf;
+            return [definition.id, createBlockMaterial(definition.id, color)];
+        })
+);
+const LIQUID_BLOCK_IDS = new Set(
+    blockRegistry.definitions
+        .filter((definition) => definition.liquid)
+        .map((definition) => definition.id)
 );
 
 function getDetailMaterial(colorHex) {
@@ -635,6 +770,8 @@ const chunkRebuildQueue = new Set();
 const editedBlocks = new Map();
 const columnCache = new Map();
 const placedProps = new Map();
+const propSpatialGrid = new Map();
+const propTypeIndex = new Map(Object.values(PROP_TYPE).map((type) => [type, new Set()]));
 
 const blockMeshes = [];
 const blockPositionLookup = new Map();
@@ -642,6 +779,27 @@ const blockPositionLookup = new Map();
 const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
 const cameraYawScratch = new THREE.Vector3();
+const blockRayCenterNdc = new THREE.Vector2(0, 0);
+const cameraForwardScratch = new THREE.Vector3();
+const cameraRightScratch = new THREE.Vector3();
+const moveVectorScratch = new THREE.Vector3();
+const worldUpVector = new THREE.Vector3(0, 1, 0);
+const worldNormalScratch = new THREE.Vector3();
+const blockSamplePointScratch = new THREE.Vector3();
+const propSpatialQueryIds = new Set();
+const propRaycastCandidates = [];
+const playerCollisionBoundsScratch = {
+    minX: 0,
+    maxX: 0,
+    minY: 0,
+    maxY: 0,
+    minZ: 0,
+    maxZ: 0
+};
+const forwardRightResult = {
+    forward: cameraForwardScratch,
+    right: cameraRightScratch
+};
 const targetHighlight = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(BLOCK_HIGHLIGHT_SIZE, BLOCK_HIGHLIGHT_SIZE, BLOCK_HIGHLIGHT_SIZE)),
     new THREE.LineBasicMaterial({ color: 0xffd789, transparent: true, opacity: 0.92 })
@@ -671,7 +829,10 @@ const state = {
     pendingChunkBuildCount: 0,
     lastForward: new THREE.Vector3(0, 0, -1),
     autoSaveTick: 0,
-    targetUiTick: 0
+    playerStateSaveTick: 0,
+    targetUiTick: 0,
+    hudTick: 0,
+    interactionPanelOpen: false
 };
 
 const multiplayer = {
@@ -698,7 +859,9 @@ const multiplayer = {
     pendingEditWrites: new Map(),
     pendingPropWrites: new Map(),
     writeTimerId: null,
-    propWriteTimerId: null
+    propWriteTimerId: null,
+    idleHeartbeatMs: 1200,
+    lastSentState: null
 };
 
 const saveState = {
@@ -733,8 +896,13 @@ const skyState = {
 
 const uiState = {
     toastHideTimerId: null,
-    noSpaceToastAt: 0
+    noSpaceToastAt: 0,
+    lastCoordsText: "",
+    lastChunkInfoText: ""
 };
+
+const warnedUnknownBlockIds = new Set();
+const warnedUnknownPropTypes = new Set();
 
 const wildlifeState = {
     rabbits: new Map(),
@@ -758,6 +926,18 @@ const floraState = {
     nextId: 1,
     spawnTimer: 3,
     lastHarvestAt: 0
+};
+
+const interactionState = {
+    pose: null,
+    localUsing: null,
+    panelPropId: "",
+    panelMode: "",
+    panelNeedsRender: false,
+    panelRefreshTick: 0,
+    remoteUsingByProp: new Map(),
+    previousRemoteUsingByProp: new Map(),
+    localAudioContext: null
 };
 
 let draggedInventoryItemId = "";
@@ -931,6 +1111,140 @@ function loadHotbarConfiguration() {
     state.hotbarItemIds = sanitizeHotbarItemIds(parsed);
 }
 
+function sanitizeStoredPlayerState(rawPayload) {
+    if (!rawPayload || typeof rawPayload !== "object") {
+        return null;
+    }
+
+    const x = Number(rawPayload.x);
+    const yRaw = Number(rawPayload.y);
+    const z = Number(rawPayload.z);
+    if (!Number.isFinite(x) || !Number.isFinite(yRaw) || !Number.isFinite(z)) {
+        return null;
+    }
+
+    const y = THREE.MathUtils.clamp(yRaw, 0.01, WORLD_MAX_Y - PLAYER_HEIGHT - 0.02);
+    const yaw = normalizeYawRadians(rawPayload.yaw);
+    const pitch = THREE.MathUtils.clamp(Number(rawPayload.pitch) || 0, -1.35, 1.35);
+
+    let pose = null;
+    if (rawPayload.pose && typeof rawPayload.pose === "object") {
+        const propId = String(rawPayload.pose.propId || "");
+        const mode = normalizePoseMode(rawPayload.pose.mode);
+        if (propId && mode) {
+            pose = { propId, mode };
+        }
+    }
+
+    return { x, y, z, yaw, pitch, pose };
+}
+
+function loadPlayerStateSnapshot() {
+    try {
+        const raw = window.localStorage.getItem(PLAYER_STATE_STORAGE_KEY);
+        if (!raw) {
+            return null;
+        }
+        const parsed = JSON.parse(raw);
+        return sanitizeStoredPlayerState(parsed);
+    } catch (error) {
+        return null;
+    }
+}
+
+function resolveRestoredPlayerPosition(savedState) {
+    const x = Number(savedState?.x);
+    const y = Number(savedState?.y);
+    const z = Number(savedState?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        return null;
+    }
+
+    if (!collidesAt(x, y, z)) {
+        return { x, y, z };
+    }
+
+    for (let step = 1; step <= 12; step += 1) {
+        const candidateY = y + step * 0.2;
+        if (candidateY > WORLD_MAX_Y - PLAYER_HEIGHT - 0.02) {
+            break;
+        }
+        if (!collidesAt(x, candidateY, z)) {
+            return { x, y: candidateY, z };
+        }
+    }
+
+    return null;
+}
+
+function persistPlayerStateSnapshot(force = false) {
+    if (!state.worldReady) {
+        return;
+    }
+    if (!force && state.playerStateSaveTick < PLAYER_STATE_SAVE_INTERVAL_SECONDS) {
+        return;
+    }
+
+    state.playerStateSaveTick = 0;
+    const pose = interactionState.pose
+        ? {
+            propId: String(interactionState.pose.propId || ""),
+            mode: normalizePoseMode(interactionState.pose.mode)
+        }
+        : null;
+
+    const payload = {
+        version: 1,
+        updatedAt: Date.now(),
+        x: Number(state.playerPosition.x.toFixed(3)),
+        y: Number(state.playerPosition.y.toFixed(3)),
+        z: Number(state.playerPosition.z.toFixed(3)),
+        yaw: Number(normalizeYawRadians(controls.getObject().rotation.y || 0).toFixed(4)),
+        pitch: Number(THREE.MathUtils.clamp(Number(camera.rotation.x) || 0, -1.35, 1.35).toFixed(4))
+    };
+    if (pose?.propId && pose.mode) {
+        payload.pose = pose;
+    }
+
+    try {
+        window.localStorage.setItem(PLAYER_STATE_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+    }
+}
+
+function restoreLocalPlayerStateFromSnapshot(savedState) {
+    const snapshot = sanitizeStoredPlayerState(savedState);
+    if (!snapshot) {
+        return false;
+    }
+
+    const resolvedPosition = resolveRestoredPlayerPosition(snapshot);
+    if (!resolvedPosition) {
+        return false;
+    }
+
+    state.playerPosition.set(resolvedPosition.x, resolvedPosition.y, resolvedPosition.z);
+    controls.getObject().rotation.y = snapshot.yaw;
+    camera.rotation.x = snapshot.pitch;
+    state.velocityY = 0;
+    updateOnGroundFlag();
+
+    if (snapshot.pose?.propId && snapshot.pose.mode && placedProps.has(snapshot.pose.propId)) {
+        setLocalPoseActivity(snapshot.pose.propId, snapshot.pose.mode, false);
+        if (snapshot.pose.mode === "lie") {
+            camera.rotation.x = -0.08;
+        }
+        updateLocalPoseLock();
+    }
+
+    controls.getObject().position.set(
+        state.playerPosition.x,
+        state.playerPosition.y + EYE_HEIGHT,
+        state.playerPosition.z
+    );
+    return true;
+}
+
 function getHotbarItemByIndex(index) {
     const safeIndex = THREE.MathUtils.clamp(Math.floor(Number(index) || 0), 0, HOTBAR_SIZE - 1);
     const itemId = state.hotbarItemIds[safeIndex];
@@ -942,19 +1256,7 @@ function getSelectedHotbarItem() {
 }
 
 function getInventoryItemTint(item) {
-    if (!item) {
-        return "rgba(255, 255, 255, 0.08)";
-    }
-
-    if (item.kind === ITEM_KIND.BLOCK) {
-        const color = BLOCK_COLORS[item.blockId] || 0x8fa3bf;
-        return `#${color.toString(16).padStart(6, "0")}44`;
-    }
-
-    if (item.propType === PROP_TYPE.CHAIR) return "rgba(177, 140, 92, 0.42)";
-    if (item.propType === PROP_TYPE.TABLE) return "rgba(194, 152, 104, 0.42)";
-    if (item.propType === PROP_TYPE.LAMP) return "rgba(221, 192, 122, 0.42)";
-    return "rgba(150, 196, 132, 0.42)";
+    return getInventoryItemTintByDefinition(item, BLOCK_COLORS);
 }
 
 function updateSunflowerCurrencyHud() {
@@ -1103,6 +1405,9 @@ function setAvatarPreviewOpen(open, showFeedback = false) {
     state.avatarPreviewOpen = next;
 
     if (state.avatarPreviewOpen) {
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
         if (state.inventoryOpen) {
             setInventoryOpen(false);
         }
@@ -1208,6 +1513,9 @@ function setPauseMenuOpen(open) {
     if (open && state.inventoryOpen) {
         setInventoryOpen(false);
     }
+    if (open && state.interactionPanelOpen) {
+        closeInteractionPanel(false, true);
+    }
 
     state.paused = Boolean(open);
 
@@ -1274,7 +1582,8 @@ function saveWorldNow(showFeedback = false) {
 }
 
 function getBlockLabel(blockId) {
-    return BLOCK_LABELS[blockId] || `Bloque ${blockId}`;
+    const definition = getBlockDefinitionById(Number(blockId));
+    return definition?.label || `Bloque ${blockId}`;
 }
 
 function updateTargetedBlockUi(deltaSeconds = 0) {
@@ -1300,7 +1609,7 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     let flowerDistance = Number.POSITIVE_INFINITY;
     let flowerId = "";
     if (sunflowerRoot.children.length > 0) {
-        raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+        raycaster.setFromCamera(blockRayCenterNdc, camera);
         raycaster.far = MAX_REACH;
         const flowerHits = raycaster.intersectObjects(sunflowerRoot.children, true);
         const nearestFlowerHit = getFirstVisibleRayHit(flowerHits);
@@ -1324,10 +1633,34 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     if (propHit && propDistance <= blockDistance + 0.001) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
-            if (propHit.placed.propType === PROP_TYPE.LAMP) {
-                targetBlockLabelEl.textContent = `Lampara ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (click der cambiar luz, click izq quitar)`;
+            const config = getPropInteractionConfig(propHit.placed.propType);
+            const kind = config?.kind || INTERACTION_KIND.NONE;
+            const canInteract = propDistance <= INTERACTION_MAX_DISTANCE + 0.001;
+
+            if (kind === INTERACTION_KIND.LIGHT_CYCLE && isLightPropType(propHit.placed.propType)) {
+                const actionHint = canInteract ? "E cambiar intensidad" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (${actionHint} | click izq quitar)`;
+            } else if (kind === INTERACTION_KIND.EDIT_TEXT) {
+                const textPreview = sanitizeEditableSignText(propHit.placed.state?.text || "").slice(0, 26);
+                const actionHint = canInteract ? "E editar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)}: "${textPreview}" (${actionHint} | click izq quitar)`;
+            } else if (kind === INTERACTION_KIND.JUKEBOX_CONTROL) {
+                const playing = Boolean(propHit.placed.state?.playing);
+                const track = sanitizeJukeboxTrack(propHit.placed.state?.track);
+                const modeLabel = playing ? `Reproduciendo pista ${track || 1}` : "Detenida";
+                const actionHint = canInteract ? "E controlar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (${actionHint} | click izq quitar)`;
+            } else if (kind === INTERACTION_KIND.FURNACE_OPEN) {
+                const lit = Boolean(propHit.placed.state?.lit);
+                const actionHint = canInteract ? "E abrir" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${lit ? "Encendido" : "Apagado"} (${actionHint} | click izq quitar)`;
+            } else if (kind !== INTERACTION_KIND.NONE) {
+                const hint = canInteract
+                    ? (config?.hudHint || "E interactuar")
+                    : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} (${hint} | click izq quitar)`;
             } else {
-                targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq para quitar)`;
+                targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq quitar)`;
             }
             targetBlockLabelEl.classList.remove("hidden");
         }
@@ -1969,15 +2302,320 @@ function findAncestorUserDataValue(object, key) {
 }
 
 function getPropLabel(propType) {
-    if (propType === PROP_TYPE.CHAIR) return "Silla";
-    if (propType === PROP_TYPE.TABLE) return "Mesa";
-    if (propType === PROP_TYPE.LAMP) return "Lampara";
-    if (propType === PROP_TYPE.PLANTER) return "Maceta";
-    return "Objeto";
+    const definition = getPropDefinition(propType);
+    return definition?.label || "Objeto";
 }
 
 function getPropProfile(propType) {
-    return PROP_PROFILES[propType] || PROP_PROFILES[PROP_TYPE.PLANTER];
+    const fallbackProfile = PROP_PROFILES[PROP_TYPE.PLANTER] || {
+        halfExtents: { x: 0.25, z: 0.25 },
+        minY: 0,
+        maxY: 1,
+        supportY: 0.5
+    };
+    return getPropDefinition(propType)?.profile || fallbackProfile;
+}
+
+const INTERACTION_KIND = Object.freeze({
+    NONE: "none",
+    SIT: "sit",
+    LIE: "lie",
+    LIGHT_CYCLE: "light-cycle",
+    EDIT_TEXT: "edit-text",
+    CONTAINER_OPEN: "container-open",
+    FURNACE_OPEN: "furnace-open",
+    JUKEBOX_CONTROL: "jukebox-control",
+    CYCLE_VARIANT: "cycle-variant",
+    TOGGLE_STATE: "toggle-state"
+});
+
+const INTERACTION_USAGE_KIND = Object.freeze({
+    CONTAINER: "container",
+    FURNACE: "furnace",
+    JUKEBOX: "jukebox",
+    SIGN: "sign"
+});
+
+const VARIANT_MAX_BY_PROP = Object.freeze({
+    [PROP_TYPE.PAINTING]: 3,
+    [PROP_TYPE.CURTAINS]: 2
+});
+
+const PROP_INTERACTION_CONFIG = Object.freeze({
+    [PROP_TYPE.CHAIR]: Object.freeze({
+        kind: INTERACTION_KIND.SIT,
+        hudHint: "E sentarte | Shift levantarte",
+        temporarySync: ["pose"]
+    }),
+    [PROP_TYPE.BENCH]: Object.freeze({
+        kind: INTERACTION_KIND.SIT,
+        hudHint: "E sentarte | Shift levantarte",
+        temporarySync: ["pose"]
+    }),
+    [PROP_TYPE.BED]: Object.freeze({
+        kind: INTERACTION_KIND.LIE,
+        hudHint: "E acostarte | Shift levantarte",
+        temporarySync: ["pose"]
+    }),
+    [PROP_TYPE.LAMP]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.LANTERN]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.WALL_LANTERN]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.LIGHT_POST]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.CAMPFIRE]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.CAMPFIRE_MEDIUM]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.CAMPFIRE_LARGE]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.EDITABLE_SIGN]: Object.freeze({
+        kind: INTERACTION_KIND.EDIT_TEXT,
+        hudHint: "E editar texto",
+        persistentSync: ["state.text"],
+        usageKind: INTERACTION_USAGE_KIND.SIGN
+    }),
+    [PROP_TYPE.JUKEBOX]: Object.freeze({
+        kind: INTERACTION_KIND.JUKEBOX_CONTROL,
+        hudHint: "E abrir controles jukebox",
+        persistentSync: ["state.playing", "state.track", "state.source"],
+        usageKind: INTERACTION_USAGE_KIND.JUKEBOX
+    }),
+    [PROP_TYPE.CHEST]: Object.freeze({
+        kind: INTERACTION_KIND.CONTAINER_OPEN,
+        hudHint: "E abrir cofre",
+        persistentSync: ["state.items"],
+        temporarySync: ["using"],
+        usageKind: INTERACTION_USAGE_KIND.CONTAINER
+    }),
+    [PROP_TYPE.LARGE_CHEST]: Object.freeze({
+        kind: INTERACTION_KIND.CONTAINER_OPEN,
+        hudHint: "E abrir cofre grande",
+        persistentSync: ["state.items"],
+        temporarySync: ["using"],
+        usageKind: INTERACTION_USAGE_KIND.CONTAINER
+    }),
+    [PROP_TYPE.FURNACE]: Object.freeze({
+        kind: INTERACTION_KIND.FURNACE_OPEN,
+        hudHint: "E abrir horno",
+        persistentSync: ["state.input", "state.lit", "state.fuel"],
+        temporarySync: ["using"],
+        usageKind: INTERACTION_USAGE_KIND.FURNACE
+    }),
+    [PROP_TYPE.PAINTING]: Object.freeze({
+        kind: INTERACTION_KIND.CYCLE_VARIANT,
+        hudHint: "E cambiar variante",
+        persistentSync: ["state.variant"]
+    }),
+    [PROP_TYPE.CURTAINS]: Object.freeze({
+        kind: INTERACTION_KIND.CYCLE_VARIANT,
+        hudHint: "E cambiar variante",
+        persistentSync: ["state.variant"]
+    })
+});
+
+function getPropInteractionConfig(propType) {
+    return PROP_INTERACTION_CONFIG[propType] || null;
+}
+
+function isInteractionDistanceValid(distance) {
+    const numeric = Number(distance);
+    if (!Number.isFinite(numeric)) {
+        return false;
+    }
+    return numeric <= INTERACTION_MAX_DISTANCE + 0.001;
+}
+
+function setLocalPoseActivity(propId, mode, forceBroadcast = true) {
+    const nextPropId = String(propId || "");
+    const nextMode = normalizePoseMode(mode);
+    if (!nextPropId || !nextMode) {
+        clearLocalPoseActivity(forceBroadcast);
+        return;
+    }
+
+    if (
+        interactionState.pose
+        && interactionState.pose.propId === nextPropId
+        && interactionState.pose.mode === nextMode
+    ) {
+        return;
+    }
+
+    interactionState.pose = {
+        propId: nextPropId,
+        mode: nextMode
+    };
+    state.keyDown.clear();
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function clearLocalPoseActivity(forceBroadcast = true) {
+    if (!interactionState.pose) {
+        return;
+    }
+    interactionState.pose = null;
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function setLocalUsingActivity(propId, usageKind, forceBroadcast = true) {
+    const nextPropId = String(propId || "");
+    const nextUsageKind = String(usageKind || "");
+    if (!nextPropId || !nextUsageKind) {
+        clearLocalUsingActivity(forceBroadcast);
+        return;
+    }
+
+    const previous = interactionState.localUsing;
+    if (
+        previous
+        && previous.propId === nextPropId
+        && previous.usageKind === nextUsageKind
+    ) {
+        return;
+    }
+
+    interactionState.localUsing = {
+        propId: nextPropId,
+        usageKind: nextUsageKind
+    };
+
+    if (previous?.propId && previous.propId !== nextPropId) {
+        applyPropVisualStateById(previous.propId);
+    }
+    applyPropVisualStateById(nextPropId);
+
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function clearLocalUsingActivity(forceBroadcast = true) {
+    const previous = interactionState.localUsing;
+    if (!previous) {
+        return;
+    }
+
+    interactionState.localUsing = null;
+    if (previous.propId) {
+        applyPropVisualStateById(previous.propId);
+    }
+
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function clearAllTemporaryInteractionState(forceBroadcast = true) {
+    const hadPose = Boolean(interactionState.pose);
+    const hadUsing = Boolean(interactionState.localUsing);
+    if (!hadPose && !hadUsing) {
+        return;
+    }
+
+    interactionState.pose = null;
+    const previousUsing = interactionState.localUsing;
+    interactionState.localUsing = null;
+    if (previousUsing?.propId) {
+        applyPropVisualStateById(previousUsing.propId);
+    }
+
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function sanitizeVariantIndex(propType, value) {
+    const max = Number(VARIANT_MAX_BY_PROP[propType]);
+    if (!Number.isFinite(max) || max < 0) {
+        return 0;
+    }
+    const numeric = Math.floor(Number(value));
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return 0;
+    }
+    return Math.min(numeric, max);
+}
+
+function sanitizeContainerItems(rawValue, slotCount = 0) {
+    const normalizedCount = Math.max(0, Math.floor(Number(slotCount) || 0));
+    const incoming = Array.isArray(rawValue) ? rawValue : [];
+    const next = [];
+    for (let i = 0; i < normalizedCount; i += 1) {
+        const id = String(incoming[i] || "");
+        next.push(INVENTORY_ITEM_BY_ID.has(id) ? id : "");
+    }
+    return next;
+}
+
+function areStringArraysEqual(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+    }
+    for (let i = 0; i < a.length; i += 1) {
+        if (String(a[i] || "") !== String(b[i] || "")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function getTemporaryUsageEntry(propId) {
+    const key = String(propId || "");
+    if (!key) {
+        return null;
+    }
+    const remote = interactionState.remoteUsingByProp.get(key);
+    const localMatches = interactionState.localUsing?.propId === key
+        ? interactionState.localUsing
+        : null;
+    return {
+        total: (remote?.count || 0) + (localMatches ? 1 : 0),
+        hasLocal: Boolean(localMatches),
+        remoteCount: remote?.count || 0,
+        usageKinds: new Set([
+            ...(remote?.usageKinds ? Array.from(remote.usageKinds) : []),
+            ...(localMatches?.usageKind ? [localMatches.usageKind] : [])
+        ])
+    };
+}
+
+function isPropBeingTemporarilyUsed(propId, usageKind = "") {
+    const usage = getTemporaryUsageEntry(propId);
+    if (!usage) {
+        return false;
+    }
+    if (!usageKind) {
+        return usage.total > 0;
+    }
+    return usage.usageKinds.has(String(usageKind));
 }
 
 function getRotatedPropHalfExtents(propType, yaw = 0) {
@@ -2024,6 +2662,136 @@ function getPlacedPropSupportY(placed) {
     }
     const profile = getPropProfile(placed.propType);
     return (Number(placed.y) || 0) + profile.supportY;
+}
+
+function getPropSpatialCellCoord(value) {
+    return Math.floor((Number(value) || 0) / PROP_SPATIAL_CELL_SIZE);
+}
+
+function getPropSpatialCellKey(cx, cy, cz) {
+    return `${cx}|${cy}|${cz}`;
+}
+
+function addPropIdToSpatialCell(cellKey, propId) {
+    let bucket = propSpatialGrid.get(cellKey);
+    if (!bucket) {
+        bucket = new Set();
+        propSpatialGrid.set(cellKey, bucket);
+    }
+    bucket.add(propId);
+}
+
+function removePropIdFromSpatialCell(cellKey, propId) {
+    const bucket = propSpatialGrid.get(cellKey);
+    if (!bucket) {
+        return;
+    }
+
+    bucket.delete(propId);
+    if (bucket.size === 0) {
+        propSpatialGrid.delete(cellKey);
+    }
+}
+
+function setIndexedPropType(propType, propId, shouldInclude) {
+    const byType = propTypeIndex.get(propType);
+    if (!byType) {
+        return;
+    }
+
+    if (shouldInclude) {
+        byType.add(propId);
+    } else {
+        byType.delete(propId);
+    }
+}
+
+function indexPlacedProp(placed) {
+    if (!placed) {
+        return;
+    }
+
+    const bounds = getPlacedPropBounds(placed, 0);
+    if (!bounds) {
+        return;
+    }
+
+    const minCx = getPropSpatialCellCoord(bounds.minX);
+    const maxCx = getPropSpatialCellCoord(bounds.maxX);
+    const minCy = getPropSpatialCellCoord(bounds.minY);
+    const maxCy = getPropSpatialCellCoord(bounds.maxY);
+    const minCz = getPropSpatialCellCoord(bounds.minZ);
+    const maxCz = getPropSpatialCellCoord(bounds.maxZ);
+    const occupiedCells = [];
+
+    for (let cx = minCx; cx <= maxCx; cx += 1) {
+        for (let cy = minCy; cy <= maxCy; cy += 1) {
+            for (let cz = minCz; cz <= maxCz; cz += 1) {
+                const cellKey = getPropSpatialCellKey(cx, cy, cz);
+                occupiedCells.push(cellKey);
+                addPropIdToSpatialCell(cellKey, placed.id);
+            }
+        }
+    }
+
+    placed.spatialCells = occupiedCells;
+    setIndexedPropType(placed.propType, placed.id, true);
+}
+
+function unindexPlacedProp(placed) {
+    if (!placed) {
+        return;
+    }
+
+    if (Array.isArray(placed.spatialCells)) {
+        for (const cellKey of placed.spatialCells) {
+            removePropIdFromSpatialCell(cellKey, placed.id);
+        }
+    }
+
+    placed.spatialCells = [];
+    setIndexedPropType(placed.propType, placed.id, false);
+}
+
+function fillNearbyPropIds(minX, maxX, minY, maxY, minZ, maxZ, targetSet) {
+    if (!targetSet) {
+        return;
+    }
+
+    const loX = Math.min(minX, maxX);
+    const hiX = Math.max(minX, maxX);
+    const loY = Math.min(minY, maxY);
+    const hiY = Math.max(minY, maxY);
+    const loZ = Math.min(minZ, maxZ);
+    const hiZ = Math.max(minZ, maxZ);
+
+    const minCx = getPropSpatialCellCoord(loX);
+    const maxCx = getPropSpatialCellCoord(hiX);
+    const minCy = getPropSpatialCellCoord(loY);
+    const maxCy = getPropSpatialCellCoord(hiY);
+    const minCz = getPropSpatialCellCoord(loZ);
+    const maxCz = getPropSpatialCellCoord(hiZ);
+
+    for (let cx = minCx; cx <= maxCx; cx += 1) {
+        for (let cy = minCy; cy <= maxCy; cy += 1) {
+            for (let cz = minCz; cz <= maxCz; cz += 1) {
+                const bucket = propSpatialGrid.get(getPropSpatialCellKey(cx, cy, cz));
+                if (!bucket || bucket.size === 0) {
+                    continue;
+                }
+
+                for (const propId of bucket) {
+                    targetSet.add(propId);
+                }
+            }
+        }
+    }
+}
+
+function queryNearbyPropIdsReusable(minX, maxX, minY, maxY, minZ, maxZ) {
+    propSpatialQueryIds.clear();
+    fillNearbyPropIds(minX, maxX, minY, maxY, minZ, maxZ, propSpatialQueryIds);
+    return propSpatialQueryIds;
 }
 
 function isWorldPositionChunkLoaded(x, z) {
@@ -2087,7 +2855,7 @@ function getWorldNormalFromRayHit(hit) {
         return null;
     }
 
-    const worldNormal = localNormal.clone();
+    const worldNormal = worldNormalScratch.copy(localNormal);
     if (hit.object?.matrixWorld) {
         worldNormal.transformDirection(hit.object.matrixWorld);
     }
@@ -2098,8 +2866,14 @@ function findNearestPlacedPropOfType(propType, x, z, maxDistance = 2.3) {
     const maxDistanceSq = maxDistance * maxDistance;
     let nearest = null;
     let nearestSq = Number.POSITIVE_INFINITY;
-    for (const placed of placedProps.values()) {
-        if (placed.propType !== propType) {
+    const byType = propTypeIndex.get(propType);
+    if (!byType || byType.size === 0) {
+        return null;
+    }
+
+    for (const propId of byType) {
+        const placed = placedProps.get(propId);
+        if (!placed) {
             continue;
         }
         const dx = placed.x - x;
@@ -2129,6 +2903,304 @@ function getLampIntensityLabel(level) {
     return "Maxima";
 }
 
+function sanitizeEditableSignText(value, fallback = "Nuestro lugar") {
+    const base = String(value ?? "").replace(/\s+/g, " ").trim();
+    if (!base) {
+        return String(fallback || "Nuestro lugar").slice(0, SIGN_TEXT_MAX_LENGTH);
+    }
+    return base.slice(0, SIGN_TEXT_MAX_LENGTH);
+}
+
+function sanitizeJukeboxTrack(value) {
+    const numeric = Math.floor(Number(value));
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return 0;
+    }
+    return Math.min(numeric, JUKEBOX_TRACK_COUNT);
+}
+
+function buildLegacyPropStateCandidate(rawEntry) {
+    if (!rawEntry || typeof rawEntry !== "object") {
+        return {};
+    }
+
+    return {
+        lit: rawEntry.lit,
+        text: rawEntry.text,
+        playing: rawEntry.playing,
+        track: rawEntry.track
+    };
+}
+
+function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
+    const definition = getPropDefinition(propType);
+    const defaults = definition?.stateDefaults;
+    if (!defaults || typeof defaults !== "object" || Object.keys(defaults).length === 0) {
+        return undefined;
+    }
+
+    const source = rawState && typeof rawState === "object"
+        ? rawState
+        : buildLegacyPropStateCandidate(fallbackRaw);
+    const normalized = {};
+
+    for (const [key, defaultValue] of Object.entries(defaults)) {
+        const incoming = source[key];
+        if (key === "text") {
+            normalized[key] = sanitizeEditableSignText(incoming, defaultValue);
+            continue;
+        }
+        if (key === "track") {
+            normalized[key] = sanitizeJukeboxTrack(incoming ?? defaultValue);
+            continue;
+        }
+        if (key === "items") {
+            const defaultSize = Array.isArray(defaultValue) ? defaultValue.length : 0;
+            const incomingItems = Array.isArray(incoming) ? incoming : defaultValue;
+            normalized[key] = sanitizeContainerItems(incomingItems, defaultSize);
+            continue;
+        }
+        if (key === "variant") {
+            normalized[key] = sanitizeVariantIndex(propType, incoming ?? defaultValue);
+            continue;
+        }
+        if (key === "fuel") {
+            const numericFuel = Number(incoming ?? defaultValue);
+            normalized[key] = THREE.MathUtils.clamp(Number.isFinite(numericFuel) ? numericFuel : 0, 0, 100);
+            continue;
+        }
+        if (key === "source") {
+            const sourceText = String((incoming ?? defaultValue) || "local-playlist-v1");
+            normalized[key] = sourceText || "local-playlist-v1";
+            continue;
+        }
+
+        if (typeof defaultValue === "boolean") {
+            normalized[key] = incoming === undefined ? Boolean(defaultValue) : Boolean(incoming);
+            continue;
+        }
+
+        if (typeof defaultValue === "number") {
+            const numeric = Number(incoming);
+            normalized[key] = Number.isFinite(numeric) ? numeric : Number(defaultValue) || 0;
+            continue;
+        }
+
+        if (typeof defaultValue === "string") {
+            normalized[key] = String(incoming ?? defaultValue);
+            continue;
+        }
+
+        normalized[key] = incoming ?? defaultValue;
+    }
+
+    return normalized;
+}
+
+function getPropDefaultSharedState(propType) {
+    const defaults = getPropDefinition(propType)?.stateDefaults;
+    if (!defaults || typeof defaults !== "object" || Object.keys(defaults).length === 0) {
+        return undefined;
+    }
+    return normalizePropSharedState(propType, defaults, defaults);
+}
+
+function arePropStatesEqual(a, b) {
+    const left = a && typeof a === "object" ? a : {};
+    const right = b && typeof b === "object" ? b : {};
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+        return false;
+    }
+
+    for (const key of leftKeys) {
+        if (Array.isArray(left[key]) || Array.isArray(right[key])) {
+            if (!areStringArraysEqual(left[key], right[key])) {
+                return false;
+            }
+            continue;
+        }
+        if (left[key] !== right[key]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function drawEditableSignFace(node, text) {
+    const canvas = node?.userData?.signCanvas;
+    const context = node?.userData?.signContext;
+    const texture = node?.userData?.signTexture;
+    if (!canvas || !context || !texture) {
+        return;
+    }
+
+    const safeText = sanitizeEditableSignText(text);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#c28a58";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#8f6039";
+    context.fillRect(14, 14, canvas.width - 28, canvas.height - 28);
+    context.fillStyle = "#dec79f";
+    context.fillRect(22, 22, canvas.width - 44, canvas.height - 44);
+    context.fillStyle = "#4b2f1f";
+    context.font = "700 52px Sora, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+
+    const firstLine = safeText.slice(0, 22);
+    const remaining = safeText.slice(22);
+    if (!remaining) {
+        context.fillText(firstLine, canvas.width * 0.5, canvas.height * 0.52);
+    } else {
+        const secondLine = remaining.slice(0, 22);
+        context.fillText(firstLine, canvas.width * 0.5, canvas.height * 0.42);
+        context.fillText(secondLine, canvas.width * 0.5, canvas.height * 0.65);
+    }
+    texture.needsUpdate = true;
+}
+
+function applyPropSharedVisualState(placed) {
+    if (!placed?.node) {
+        return;
+    }
+
+    const propType = placed.propType;
+    const stateData = normalizePropSharedState(propType, placed.state, placed.state);
+    if (stateData && !arePropStatesEqual(placed.state, stateData)) {
+        placed.state = stateData;
+    }
+
+    if (propType === PROP_TYPE.EDITABLE_SIGN) {
+        const textValue = sanitizeEditableSignText(placed.state?.text);
+        if (!placed.state || placed.state.text !== textValue) {
+            placed.state = {
+                ...(placed.state || {}),
+                text: textValue
+            };
+        }
+        drawEditableSignFace(placed.node, textValue);
+        return;
+    }
+
+    if (propType === PROP_TYPE.JUKEBOX) {
+        const playing = Boolean(placed.state?.playing);
+        const track = sanitizeJukeboxTrack(placed.state?.track);
+        if (!placed.state || placed.state.playing !== playing || placed.state.track !== track) {
+            placed.state = {
+                ...(placed.state || {}),
+                playing,
+                track
+            };
+        }
+
+        const discMaterial = placed.node.userData?.jukeboxDiscMaterial || null;
+        if (discMaterial) {
+            const emissiveColor = Number(discMaterial.userData?.jukeboxEmissiveColor ?? 0x5aa8ff);
+            discMaterial.color.setHex(playing ? 0x2b2f40 : 0x222329);
+            discMaterial.emissive.setHex(emissiveColor);
+            discMaterial.emissiveIntensity = playing ? 0.46 + (track * 0.07) : 0;
+        }
+
+        const ledMaterial = placed.node.userData?.jukeboxLedMaterial || null;
+        if (ledMaterial) {
+            const ledColor = Number(ledMaterial.userData?.jukeboxLedEmissiveColor ?? 0x80beff);
+            ledMaterial.emissive.setHex(ledColor);
+            ledMaterial.emissiveIntensity = playing ? 0.68 : 0;
+        }
+
+        const usage = getTemporaryUsageEntry(placed.id);
+        if (usage && usage.total > 0 && !playing) {
+            const ledMaterialMuted = placed.node.userData?.jukeboxLedMaterial || null;
+            if (ledMaterialMuted) {
+                const ledColor = Number(ledMaterialMuted.userData?.jukeboxLedEmissiveColor ?? 0x80beff);
+                ledMaterialMuted.emissive.setHex(ledColor);
+                ledMaterialMuted.emissiveIntensity = 0.22;
+            }
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.FURNACE) {
+        const lit = Boolean(placed.state?.lit);
+        if (!placed.state || placed.state.lit !== lit) {
+            placed.state = {
+                ...(placed.state || {}),
+                lit
+            };
+        }
+
+        const emberMaterial = placed.node.userData?.furnaceEmberMaterial || null;
+        if (emberMaterial) {
+            const emberColor = Number(emberMaterial.userData?.furnaceEmissiveColor ?? 0xff7f34);
+            emberMaterial.emissive.setHex(emberColor);
+            emberMaterial.emissiveIntensity = lit ? 0.72 : 0;
+            emberMaterial.color.setHex(lit ? 0x803723 : 0x391f15);
+        }
+
+        const furnaceLight = placed.node.userData?.furnacePointLight || null;
+        if (furnaceLight) {
+            furnaceLight.intensity = lit ? 0.74 : 0;
+            furnaceLight.distance = lit ? 4.6 : 0;
+            furnaceLight.visible = lit;
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.CHEST || propType === PROP_TYPE.LARGE_CHEST) {
+        const lidPivot = placed.node.userData?.containerLidPivot || null;
+        if (lidPivot) {
+            const isOpen = isPropBeingTemporarilyUsed(placed.id, INTERACTION_USAGE_KIND.CONTAINER);
+            lidPivot.rotation.x = isOpen ? -1.02 : 0;
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.PAINTING) {
+        const variant = sanitizeVariantIndex(propType, placed.state?.variant);
+        if (!placed.state || placed.state.variant !== variant) {
+            placed.state = {
+                ...(placed.state || {}),
+                variant
+            };
+        }
+        const canvasMaterial = placed.node.userData?.paintingCanvasMaterial || null;
+        if (canvasMaterial) {
+            const colors = [0x7e9bc2, 0xc27e8f, 0x8ab67e, 0xd6b779];
+            canvasMaterial.color.setHex(colors[variant] || colors[0]);
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.CURTAINS) {
+        const variant = sanitizeVariantIndex(propType, placed.state?.variant);
+        if (!placed.state || placed.state.variant !== variant) {
+            placed.state = {
+                ...(placed.state || {}),
+                variant
+            };
+        }
+        const curtainsMaterial = placed.node.userData?.curtainsFabricMaterial || null;
+        if (curtainsMaterial) {
+            const colors = [0xc58aa5, 0x8aa5c5, 0xbfd1a2];
+            curtainsMaterial.color.setHex(colors[variant] || colors[0]);
+        }
+    }
+}
+
+function applyPropVisualStateById(propId) {
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+    const placed = placedProps.get(id);
+    if (!placed) {
+        return;
+    }
+    applyPropSharedVisualState(placed);
+}
+
 function normalizeYawRadians(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
@@ -2142,6 +3214,13 @@ function normalizeYawRadians(value) {
         yaw += Math.PI * 2;
     }
     return yaw;
+}
+
+function getAngularDistanceRadians(a, b) {
+    let delta = (Number(a) || 0) - (Number(b) || 0);
+    while (delta > Math.PI) delta -= Math.PI * 2;
+    while (delta < -Math.PI) delta += Math.PI * 2;
+    return Math.abs(delta);
 }
 
 function snapYawToStep(value, step = PROP_ROTATION_STEP) {
@@ -2185,70 +3264,486 @@ function resolvePropPlacementYaw(propType, propX, propZ) {
     return snapYawToStep(yaw);
 }
 
-function createPlacedPropNode(propType) {
-    const root = new THREE.Group();
+function createLampPointLightRig(root, {
+    baseColor = 0xffe6b4,
+    emissiveColor = 0xffd185,
+    pointLightColor = 0xffe6aa,
+    bulbScale = { x: 0.12, y: 0.11, z: 0.12 },
+    bulbPosition = { x: 0, y: 0.82, z: 0 }
+} = {}) {
+    const bulbMaterial = new THREE.MeshStandardMaterial({
+        color: baseColor,
+        roughness: 0.26,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    bulbMaterial.userData.disposeOnRemove = true;
+    bulbMaterial.userData.lampEmissiveColor = emissiveColor;
+    const bulb = new THREE.Mesh(detailUnitGeometry, bulbMaterial);
+    bulb.scale.set(bulbScale.x, bulbScale.y, bulbScale.z);
+    bulb.position.set(bulbPosition.x, bulbPosition.y, bulbPosition.z);
+    bulb.castShadow = false;
+    bulb.receiveShadow = false;
+    bulb.userData.isLampBulb = true;
+    root.add(bulb);
 
-    if (propType === PROP_TYPE.CHAIR) {
-        root.add(createDetailPart({ x: 0.5, y: 0.08, z: 0.5 }, { x: 0, y: 0.45, z: 0 }, 0x986f45));
-        root.add(createDetailPart({ x: 0.5, y: 0.5, z: 0.08 }, { x: 0, y: 0.74, z: -0.21 }, 0x8b643e));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: -0.2 }, 0x7e5836));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: -0.2 }, 0x7e5836));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: 0.2 }, 0x7e5836));
-        root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: 0.2 }, 0x7e5836));
-    } else if (propType === PROP_TYPE.TABLE) {
-        root.add(createDetailPart({ x: 0.98, y: 0.08, z: 0.94 }, { x: 0, y: 0.72, z: 0 }, 0xb58657));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: -0.36 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: -0.36 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: 0.36 }, 0x8c633e));
-        root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: 0.36 }, 0x8c633e));
-    } else if (propType === PROP_TYPE.LAMP) {
-        root.add(createDetailPart({ x: 0.2, y: 0.05, z: 0.2 }, { x: 0, y: 0.03, z: 0 }, 0x6f573b));
-        root.add(createDetailPart({ x: 0.06, y: 0.68, z: 0.06 }, { x: 0, y: 0.37, z: 0 }, 0x5d4a35));
-        const shade = createDetailPart({ x: 0.3, y: 0.2, z: 0.3 }, { x: 0, y: 0.84, z: 0 }, 0xffd890);
-        root.add(shade);
-        root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.18 }, { x: 0, y: 0.96, z: 0 }, 0xcf9d56));
+    const pointLight = new THREE.PointLight(pointLightColor, 0, 0, 2);
+    pointLight.position.set(bulbPosition.x, bulbPosition.y, bulbPosition.z);
+    pointLight.castShadow = false;
+    pointLight.shadow.mapSize.set(LAMP_SHADOW_MAP_SIZE, LAMP_SHADOW_MAP_SIZE);
+    pointLight.shadow.bias = 0.00035;
+    pointLight.shadow.normalBias = 0.012;
+    pointLight.shadow.camera.near = 0.1;
+    pointLight.shadow.camera.far = 26;
+    pointLight.shadow.autoUpdate = false;
+    pointLight.shadow.needsUpdate = true;
+    root.add(pointLight);
+    root.userData.lampPointLight = pointLight;
+    root.userData.lampBulbMaterial = bulbMaterial;
+}
 
-        const bulbMaterial = new THREE.MeshStandardMaterial({
-            color: 0xffe6b4,
-            roughness: 0.26,
-            metalness: 0.02,
-            emissive: 0x000000,
-            emissiveIntensity: 0
-        });
-        bulbMaterial.userData.disposeOnRemove = true;
-        const bulb = new THREE.Mesh(detailUnitGeometry, bulbMaterial);
-        bulb.scale.set(0.12, 0.11, 0.12);
-        bulb.position.set(0, 0.82, 0);
-        bulb.castShadow = false;
-        bulb.receiveShadow = false;
-        bulb.userData.isLampBulb = true;
-        root.add(bulb);
+function buildChairNode(root) {
+    root.add(createDetailPart({ x: 0.5, y: 0.08, z: 0.5 }, { x: 0, y: 0.45, z: 0 }, 0x986f45));
+    root.add(createDetailPart({ x: 0.5, y: 0.5, z: 0.08 }, { x: 0, y: 0.74, z: -0.21 }, 0x8b643e));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: -0.2 }, 0x7e5836));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: -0.2 }, 0x7e5836));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: -0.2, y: 0.22, z: 0.2 }, 0x7e5836));
+    root.add(createDetailPart({ x: 0.08, y: 0.44, z: 0.08 }, { x: 0.2, y: 0.22, z: 0.2 }, 0x7e5836));
+}
 
-        const pointLight = new THREE.PointLight(0xffe6aa, 0, 0, 2);
-        pointLight.position.set(0, 0.82, 0);
-        pointLight.castShadow = false;
-        pointLight.shadow.mapSize.set(LAMP_SHADOW_MAP_SIZE, LAMP_SHADOW_MAP_SIZE);
-        pointLight.shadow.bias = -0.0006;
-        pointLight.shadow.normalBias = 0.022;
-        pointLight.shadow.camera.near = 0.1;
-        pointLight.shadow.camera.far = 24;
-        pointLight.shadow.autoUpdate = false;
-        pointLight.shadow.needsUpdate = true;
-        root.add(pointLight);
-        root.userData.lampPointLight = pointLight;
-        root.userData.lampBulbMaterial = bulbMaterial;
-    } else {
-        root.add(createDetailPart({ x: 0.5, y: 0.22, z: 0.5 }, { x: 0, y: 0.11, z: 0 }, 0x8a6540));
-        root.add(createDetailPart({ x: 0.38, y: 0.2, z: 0.38 }, { x: 0, y: 0.32, z: 0 }, 0x3f8947));
-        root.add(createDetailPart({ x: 0.16, y: 0.34, z: 0.16 }, { x: 0, y: 0.45, z: 0 }, 0x4f9f51));
+function buildTableNode(root) {
+    root.add(createDetailPart({ x: 0.98, y: 0.08, z: 0.94 }, { x: 0, y: 0.72, z: 0 }, 0xb58657));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: -0.36 }, 0x8c633e));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: -0.36 }, 0x8c633e));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: -0.39, y: 0.34, z: 0.36 }, 0x8c633e));
+    root.add(createDetailPart({ x: 0.1, y: 0.68, z: 0.1 }, { x: 0.39, y: 0.34, z: 0.36 }, 0x8c633e));
+}
+
+function buildLampNode(root) {
+    root.add(createDetailPart({ x: 0.2, y: 0.05, z: 0.2 }, { x: 0, y: 0.03, z: 0 }, 0x6f573b));
+    root.add(createDetailPart({ x: 0.06, y: 0.68, z: 0.06 }, { x: 0, y: 0.37, z: 0 }, 0x5d4a35));
+    root.add(createDetailPart({ x: 0.3, y: 0.2, z: 0.3 }, { x: 0, y: 0.84, z: 0 }, 0xffd890));
+    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.18 }, { x: 0, y: 0.96, z: 0 }, 0xcf9d56));
+    createLampPointLightRig(root, {
+        baseColor: 0xffe6b4,
+        emissiveColor: 0xffd185,
+        pointLightColor: 0xffe6aa,
+        bulbScale: { x: 0.12, y: 0.11, z: 0.12 },
+        bulbPosition: { x: 0, y: 0.82, z: 0 }
+    });
+}
+
+function buildPlanterNode(root) {
+    root.add(createDetailPart({ x: 0.5, y: 0.22, z: 0.5 }, { x: 0, y: 0.11, z: 0 }, 0x8a6540));
+    root.add(createDetailPart({ x: 0.38, y: 0.2, z: 0.38 }, { x: 0, y: 0.32, z: 0 }, 0x3f8947));
+    root.add(createDetailPart({ x: 0.16, y: 0.34, z: 0.16 }, { x: 0, y: 0.45, z: 0 }, 0x4f9f51));
+}
+
+function buildChestNode(root) {
+    root.add(createDetailPart({ x: 0.78, y: 0.34, z: 0.56 }, { x: 0, y: 0.17, z: 0 }, 0x8e613a));
+    const lidPivot = new THREE.Group();
+    lidPivot.position.set(0, 0.35, -0.26);
+    lidPivot.add(createDetailPart({ x: 0.8, y: 0.16, z: 0.58 }, { x: 0, y: 0.08, z: 0.29 }, 0xaa7a4a));
+    lidPivot.add(createDetailPart({ x: 0.82, y: 0.02, z: 0.02 }, { x: 0, y: 0.02, z: 0.57 }, 0x6c482a));
+    root.add(lidPivot);
+    root.add(createDetailPart({ x: 0.1, y: 0.16, z: 0.06 }, { x: 0, y: 0.34, z: 0.31 }, 0xccb57a));
+    root.add(createDetailPart({ x: 0.82, y: 0.02, z: 0.02 }, { x: 0, y: 0.25, z: 0.29 }, 0x6c482a));
+    root.userData.containerLidPivot = lidPivot;
+}
+
+function buildBedNode(root) {
+    root.add(createDetailPart({ x: 0.92, y: 0.12, z: 1.82 }, { x: 0, y: 0.18, z: 0 }, 0x8c603b));
+    root.add(createDetailPart({ x: 0.82, y: 0.18, z: 1.68 }, { x: 0, y: 0.34, z: 0 }, 0xd8d7da));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.6 }, { x: 0, y: 0.46, z: 0.34 }, 0xb77a88));
+    root.add(createDetailPart({ x: 0.82, y: 0.08, z: 0.28 }, { x: 0, y: 0.47, z: -0.63 }, 0xf0ecdf));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: -0.37, y: 0.12, z: -0.8 }, 0x6d482a));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: 0.37, y: 0.12, z: -0.8 }, 0x6d482a));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: -0.37, y: 0.12, z: 0.8 }, 0x6d482a));
+    root.add(createDetailPart({ x: 0.12, y: 0.24, z: 0.12 }, { x: 0.37, y: 0.12, z: 0.8 }, 0x6d482a));
+}
+
+function buildFenceNode(root) {
+    root.add(createDetailPart({ x: 0.16, y: 1, z: 0.16 }, { x: 0, y: 0.5, z: 0 }, 0x8c623d));
+    root.add(createDetailPart({ x: 0.84, y: 0.1, z: 0.1 }, { x: 0, y: 0.68, z: 0 }, 0x9f7045));
+    root.add(createDetailPart({ x: 0.84, y: 0.1, z: 0.1 }, { x: 0, y: 0.38, z: 0 }, 0x9f7045));
+}
+
+function buildLanternNode(root) {
+    root.add(createDetailPart({ x: 0.14, y: 0.05, z: 0.14 }, { x: 0, y: 0.03, z: 0 }, 0x58442f));
+    root.add(createDetailPart({ x: 0.26, y: 0.06, z: 0.26 }, { x: 0, y: 0.18, z: 0 }, 0x2f2a28));
+    root.add(createDetailPart({ x: 0.2, y: 0.32, z: 0.2 }, { x: 0, y: 0.38, z: 0 }, 0xcda868));
+    root.add(createDetailPart({ x: 0.26, y: 0.06, z: 0.26 }, { x: 0, y: 0.58, z: 0 }, 0x2f2a28));
+    root.add(createDetailPart({ x: 0.06, y: 0.22, z: 0.06 }, { x: 0, y: 0.74, z: 0 }, 0x4a3b2d));
+    root.add(createDetailPart({ x: 0.22, y: 0.04, z: 0.22 }, { x: 0, y: 0.86, z: 0 }, 0x2f2a28));
+    createLampPointLightRig(root, {
+        baseColor: 0xffe2a8,
+        emissiveColor: 0xffc873,
+        pointLightColor: 0xffd892,
+        bulbScale: { x: 0.1, y: 0.1, z: 0.1 },
+        bulbPosition: { x: 0, y: 0.39, z: 0 }
+    });
+}
+
+function createDisposableStandardMaterial(options = {}) {
+    const material = new THREE.MeshStandardMaterial(options);
+    material.userData.disposeOnRemove = true;
+    if (options?.map) {
+        material.userData.disposeMapOnRemove = true;
+    }
+    return material;
+}
+
+function createDynamicPart(size, position, material, rotation = null) {
+    const mesh = new THREE.Mesh(detailUnitGeometry, material);
+    mesh.scale.set(size.x, size.y, size.z);
+    mesh.position.set(position.x, position.y, position.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    if (rotation) {
+        mesh.rotation.set(rotation.x || 0, rotation.y || 0, rotation.z || 0);
+    }
+    return mesh;
+}
+
+function buildBookshelfNode(root) {
+    root.add(createDetailPart({ x: 0.92, y: 1.14, z: 0.42 }, { x: 0, y: 0.57, z: 0 }, 0x7e5a39));
+    root.add(createDetailPart({ x: 0.82, y: 0.94, z: 0.34 }, { x: 0, y: 0.57, z: 0 }, 0x5b3e2b));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.38 }, { x: 0, y: 0.34, z: 0 }, 0x9b6f47));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.38 }, { x: 0, y: 0.62, z: 0 }, 0x9b6f47));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.38 }, { x: 0, y: 0.9, z: 0 }, 0x9b6f47));
+    root.add(createDetailPart({ x: 0.16, y: 0.18, z: 0.1 }, { x: -0.24, y: 0.43, z: 0.13 }, 0x934d4c));
+    root.add(createDetailPart({ x: 0.1, y: 0.2, z: 0.1 }, { x: -0.06, y: 0.44, z: 0.13 }, 0x4d6f9d));
+    root.add(createDetailPart({ x: 0.12, y: 0.18, z: 0.1 }, { x: 0.1, y: 0.43, z: 0.13 }, 0xa57f53));
+    root.add(createDetailPart({ x: 0.14, y: 0.18, z: 0.1 }, { x: 0.26, y: 0.43, z: 0.13 }, 0x5d8d57));
+}
+
+function buildBarrelNode(root) {
+    root.add(createDetailPart({ x: 0.52, y: 0.68, z: 0.52 }, { x: 0, y: 0.34, z: 0 }, 0x7f5636));
+    root.add(createDetailPart({ x: 0.56, y: 0.06, z: 0.56 }, { x: 0, y: 0.67, z: 0 }, 0x4a3830));
+    root.add(createDetailPart({ x: 0.56, y: 0.06, z: 0.56 }, { x: 0, y: 0.03, z: 0 }, 0x4a3830));
+    root.add(createDetailPart({ x: 0.58, y: 0.08, z: 0.08 }, { x: 0, y: 0.34, z: 0.24 }, 0x4a3830));
+    root.add(createDetailPart({ x: 0.58, y: 0.08, z: 0.08 }, { x: 0, y: 0.34, z: -0.24 }, 0x4a3830));
+}
+
+function buildWoodCrateNode(root) {
+    root.add(createDetailPart({ x: 0.7, y: 0.46, z: 0.7 }, { x: 0, y: 0.23, z: 0 }, 0x9a6d43));
+    root.add(createDetailPart({ x: 0.64, y: 0.34, z: 0.64 }, { x: 0, y: 0.23, z: 0 }, 0x744f32));
+    root.add(createDetailPart({ x: 0.7, y: 0.06, z: 0.12 }, { x: 0, y: 0.43, z: 0.24 }, 0xb18255));
+    root.add(createDetailPart({ x: 0.7, y: 0.06, z: 0.12 }, { x: 0, y: 0.43, z: -0.24 }, 0xb18255));
+    root.add(createDetailPart({ x: 0.12, y: 0.46, z: 0.7 }, { x: 0.24, y: 0.23, z: 0 }, 0xb18255));
+    root.add(createDetailPart({ x: 0.12, y: 0.46, z: 0.7 }, { x: -0.24, y: 0.23, z: 0 }, 0xb18255));
+}
+
+function buildRugNode(root) {
+    root.add(createDetailPart({ x: 0.96, y: 0.02, z: 0.96 }, { x: 0, y: 0.01, z: 0 }, 0x8f2f4f));
+    root.add(createDetailPart({ x: 0.86, y: 0.01, z: 0.86 }, { x: 0, y: 0.021, z: 0 }, 0xbe6f89));
+    root.add(createDetailPart({ x: 0.08, y: 0.02, z: 0.92 }, { x: -0.44, y: 0.01, z: 0 }, 0x784966));
+    root.add(createDetailPart({ x: 0.08, y: 0.02, z: 0.92 }, { x: 0.44, y: 0.01, z: 0 }, 0x784966));
+}
+
+function buildPaintingNode(root) {
+    root.add(createDetailPart({ x: 0.88, y: 0.62, z: 0.06 }, { x: 0, y: 0.72, z: 0 }, 0x6f4b31));
+    const paintingMaterial = createDisposableStandardMaterial({
+        color: 0x7e9bc2,
+        roughness: 0.74,
+        metalness: 0.02
+    });
+    root.add(createDynamicPart({ x: 0.74, y: 0.48, z: 0.04 }, { x: 0, y: 0.72, z: 0.02 }, paintingMaterial));
+    root.add(createDetailPart({ x: 0.7, y: 0.02, z: 0.02 }, { x: 0, y: 0.87, z: 0.02 }, 0xe4d384));
+    root.add(createDetailPart({ x: 0.06, y: 0.72, z: 0.06 }, { x: -0.28, y: 0.36, z: -0.02 }, 0x6d4b32));
+    root.add(createDetailPart({ x: 0.06, y: 0.72, z: 0.06 }, { x: 0.28, y: 0.36, z: -0.02 }, 0x6d4b32));
+    root.userData.paintingCanvasMaterial = paintingMaterial;
+}
+
+function buildCurtainsNode(root) {
+    root.add(createDetailPart({ x: 0.94, y: 0.06, z: 0.1 }, { x: 0, y: 1.0, z: 0 }, 0x7c4f66));
+    const curtainsMaterial = createDisposableStandardMaterial({
+        color: 0xc58aa5,
+        roughness: 0.86,
+        metalness: 0
+    });
+    root.add(createDynamicPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: -0.22, y: 0.54, z: 0 }, curtainsMaterial));
+    root.add(createDynamicPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: 0.22, y: 0.54, z: 0 }, curtainsMaterial));
+    root.add(createDetailPart({ x: 0.04, y: 0.88, z: 0.09 }, { x: -0.39, y: 0.54, z: 0 }, 0xe7cad8));
+    root.add(createDetailPart({ x: 0.04, y: 0.88, z: 0.09 }, { x: 0.39, y: 0.54, z: 0 }, 0xe7cad8));
+    root.userData.curtainsFabricMaterial = curtainsMaterial;
+}
+
+function buildWallLanternNode(root) {
+    root.add(createDetailPart({ x: 0.16, y: 0.8, z: 0.16 }, { x: 0, y: 0.4, z: -0.1 }, 0x4e3c2f));
+    root.add(createDetailPart({ x: 0.36, y: 0.08, z: 0.08 }, { x: 0, y: 0.72, z: 0.08 }, 0x584330));
+    root.add(createDetailPart({ x: 0.22, y: 0.06, z: 0.22 }, { x: 0, y: 0.52, z: 0.2 }, 0x2f2a28));
+    root.add(createDetailPart({ x: 0.18, y: 0.28, z: 0.18 }, { x: 0, y: 0.38, z: 0.2 }, 0xccaa73));
+    root.add(createDetailPart({ x: 0.22, y: 0.05, z: 0.22 }, { x: 0, y: 0.24, z: 0.2 }, 0x2f2a28));
+    createLampPointLightRig(root, {
+        baseColor: 0xffdc9d,
+        emissiveColor: 0xffc06c,
+        pointLightColor: 0xffd28a,
+        bulbScale: { x: 0.09, y: 0.09, z: 0.09 },
+        bulbPosition: { x: 0, y: 0.39, z: 0.2 }
+    });
+}
+
+function buildLightPostNode(root) {
+    root.add(createDetailPart({ x: 0.18, y: 1.65, z: 0.18 }, { x: 0, y: 0.83, z: 0 }, 0x4f4f56));
+    root.add(createDetailPart({ x: 0.42, y: 0.08, z: 0.14 }, { x: 0.12, y: 1.58, z: 0 }, 0x4f4f56));
+    root.add(createDetailPart({ x: 0.08, y: 0.18, z: 0.08 }, { x: 0.28, y: 1.5, z: 0 }, 0x4f4f56));
+    root.add(createDetailPart({ x: 0.24, y: 0.3, z: 0.24 }, { x: 0.28, y: 1.3, z: 0 }, 0xcfb37b));
+    root.add(createDetailPart({ x: 0.28, y: 0.06, z: 0.28 }, { x: 0.28, y: 1.47, z: 0 }, 0x35343a));
+    createLampPointLightRig(root, {
+        baseColor: 0xffe2a8,
+        emissiveColor: 0xffd58a,
+        pointLightColor: 0xffdca2,
+        bulbScale: { x: 0.13, y: 0.13, z: 0.13 },
+        bulbPosition: { x: 0.28, y: 1.3, z: 0 }
+    });
+}
+
+function buildBenchNode(root) {
+    root.add(createDetailPart({ x: 0.96, y: 0.09, z: 0.26 }, { x: 0, y: 0.5, z: 0 }, 0x8f623d));
+    root.add(createDetailPart({ x: 0.96, y: 0.08, z: 0.18 }, { x: 0, y: 0.69, z: -0.08 }, 0x986a43));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: -0.36, y: 0.23, z: -0.08 }, 0x6f4f31));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: 0.36, y: 0.23, z: -0.08 }, 0x6f4f31));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: -0.36, y: 0.23, z: 0.08 }, 0x6f4f31));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: 0.36, y: 0.23, z: 0.08 }, 0x6f4f31));
+}
+
+function buildPicnicTableNode(root) {
+    root.add(createDetailPart({ x: 1.18, y: 0.09, z: 0.72 }, { x: 0, y: 0.68, z: 0 }, 0x9a6a44));
+    root.add(createDetailPart({ x: 1.06, y: 0.08, z: 0.18 }, { x: 0, y: 0.42, z: -0.34 }, 0x835a3a));
+    root.add(createDetailPart({ x: 1.06, y: 0.08, z: 0.18 }, { x: 0, y: 0.42, z: 0.34 }, 0x835a3a));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: -0.38, y: 0.35, z: -0.12 }, 0x724e33));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: 0.38, y: 0.35, z: -0.12 }, 0x724e33));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: -0.38, y: 0.35, z: 0.12 }, 0x724e33));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: 0.38, y: 0.35, z: 0.12 }, 0x724e33));
+}
+
+function buildFountainNode(root) {
+    root.add(createDetailPart({ x: 0.92, y: 0.18, z: 0.92 }, { x: 0, y: 0.09, z: 0 }, 0x8d939e));
+    root.add(createDetailPart({ x: 0.72, y: 0.18, z: 0.72 }, { x: 0, y: 0.21, z: 0 }, 0x75818d));
+    root.add(createDetailPart({ x: 0.4, y: 0.46, z: 0.4 }, { x: 0, y: 0.42, z: 0 }, 0x95a4b4));
+    root.add(createDetailPart({ x: 0.28, y: 0.06, z: 0.28 }, { x: 0, y: 0.68, z: 0 }, 0xdce9f4));
+    root.add(createDetailPart({ x: 0.82, y: 0.08, z: 0.82 }, { x: 0, y: 0.31, z: 0 }, 0x5a94d8));
+}
+
+function buildCampfireNode(root) {
+    root.add(createDetailPart({ x: 0.52, y: 0.08, z: 0.12 }, { x: 0, y: 0.05, z: 0 }, 0x6a4629, { x: 0, y: Math.PI / 4, z: 0 }));
+    root.add(createDetailPart({ x: 0.52, y: 0.08, z: 0.12 }, { x: 0, y: 0.05, z: 0 }, 0x6a4629, { x: 0, y: -Math.PI / 4, z: 0 }));
+    root.add(createDetailPart({ x: 0.26, y: 0.12, z: 0.26 }, { x: 0, y: 0.12, z: 0 }, 0x50352b));
+    root.add(createDetailPart({ x: 0.14, y: 0.24, z: 0.14 }, { x: 0, y: 0.24, z: 0 }, 0xd56c35));
+    root.add(createDetailPart({ x: 0.08, y: 0.2, z: 0.08 }, { x: 0.08, y: 0.27, z: -0.04 }, 0xffaf4e));
+    createLampPointLightRig(root, {
+        baseColor: 0xffb56b,
+        emissiveColor: 0xff8a38,
+        pointLightColor: 0xffaf63,
+        bulbScale: { x: 0.11, y: 0.11, z: 0.11 },
+        bulbPosition: { x: 0, y: 0.27, z: 0 }
+    });
+}
+
+function buildCampfireMediumNode(root) {
+    buildCampfireNode(root);
+    root.scale.setScalar(1.35);
+}
+
+function buildCampfireLargeNode(root) {
+    buildCampfireNode(root);
+    root.scale.setScalar(1.75);
+}
+
+function buildLargeChestNode(root) {
+    root.add(createDetailPart({ x: 1.08, y: 0.38, z: 0.64 }, { x: 0, y: 0.19, z: 0 }, 0x8f623a));
+    const lidPivot = new THREE.Group();
+    lidPivot.position.set(0, 0.38, -0.31);
+    lidPivot.add(createDetailPart({ x: 1.1, y: 0.2, z: 0.66 }, { x: 0, y: 0.1, z: 0.33 }, 0xab7c4c));
+    lidPivot.add(createDetailPart({ x: 1.12, y: 0.02, z: 0.02 }, { x: 0, y: 0.03, z: 0.65 }, 0x69472a));
+    root.add(lidPivot);
+    root.add(createDetailPart({ x: 0.12, y: 0.18, z: 0.08 }, { x: 0, y: 0.38, z: 0.35 }, 0xd1bc84));
+    root.add(createDetailPart({ x: 1.12, y: 0.02, z: 0.02 }, { x: 0, y: 0.28, z: 0.33 }, 0x69472a));
+    root.userData.containerLidPivot = lidPivot;
+}
+
+function buildFurnaceNode(root) {
+    root.add(createDetailPart({ x: 0.74, y: 0.62, z: 0.74 }, { x: 0, y: 0.31, z: 0 }, 0x6d727a));
+    root.add(createDetailPart({ x: 0.66, y: 0.54, z: 0.66 }, { x: 0, y: 0.31, z: -0.01 }, 0x555a62));
+    root.add(createDetailPart({ x: 0.7, y: 0.06, z: 0.7 }, { x: 0, y: 0.61, z: 0 }, 0x7f848d));
+    root.add(createDetailPart({ x: 0.46, y: 0.44, z: 0.05 }, { x: 0, y: 0.31, z: 0.355 }, 0x464b54));
+    root.add(createDetailPart({ x: 0.32, y: 0.06, z: 0.03 }, { x: 0, y: 0.44, z: 0.36 }, 0x262a2f));
+    root.add(createDetailPart({ x: 0.28, y: 0.16, z: 0.03 }, { x: 0, y: 0.2, z: 0.36 }, 0x1b1e22));
+    root.add(createDetailPart({ x: 0.12, y: 0.07, z: 0.035 }, { x: 0, y: 0.44, z: 0.372 }, 0xa78f69));
+    root.add(createDetailPart({ x: 0.66, y: 0.03, z: 0.03 }, { x: 0, y: 0.56, z: 0.326 }, 0x2b2f35));
+
+    const emberMaterial = createDisposableStandardMaterial({
+        color: 0x391f15,
+        roughness: 0.6,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    emberMaterial.userData.furnaceEmissiveColor = 0xff7f34;
+    const emberMesh = createDynamicPart(
+        { x: 0.22, y: 0.11, z: 0.02 },
+        { x: 0, y: 0.2, z: 0.343 },
+        emberMaterial
+    );
+    root.add(emberMesh);
+
+    const furnaceLight = new THREE.PointLight(0xff8a42, 0, 0, 2);
+    furnaceLight.position.set(0, 0.22, 0.28);
+    furnaceLight.castShadow = false;
+    root.add(furnaceLight);
+
+    root.userData.furnaceEmberMaterial = emberMaterial;
+    root.userData.furnacePointLight = furnaceLight;
+}
+
+function buildEditableSignNode(root) {
+    root.add(createDetailPart({ x: 0.08, y: 1.04, z: 0.08 }, { x: 0, y: 0.52, z: 0 }, 0x7e562f));
+    root.add(createDetailPart({ x: 0.74, y: 0.42, z: 0.14 }, { x: 0, y: 0.79, z: 0 }, 0xa97748));
+    root.add(createDetailPart({ x: 0.72, y: 0.02, z: 0.16 }, { x: 0, y: 1.0, z: 0 }, 0x7d5633));
+    root.add(createDetailPart({ x: 0.72, y: 0.02, z: 0.16 }, { x: 0, y: 0.58, z: 0 }, 0x7d5633));
+    root.add(createDetailPart({ x: 0.02, y: 0.38, z: 0.16 }, { x: -0.36, y: 0.79, z: 0 }, 0x7d5633));
+    root.add(createDetailPart({ x: 0.02, y: 0.38, z: 0.16 }, { x: 0.36, y: 0.79, z: 0 }, 0x7d5633));
+
+    const signCanvas = document.createElement("canvas");
+    signCanvas.width = 512;
+    signCanvas.height = 256;
+    const signContext = signCanvas.getContext("2d");
+    if (!signContext) {
+        return;
     }
 
+    const signTexture = new THREE.CanvasTexture(signCanvas);
+    signTexture.needsUpdate = true;
+    signTexture.userData.disposeOnRemove = true;
+    const signMaterial = createDisposableStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.9,
+        metalness: 0,
+        map: signTexture
+    });
+    const signFace = new THREE.Mesh(signFaceGeometry, signMaterial);
+    signFace.position.set(0, 0.79, 0.081);
+    signFace.castShadow = false;
+    signFace.receiveShadow = false;
+    root.add(signFace);
+
+    root.userData.signCanvas = signCanvas;
+    root.userData.signContext = signContext;
+    root.userData.signTexture = signTexture;
+    root.userData.signMaterial = signMaterial;
+}
+
+function buildJukeboxNode(root) {
+    root.add(createDetailPart({ x: 0.66, y: 0.62, z: 0.66 }, { x: 0, y: 0.31, z: 0 }, 0x5f3c2e));
+    root.add(createDetailPart({ x: 0.58, y: 0.54, z: 0.58 }, { x: 0, y: 0.31, z: 0 }, 0x43281f));
+
+    const discMaterial = createDisposableStandardMaterial({
+        color: 0x222329,
+        roughness: 0.2,
+        metalness: 0.12,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    discMaterial.userData.jukeboxEmissiveColor = 0x5aa8ff;
+    const disc = createDynamicPart(
+        { x: 0.24, y: 0.04, z: 0.24 },
+        { x: 0, y: 0.62, z: 0 },
+        discMaterial
+    );
+    root.add(disc);
+
+    const ledMaterial = createDisposableStandardMaterial({
+        color: 0x2f3137,
+        roughness: 0.36,
+        metalness: 0.04,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    ledMaterial.userData.jukeboxLedEmissiveColor = 0x80beff;
+    const ledMesh = createDynamicPart(
+        { x: 0.16, y: 0.08, z: 0.06 },
+        { x: 0, y: 0.35, z: 0.33 },
+        ledMaterial
+    );
+    root.add(ledMesh);
+
+    root.userData.jukeboxDiscMaterial = discMaterial;
+    root.userData.jukeboxLedMaterial = ledMaterial;
+}
+
+function buildGiantSunflowerNode(root) {
+    root.add(createDetailPart({ x: 0.08, y: 1.7, z: 0.08 }, { x: 0, y: 0.85, z: 0 }, 0x4d8f43));
+    root.add(createDetailPart({ x: 0.24, y: 0.12, z: 0.08 }, { x: -0.14, y: 0.92, z: 0.02 }, 0x4d8f43, { x: 0, y: 0, z: 0.55 }));
+    root.add(createDetailPart({ x: 0.24, y: 0.12, z: 0.08 }, { x: 0.14, y: 1.1, z: -0.02 }, 0x4d8f43, { x: 0, y: 0, z: -0.45 }));
+    root.add(createDetailPart({ x: 0.5, y: 0.5, z: 0.12 }, { x: 0, y: 1.72, z: 0 }, 0xf4d35e));
+    root.add(createDetailPart({ x: 0.52, y: 0.12, z: 0.52 }, { x: 0, y: 1.72, z: 0 }, 0x5c3a26));
+    root.add(createDetailPart({ x: 0.1, y: 0.62, z: 0.48 }, { x: 0, y: 1.72, z: 0 }, 0xf4d35e));
+    root.add(createDetailPart({ x: 0.48, y: 0.62, z: 0.1 }, { x: 0, y: 1.72, z: 0 }, 0xf4d35e));
+}
+
+function buildRabbitHouseNode(root) {
+    root.add(createDetailPart({ x: 1.02, y: 0.18, z: 0.82 }, { x: 0, y: 0.09, z: 0 }, 0x8a6243));
+    root.add(createDetailPart({ x: 0.94, y: 0.44, z: 0.72 }, { x: 0, y: 0.4, z: 0 }, 0xac7f59));
+    root.add(createDetailPart({ x: 0.96, y: 0.08, z: 0.74 }, { x: 0, y: 0.66, z: 0 }, 0x704c2f));
+    root.add(createDetailPart({ x: 0.26, y: 0.24, z: 0.04 }, { x: 0, y: 0.24, z: 0.36 }, 0x2a2320));
+    root.add(createDetailPart({ x: 0.18, y: 0.36, z: 0.04 }, { x: 0, y: 0.36, z: 0.36 }, 0x2a2320));
+    root.add(createDetailPart({ x: 0.42, y: 0.06, z: 0.9 }, { x: 0, y: 0.71, z: 0 }, 0x8f6544, { x: Math.PI * 0.11, y: 0, z: 0 }));
+}
+
+const PROP_NODE_BUILDERS = Object.freeze({
+    [PROP_TYPE.CHAIR]: buildChairNode,
+    [PROP_TYPE.TABLE]: buildTableNode,
+    [PROP_TYPE.LAMP]: buildLampNode,
+    [PROP_TYPE.PLANTER]: buildPlanterNode,
+    [PROP_TYPE.CHEST]: buildChestNode,
+    [PROP_TYPE.BED]: buildBedNode,
+    [PROP_TYPE.FENCE]: buildFenceNode,
+    [PROP_TYPE.LANTERN]: buildLanternNode,
+    [PROP_TYPE.BOOKSHELF]: buildBookshelfNode,
+    [PROP_TYPE.BARREL]: buildBarrelNode,
+    [PROP_TYPE.WOOD_CRATE]: buildWoodCrateNode,
+    [PROP_TYPE.RUG]: buildRugNode,
+    [PROP_TYPE.PAINTING]: buildPaintingNode,
+    [PROP_TYPE.CURTAINS]: buildCurtainsNode,
+    [PROP_TYPE.WALL_LANTERN]: buildWallLanternNode,
+    [PROP_TYPE.LIGHT_POST]: buildLightPostNode,
+    [PROP_TYPE.BENCH]: buildBenchNode,
+    [PROP_TYPE.PICNIC_TABLE]: buildPicnicTableNode,
+    [PROP_TYPE.FOUNTAIN]: buildFountainNode,
+    [PROP_TYPE.CAMPFIRE]: buildCampfireNode,
+    [PROP_TYPE.CAMPFIRE_MEDIUM]: buildCampfireMediumNode,
+    [PROP_TYPE.CAMPFIRE_LARGE]: buildCampfireLargeNode,
+    [PROP_TYPE.LARGE_CHEST]: buildLargeChestNode,
+    [PROP_TYPE.FURNACE]: buildFurnaceNode,
+    [PROP_TYPE.EDITABLE_SIGN]: buildEditableSignNode,
+    [PROP_TYPE.JUKEBOX]: buildJukeboxNode,
+    [PROP_TYPE.GIANT_SUNFLOWER]: buildGiantSunflowerNode,
+    [PROP_TYPE.RABBIT_HOUSE]: buildRabbitHouseNode
+});
+
+const registryValidationIssues = [
+    ...validateContentRegistry(),
+    ...propRegistry.definitions
+        .filter((definition) => !PROP_NODE_BUILDERS[definition.builderKey])
+        .map((definition) => `Prop sin builder/factory: ${definition.id} (${definition.builderKey})`)
+];
+
+function createPlacedPropNode(propType) {
+    const root = new THREE.Group();
+    const definition = getPropDefinition(propType);
+    const builderKey = definition?.builderKey || PROP_TYPE.PLANTER;
+    const builder = PROP_NODE_BUILDERS[builderKey] || PROP_NODE_BUILDERS[PROP_TYPE.PLANTER];
+    if (builder) {
+        builder(root);
+    }
     root.userData.propType = propType;
     return root;
 }
 
 function applyLampVisualState(placed, lampLevel, persist = true) {
-    if (!placed || placed.propType !== PROP_TYPE.LAMP) {
+    if (!placed || !isLightPropType(placed.propType)) {
         return false;
     }
 
@@ -2264,7 +3759,8 @@ function applyLampVisualState(placed, lampLevel, persist = true) {
     }
 
     if (bulbMaterial) {
-        bulbMaterial.emissive.setHex(0xffd185);
+        const emissiveColor = Number(bulbMaterial.userData?.lampEmissiveColor ?? 0xffd185);
+        bulbMaterial.emissive.setHex(emissiveColor);
         bulbMaterial.emissiveIntensity = LAMP_BULB_EMISSIVE_LEVELS[normalizedLevel];
     }
 
@@ -2295,9 +3791,22 @@ function updateActiveLampShadowCasters(deltaSeconds) {
     const playerX = state.playerPosition.x;
     const playerY = state.playerPosition.y;
     const playerZ = state.playerPosition.z;
+    const lightPropIds = [];
+    for (const [type, ids] of propTypeIndex.entries()) {
+        if (!isLightPropType(type) || !ids || ids.size === 0) {
+            continue;
+        }
+        for (const propId of ids) {
+            lightPropIds.push(propId);
+        }
+    }
+    if (lightPropIds.length === 0) {
+        return;
+    }
 
-    for (const placed of placedProps.values()) {
-        if (placed.propType !== PROP_TYPE.LAMP) {
+    for (const lampId of lightPropIds) {
+        const placed = placedProps.get(lampId);
+        if (!placed) {
             continue;
         }
 
@@ -2362,6 +3871,9 @@ function normalizePropEntry(rawEntry, fallbackId = "") {
     const yawRaw = Number(rawEntry?.yaw);
     const yaw = Number.isFinite(yawRaw) ? snapYawToStep(yawRaw) : 0;
     if (!id || !VALID_PROP_TYPES.has(propType) || !Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !Number.isFinite(yaw)) {
+        if (id && propType && !VALID_PROP_TYPES.has(propType)) {
+            warnUnknownPropType(propType, "normalizePropEntry");
+        }
         return null;
     }
 
@@ -2369,15 +3881,25 @@ function normalizePropEntry(rawEntry, fallbackId = "") {
         return null;
     }
 
-    return {
+    const normalized = {
         id,
         propType,
         x,
         y,
         z,
-        yaw,
-        lampLevel: propType === PROP_TYPE.LAMP ? normalizeLampLevel(rawEntry?.lampLevel) : 0
+        yaw
     };
+
+    const normalizedState = normalizePropSharedState(propType, rawEntry?.state, rawEntry);
+    if (normalizedState && Object.keys(normalizedState).length > 0) {
+        normalized.state = normalizedState;
+    }
+
+    if (isLightPropType(propType)) {
+        normalized.lampLevel = normalizeLampLevel(rawEntry?.lampLevel);
+    }
+
+    return normalized;
 }
 
 function serializePropForCloud(rawEntry, fallbackId = "") {
@@ -2386,14 +3908,28 @@ function serializePropForCloud(rawEntry, fallbackId = "") {
         return null;
     }
 
-    return {
+    const serialized = {
         propType: normalized.propType,
         x: normalized.x,
         y: normalized.y,
         z: normalized.z,
-        yaw: normalized.yaw,
-        lampLevel: normalized.lampLevel
+        yaw: normalized.yaw
     };
+
+    if (isLightPropType(normalized.propType)) {
+        serialized.lampLevel = normalizeLampLevel(normalized.lampLevel);
+    }
+
+    const defaultState = getPropDefaultSharedState(normalized.propType);
+    if (
+        normalized.state
+        && Object.keys(normalized.state).length > 0
+        && !arePropStatesEqual(normalized.state, defaultState)
+    ) {
+        serialized.state = normalized.state;
+    }
+
+    return serialized;
 }
 
 function registerPropNode(node, propId) {
@@ -2419,6 +3955,9 @@ function disposePropNodeResources(node) {
         const material = child.material;
         if (Array.isArray(material)) {
             for (const item of material) {
+                if (item?.map?.userData?.disposeOnRemove || item?.userData?.disposeMapOnRemove) {
+                    item.map.dispose?.();
+                }
                 if (item?.userData?.disposeOnRemove) {
                     item.dispose?.();
                 }
@@ -2426,6 +3965,9 @@ function disposePropNodeResources(node) {
             return;
         }
 
+        if (material?.map?.userData?.disposeOnRemove || material?.userData?.disposeMapOnRemove) {
+            material.map.dispose?.();
+        }
         if (material?.userData?.disposeOnRemove) {
             material.dispose?.();
         }
@@ -2442,7 +3984,7 @@ function addPlacedPropEntry(entry, origin = "local") {
         return null;
     }
 
-    const { id, propType, x, y, z, yaw, lampLevel } = normalized;
+    const { id, propType, x, y, z, yaw, lampLevel, state: sharedState } = normalized;
     const existing = placedProps.get(id);
     if (!existing && origin === "local" && placedProps.size >= MAX_PLACED_PROPS) {
         showToast("Limite de objetos alcanzado", "warning", 1100);
@@ -2453,17 +3995,26 @@ function addPlacedPropEntry(entry, origin = "local") {
         if (existing.propType !== propType) {
             removePlacedPropEntry(id, "remote", false);
         } else {
+            unindexPlacedProp(existing);
             existing.x = x;
             existing.y = y;
             existing.z = z;
             existing.yaw = yaw;
+            existing.state = sharedState && typeof sharedState === "object"
+                ? { ...sharedState }
+                : undefined;
             existing.node.position.set(x, y, z);
             existing.node.rotation.y = yaw;
             refreshSinglePropVisibility(existing);
-            if (propType === PROP_TYPE.LAMP) {
+            indexPlacedProp(existing);
+            if (isLightPropType(propType)) {
                 applyLampVisualState(existing, lampLevel, false);
             } else {
                 existing.lampLevel = 0;
+            }
+            applyPropSharedVisualState(existing);
+            if (state.interactionPanelOpen && interactionState.panelPropId === id) {
+                markInteractionPanelDirty();
             }
 
             bumpNextPropIdFromValue(id);
@@ -2491,14 +4042,22 @@ function addPlacedPropEntry(entry, origin = "local") {
         z,
         yaw,
         lampLevel,
+        state: sharedState && typeof sharedState === "object"
+            ? { ...sharedState }
+            : undefined,
         chunkKey: chunkKey(worldToChunkCoord(x), worldToChunkCoord(z)),
         node
     };
     placedProps.set(id, placedEntry);
     refreshSinglePropVisibility(placedEntry);
+    indexPlacedProp(placedEntry);
 
-    if (propType === PROP_TYPE.LAMP) {
+    if (isLightPropType(propType)) {
         applyLampVisualState(placedEntry, placedEntry.lampLevel, false);
+    }
+    applyPropSharedVisualState(placedEntry);
+    if (state.interactionPanelOpen && interactionState.panelPropId === id) {
+        markInteractionPanelDirty();
     }
 
     bumpNextPropIdFromValue(id);
@@ -2523,29 +4082,52 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
         return false;
     }
 
+    if (interactionState.panelPropId === id) {
+        closeInteractionPanel(false, true);
+    }
+    if (interactionState.localUsing?.propId === id) {
+        clearLocalUsingActivity(true);
+    }
+    if (interactionState.pose?.propId === id) {
+        exitLocalPose(false);
+    }
+
     const supportY = getPlacedPropSupportY(placed);
     const supportBounds = getPlacedPropBounds(placed, 0.02);
     const dependentIds = [];
-    for (const other of placedProps.values()) {
-        if (other.id === id) {
-            continue;
-        }
-        if (Math.abs(other.y - supportY) > 0.12) {
-            continue;
-        }
-        if (
-            supportBounds
-            && other.x > supportBounds.minX
-            && other.x < supportBounds.maxX
-            && other.z > supportBounds.minZ
-            && other.z < supportBounds.maxZ
-        ) {
-            dependentIds.push(other.id);
+    if (supportBounds) {
+        const nearbyIds = new Set();
+        fillNearbyPropIds(
+            supportBounds.minX,
+            supportBounds.maxX,
+            supportY - 0.12,
+            supportY + 0.12,
+            supportBounds.minZ,
+            supportBounds.maxZ,
+            nearbyIds
+        );
+        for (const otherId of nearbyIds) {
+            const other = placedProps.get(otherId);
+            if (!other || other.id === id) {
+                continue;
+            }
+            if (Math.abs(other.y - supportY) > 0.12) {
+                continue;
+            }
+            if (
+                other.x > supportBounds.minX
+                && other.x < supportBounds.maxX
+                && other.z > supportBounds.minZ
+                && other.z < supportBounds.maxZ
+            ) {
+                dependentIds.push(other.id);
+            }
         }
     }
 
     disposePropNodeResources(placed.node);
     propsRoot.remove(placed.node);
+    unindexPlacedProp(placed);
     placedProps.delete(id);
     markLampShadowsDirty();
     propState.cullingDirty = true;
@@ -2578,7 +4160,21 @@ function removePropsSupportedByBlock(x, y, z, origin = "local") {
     const supportY = Math.floor(y);
     const supportZ = Math.floor(z);
 
-    for (const [propId, prop] of Array.from(placedProps.entries())) {
+    const nearbyIds = queryNearbyPropIdsReusable(
+        supportX,
+        supportX + 1,
+        supportY + 0.5,
+        supportY + 2.2,
+        supportZ,
+        supportZ + 1
+    );
+
+    for (const propId of Array.from(nearbyIds)) {
+        const prop = placedProps.get(propId);
+        if (!prop) {
+            continue;
+        }
+
         const propSupportX = Math.floor(prop.x);
         const propSupportY = Math.floor(prop.y) - 1;
         const propSupportZ = Math.floor(prop.z);
@@ -2867,8 +4463,39 @@ function sanitizeRoomId(value) {
     return normalized || "mundo-principal";
 }
 
+function warnUnknownBlockId(blockId, context = "runtime") {
+    const numericId = Number(blockId);
+    if (!Number.isInteger(numericId) || warnedUnknownBlockIds.has(numericId)) {
+        return;
+    }
+
+    warnedUnknownBlockIds.add(numericId);
+    console.warn(`[BlockRegistry] bloque desconocido (${numericId}) en ${context}. Se ignora por seguridad.`);
+}
+
+function warnUnknownPropType(propType, context = "runtime") {
+    const normalized = String(propType || "");
+    if (!normalized || warnedUnknownPropTypes.has(normalized)) {
+        return;
+    }
+
+    warnedUnknownPropTypes.add(normalized);
+    console.warn(`[PropRegistry] prop desconocido (${normalized}) en ${context}. Se ignora por seguridad.`);
+}
+
+function logRegistryValidationIssues() {
+    if (!Array.isArray(registryValidationIssues) || registryValidationIssues.length === 0) {
+        return;
+    }
+
+    console.warn("[Registry] Se detectaron inconsistencias de contenido:");
+    for (const issue of registryValidationIssues) {
+        console.warn(`- ${issue}`);
+    }
+}
+
 function isValidBlockId(id) {
-    return Number.isInteger(id) && id >= BLOCK.AIR && id <= BLOCK.GLASS;
+    return isValidBlockIdFromRegistry(id);
 }
 
 function parseBlockKey(key) {
@@ -2913,7 +4540,14 @@ function computeTerrainReacomodoShift(edits, props = []) {
         const key = String(item[0] || "");
         const id = Number(item[1]);
         const parsed = parseBlockKey(key);
-        if (!parsed || !isValidBlockId(id) || id === BLOCK.AIR || id === BLOCK.WATER) {
+        if (!parsed) {
+            continue;
+        }
+        if (!isValidBlockId(id)) {
+            warnUnknownBlockId(id, "computeTerrainReacomodoShift");
+            continue;
+        }
+        if (!isSolidBlock(id)) {
             continue;
         }
 
@@ -3008,7 +4642,11 @@ function remapEditsWithVerticalShift(edits, shiftY) {
         const key = String(item[0] || "");
         const id = Number(item[1]);
         const parsed = parseBlockKey(key);
-        if (!parsed || !isValidBlockId(id)) {
+        if (!parsed) {
+            continue;
+        }
+        if (!isValidBlockId(id)) {
+            warnUnknownBlockId(id, "remapEditsWithVerticalShift");
             continue;
         }
 
@@ -3112,7 +4750,11 @@ function collectChunkEditEntriesFromPayload(chunksPayload) {
         for (const [key, value] of Object.entries(edits)) {
             const parsed = parseBlockKey(key);
             const id = Number(value);
-            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+                continue;
+            }
+            if (!isValidBlockId(id)) {
+                warnUnknownBlockId(id, "collectChunkEditEntriesFromPayload");
                 continue;
             }
             entries.push([key, id]);
@@ -3315,7 +4957,11 @@ function loadWorldFromStorage() {
             const id = Number(item[1]);
             const parsed = parseBlockKey(key);
 
-            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+                continue;
+            }
+            if (!isValidBlockId(id)) {
+                warnUnknownBlockId(id, "loadWorldFromStorage");
                 continue;
             }
 
@@ -3765,6 +5411,138 @@ function ensureLocalAvatarPreviewModel() {
     localAvatarPreviewState.modelKey = modelKey;
 }
 
+function normalizePoseMode(value) {
+    const mode = String(value || "").toLowerCase();
+    if (mode === "sit" || mode === "lie") {
+        return mode;
+    }
+    return "";
+}
+
+function normalizePlayerActivityPayload(rawActivity) {
+    if (!rawActivity || typeof rawActivity !== "object") {
+        return null;
+    }
+
+    const type = String(rawActivity.type || "").toLowerCase();
+    const propId = String(rawActivity.propId || "");
+    if (!propId) {
+        return null;
+    }
+
+    if (type === "pose") {
+        const pose = normalizePoseMode(rawActivity.pose);
+        if (!pose) {
+            return null;
+        }
+        return {
+            type: "pose",
+            propId,
+            pose
+        };
+    }
+
+    if (type === "using") {
+        const usageKind = String(rawActivity.usageKind || "").toLowerCase();
+        if (!usageKind) {
+            return null;
+        }
+        return {
+            type: "using",
+            propId,
+            usageKind
+        };
+    }
+
+    return null;
+}
+
+function arePlayerActivitiesEqual(a, b) {
+    if (!a && !b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    return (
+        a.type === b.type
+        && a.propId === b.propId
+        && a.pose === b.pose
+        && a.usageKind === b.usageKind
+    );
+}
+
+function getLocalTemporaryActivityPayload() {
+    if (interactionState.pose) {
+        return {
+            type: "pose",
+            propId: String(interactionState.pose.propId || ""),
+            pose: normalizePoseMode(interactionState.pose.mode)
+        };
+    }
+
+    if (interactionState.localUsing) {
+        return {
+            type: "using",
+            propId: String(interactionState.localUsing.propId || ""),
+            usageKind: String(interactionState.localUsing.usageKind || "")
+        };
+    }
+
+    return null;
+}
+
+function applyAvatarPose(avatarRoot, poseMode = "") {
+    if (!avatarRoot) {
+        return;
+    }
+
+    const mode = normalizePoseMode(poseMode);
+    const rig = avatarRoot.userData?.walkRig || null;
+    avatarRoot.userData.activePose = mode || "";
+    avatarRoot.rotation.x = 0;
+    avatarRoot.position.y = 0;
+
+    if (rig) {
+        rig.leftLegPivot.rotation.x = 0;
+        rig.rightLegPivot.rotation.x = 0;
+        rig.leftArmPivot.rotation.x = 0;
+        rig.rightArmPivot.rotation.x = 0;
+        if (rig.body) {
+            rig.body.position.y = rig.bodyBaseY;
+        }
+        if (rig.head) {
+            rig.head.position.y = rig.headBaseY;
+        }
+    }
+
+    if (!mode || !rig) {
+        return;
+    }
+
+    if (mode === "sit") {
+        rig.leftLegPivot.rotation.x = -1.28;
+        rig.rightLegPivot.rotation.x = -1.28;
+        rig.leftArmPivot.rotation.x = 0.16;
+        rig.rightArmPivot.rotation.x = 0.16;
+        if (rig.body) {
+            rig.body.position.y = rig.bodyBaseY - 0.15;
+        }
+        if (rig.head) {
+            rig.head.position.y = rig.headBaseY - 0.15;
+        }
+        avatarRoot.position.y = -0.34;
+        return;
+    }
+
+    if (mode === "lie") {
+        rig.leftArmPivot.rotation.x = -0.22;
+        rig.rightArmPivot.rotation.x = -0.22;
+        avatarRoot.rotation.x = -Math.PI * 0.5;
+        avatarRoot.position.y = -0.62;
+    }
+}
+
 function createRemotePlayerNode(playerId, payload) {
     const group = new THREE.Group();
     const avatarModel = createBlockyAvatar(payload || {});
@@ -3792,6 +5570,7 @@ function createRemotePlayerNode(playerId, payload) {
         targetPosition: group.position.clone(),
         targetYaw: group.rotation.y,
         nameTag,
+        activity: normalizePlayerActivityPayload(payload?.activity),
         lastSeenAt: Date.now(),
         moveSpeed: 0
     };
@@ -3814,7 +5593,59 @@ function upsertRemotePlayer(playerId, payload) {
         Number(payload.z) || 0
     );
     node.targetYaw = resolveRemoteAvatarYaw(payload.yaw);
+    node.activity = normalizePlayerActivityPayload(payload?.activity);
     node.lastSeenAt = Date.now();
+}
+
+function areUsageEntriesEquivalent(a, b) {
+    if (!a && !b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    if ((a.count || 0) !== (b.count || 0)) {
+        return false;
+    }
+    const leftKinds = Array.from(a.usageKinds || []).sort().join("|");
+    const rightKinds = Array.from(b.usageKinds || []).sort().join("|");
+    return leftKinds === rightKinds;
+}
+
+function rebuildRemoteUsingByProp() {
+    const next = new Map();
+    for (const node of multiplayer.remotePlayers.values()) {
+        const activity = node?.activity;
+        if (!activity || activity.type !== "using") {
+            continue;
+        }
+
+        const propId = String(activity.propId || "");
+        if (!propId) {
+            continue;
+        }
+        let entry = next.get(propId);
+        if (!entry) {
+            entry = { count: 0, usageKinds: new Set() };
+            next.set(propId, entry);
+        }
+        entry.count += 1;
+        entry.usageKinds.add(String(activity.usageKind || ""));
+    }
+
+    const keys = new Set([
+        ...Array.from(interactionState.remoteUsingByProp.keys()),
+        ...Array.from(next.keys())
+    ]);
+    for (const key of keys) {
+        const previous = interactionState.remoteUsingByProp.get(key) || null;
+        const current = next.get(key) || null;
+        if (!areUsageEntriesEquivalent(previous, current)) {
+            applyPropVisualStateById(key);
+        }
+    }
+
+    interactionState.remoteUsingByProp = next;
 }
 
 function removeRemotePlayer(playerId) {
@@ -3850,9 +5681,14 @@ function updateRemotePlayers(deltaSeconds) {
         while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
         node.group.rotation.y += yawDelta * lerpFactor;
 
+        const poseMode = node.activity?.type === "pose" ? node.activity.pose : "";
+        applyAvatarPose(node.avatarModel, poseMode);
+
         const distance = Math.hypot(node.group.position.x - prevX, node.group.position.z - prevZ);
-        node.moveSpeed = distance / Math.max(deltaSeconds, 1e-4);
-        updateAvatarWalkAnimation(node.avatarModel, node.moveSpeed, deltaSeconds);
+        node.moveSpeed = poseMode ? 0 : (distance / Math.max(deltaSeconds, 1e-4));
+        if (!poseMode) {
+            updateAvatarWalkAnimation(node.avatarModel, node.moveSpeed, deltaSeconds);
+        }
     }
 }
 
@@ -4195,6 +6031,7 @@ function applyRemoteEditEntry(key, rawValue) {
 
     const id = Number(rawValue);
     if (!isValidBlockId(id)) {
+        warnUnknownBlockId(id, "applyRemoteEditEntry");
         return;
     }
 
@@ -4221,7 +6058,11 @@ function collectCompactEditsFromLegacyOps(opsPayload) {
         const z = Number(op?.z);
         const id = Number(op?.id);
 
-        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z) || !isValidBlockId(id)) {
+        if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+            continue;
+        }
+        if (!isValidBlockId(id)) {
+            warnUnknownBlockId(id, "collectCompactEditsFromLegacyOps");
             continue;
         }
 
@@ -4259,7 +6100,11 @@ async function migrateLegacyOpsIfNeeded(dbModule, db, worldPath) {
             const parsed = parseBlockKey(key);
             const id = Number(rawId);
 
-            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z) || !isValidBlockId(id)) {
+            if (!parsed || !inWorldBounds(parsed.x, parsed.y, parsed.z)) {
+                continue;
+            }
+            if (!isValidBlockId(id)) {
+                warnUnknownBlockId(id, "migrateLegacyOpsIfNeeded");
                 continue;
             }
 
@@ -4568,6 +6413,8 @@ async function setupRealtimeMultiplayer() {
                 }
             }
 
+            rebuildRemoteUsingByProp();
+
             const totalOnline = Object.keys(payload).length;
             setOnlineStatus(`Sala ${multiplayer.roomId}: ${totalOnline} conectado(s)`);
         });
@@ -4575,6 +6422,7 @@ async function setupRealtimeMultiplayer() {
         multiplayer.unsubscribers.push(unsubConnected, unsubPlayers);
         multiplayer.enabled = true;
         multiplayer.ready = true;
+        multiplayer.lastSentState = null;
         syncChunkEditSubscriptions();
         subscribePropSnapshot();
         setOnlineStatus(`Sala ${multiplayer.roomId}: multijugador activo`);
@@ -4600,18 +6448,51 @@ function broadcastLocalPlayerState(force = false) {
 
     multiplayer.lastBroadcastMs = now;
     const cameraYaw = getCameraYawForMultiplayer();
+    const x = Number(state.playerPosition.x.toFixed(3));
+    const y = Number(state.playerPosition.y.toFixed(3));
+    const z = Number(state.playerPosition.z.toFixed(3));
+    const yaw = Number(cameraYaw.toFixed(4));
+    const pitch = Number(camera.rotation.x.toFixed(4));
+    const sentAt = Date.now();
+    const activity = getLocalTemporaryActivityPayload();
+
+    if (!force && multiplayer.lastSentState) {
+        const previous = multiplayer.lastSentState;
+        const moved = Math.abs(x - previous.x) > 0.01
+            || Math.abs(y - previous.y) > 0.01
+            || Math.abs(z - previous.z) > 0.01;
+        const turned = getAngularDistanceRadians(yaw, previous.yaw) > 0.012
+            || Math.abs(pitch - previous.pitch) > 0.012;
+        const activityChanged = !arePlayerActivitiesEqual(previous.activity, activity);
+        const heartbeatDue = sentAt - previous.sentAt >= multiplayer.idleHeartbeatMs;
+
+        if (!moved && !turned && !activityChanged && !heartbeatDue) {
+            return;
+        }
+    }
 
     const payload = {
         label: multiplayer.profile.label,
         displayName: multiplayer.profile.displayName,
         color: multiplayer.profile.color,
-        x: Number(state.playerPosition.x.toFixed(3)),
-        y: Number(state.playerPosition.y.toFixed(3)),
-        z: Number(state.playerPosition.z.toFixed(3)),
-        yaw: Number(cameraYaw.toFixed(4)),
-        pitch: Number(camera.rotation.x.toFixed(4)),
+        x,
+        y,
+        z,
+        yaw,
+        pitch,
+        activity,
         started: state.worldStarted,
-        updatedAt: Date.now()
+        updatedAt: sentAt
+    };
+
+    multiplayer.lastSentState = {
+        x,
+        y,
+        z,
+        yaw,
+        pitch,
+        activity,
+        sentAt
     };
 
     multiplayer.firebase.dbModule.set(multiplayer.refs.myPlayerRef, payload).catch((error) => {
@@ -4929,11 +6810,22 @@ function setBlock(x, y, z, id) {
 }
 
 function isSeeThroughBlock(id) {
-    return id === BLOCK.WATER || id === BLOCK.GLASS || id === BLOCK.LEAVES;
+    const definition = getBlockDefinitionById(id);
+    if (!definition) {
+        return false;
+    }
+
+    return Boolean(
+        definition.transparent
+        || definition.liquid
+        || definition.tags.includes("foliage")
+        || definition.tags.includes("leaves")
+    );
 }
 
 function isTranslucentBlock(id) {
-    return id === BLOCK.WATER || id === BLOCK.GLASS;
+    const definition = getBlockDefinitionById(id);
+    return Boolean(definition?.transparent || definition?.liquid);
 }
 
 function doesNeighborOccludeFace(id, neighborId) {
@@ -4941,23 +6833,21 @@ function doesNeighborOccludeFace(id, neighborId) {
         return false;
     }
 
-    if (id === BLOCK.WATER) {
-        return neighborId === BLOCK.WATER;
+    const definition = getBlockDefinitionById(id);
+    if (!definition) {
+        return neighborId !== BLOCK.AIR;
     }
 
-    if (id === BLOCK.GLASS) {
-        return neighborId === BLOCK.GLASS;
-    }
-
-    if (id === BLOCK.LEAVES) {
-        return neighborId === BLOCK.LEAVES;
+    if (definition.liquid || definition.transparent || definition.tags.includes("foliage")) {
+        return neighborId === id;
     }
 
     if (isSeeThroughBlock(neighborId)) {
         return false;
     }
 
-    return true;
+    const neighborDefinition = getBlockDefinitionById(neighborId);
+    return neighborDefinition?.solid !== false;
 }
 
 function isBlockVisible(x, y, z, id) {
@@ -5012,7 +6902,7 @@ function appendWaterFaceGeometry(positions, normals, indices, x, y, z, corners, 
     );
 }
 
-function buildWaterChunkMesh(positions) {
+function buildLiquidChunkMesh(liquidBlockId, positions) {
     if (!Array.isArray(positions) || positions.length === 0) {
         return null;
     }
@@ -5041,7 +6931,7 @@ function buildWaterChunkMesh(positions) {
                 y + face.offset[1],
                 z + face.offset[2]
             );
-            if (neighborId === BLOCK.WATER) {
+            if (neighborId === liquidBlockId) {
                 continue;
             }
 
@@ -5060,11 +6950,11 @@ function buildWaterChunkMesh(positions) {
     geometry.computeBoundingSphere();
     geometry.computeBoundingBox();
 
-    const mesh = new THREE.Mesh(geometry, blockMaterials[BLOCK.WATER]);
+    const mesh = new THREE.Mesh(geometry, blockMaterials[liquidBlockId]);
     mesh.castShadow = false;
     mesh.receiveShadow = false;
-    mesh.renderOrder = 4;
-    mesh.userData.blockId = BLOCK.WATER;
+    mesh.renderOrder = Number(getBlockDefinitionById(liquidBlockId)?.visual?.renderOrder ?? 4);
+    mesh.userData.blockId = liquidBlockId;
     mesh.userData.lookupKeys = [];
     return mesh;
 }
@@ -5117,22 +7007,25 @@ function rebuildChunkMesh(chunk) {
             return;
         }
 
-        if (id === BLOCK.WATER) {
-            const waterMesh = buildWaterChunkMesh(positions);
-            if (!waterMesh) {
+        if (LIQUID_BLOCK_IDS.has(id)) {
+            const liquidMesh = buildLiquidChunkMesh(id, positions);
+            if (!liquidMesh) {
                 return;
             }
-            worldRoot.add(waterMesh);
-            blockMeshes.push(waterMesh);
-            chunk.meshes.push(waterMesh);
+            worldRoot.add(liquidMesh);
+            blockMeshes.push(liquidMesh);
+            chunk.meshes.push(liquidMesh);
             return;
         }
 
         const mesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
         const transparentBlock = isTranslucentBlock(id);
-        mesh.castShadow = !transparentBlock && id !== BLOCK.LEAVES;
-        mesh.receiveShadow = id !== BLOCK.WATER && id !== BLOCK.LEAVES;
-        mesh.renderOrder = id === BLOCK.WATER ? 4 : id === BLOCK.GLASS ? 3 : transparentBlock ? 2 : 1;
+        const definition = getBlockDefinitionById(id);
+        const isFoliage = Boolean(definition?.tags?.includes("foliage"));
+        const renderOrder = Number(definition?.visual?.renderOrder ?? (transparentBlock ? 2 : 1));
+        mesh.castShadow = !transparentBlock && !isFoliage;
+        mesh.receiveShadow = !LIQUID_BLOCK_IDS.has(id) && !isFoliage;
+        mesh.renderOrder = renderOrder;
         mesh.userData.blockId = id;
         mesh.userData.lookupKeys = [];
 
@@ -5206,6 +7099,7 @@ function updateChunkStreaming(force = false) {
 
     const desired = new Set();
     const orderedTargets = [];
+    let chunksChanged = false;
 
     for (let dx = -state.chunkRadius; dx <= state.chunkRadius; dx += 1) {
         for (let dz = -state.chunkRadius; dz <= state.chunkRadius; dz += 1) {
@@ -5221,11 +7115,15 @@ function updateChunkStreaming(force = false) {
     orderedTargets.sort((a, b) => a.dist - b.dist);
 
     for (const target of orderedTargets) {
+        if (!chunkMap.has(target.key)) {
+            chunksChanged = true;
+        }
         ensureChunk(target.cx, target.cz);
     }
 
     for (const key of chunkMap.keys()) {
         if (!desired.has(key)) {
+            chunksChanged = true;
             unloadChunk(key);
         }
     }
@@ -5236,8 +7134,10 @@ function updateChunkStreaming(force = false) {
 
     state.loadedChunkCount = chunkMap.size;
     state.pendingChunkBuildCount = chunkRebuildQueue.size;
-    propState.cullingDirty = true;
-    updatePlacedPropCulling();
+    if (chunksChanged) {
+        propState.cullingDirty = true;
+        updatePlacedPropCulling();
+    }
 }
 
 function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
@@ -5284,6 +7184,11 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
         return;
     }
 
+    if (!isValidBlockId(id)) {
+        warnUnknownBlockId(id, `applyBlockMutation:${origin}`);
+        return;
+    }
+
     if (getBlock(x, y, z) === id) {
         return;
     }
@@ -5300,7 +7205,7 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
     }
 
     setBlock(x, y, z, id);
-    if (id === BLOCK.AIR || id === BLOCK.WATER) {
+    if (id === BLOCK.AIR || !isSolidBlock(id)) {
         removePropsSupportedByBlock(x, y, z, origin);
     }
     markLampShadowsDirty();
@@ -5312,7 +7217,8 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
 }
 
 function isSolidBlock(id) {
-    return id !== BLOCK.AIR && id !== BLOCK.WATER;
+    const definition = getBlockDefinitionById(id);
+    return Boolean(definition && definition.solid && !definition.liquid);
 }
 
 function collidesAt(x, y, z) {
@@ -5341,16 +7247,36 @@ function collidesAt(x, y, z) {
         }
     }
 
-    const playerBounds = {
-        minX: x - PLAYER_RADIUS,
-        maxX: x + PLAYER_RADIUS,
-        minY: y,
-        maxY: y + PLAYER_HEIGHT - 0.001,
-        minZ: z - PLAYER_RADIUS,
-        maxZ: z + PLAYER_RADIUS
-    };
+    if (placedProps.size === 0) {
+        return false;
+    }
 
-    for (const placed of placedProps.values()) {
+    const playerBounds = playerCollisionBoundsScratch;
+    playerBounds.minX = x - PLAYER_RADIUS;
+    playerBounds.maxX = x + PLAYER_RADIUS;
+    playerBounds.minY = y;
+    playerBounds.maxY = y + PLAYER_HEIGHT - 0.001;
+    playerBounds.minZ = z - PLAYER_RADIUS;
+    playerBounds.maxZ = z + PLAYER_RADIUS;
+
+    const nearbyIds = queryNearbyPropIdsReusable(
+        playerBounds.minX,
+        playerBounds.maxX,
+        playerBounds.minY,
+        playerBounds.maxY,
+        playerBounds.minZ,
+        playerBounds.maxZ
+    );
+
+    for (const propId of nearbyIds) {
+        const placed = placedProps.get(propId);
+        if (!placed) {
+            continue;
+        }
+        const definition = getPropDefinition(placed.propType);
+        if (definition && !definition.solid) {
+            continue;
+        }
         if (!placed?.node || placed.node.visible === false) {
             continue;
         }
@@ -5408,7 +7334,7 @@ function clampPlayerToWorld() {
 }
 
 function getForwardRightVectors() {
-    const direction = new THREE.Vector3();
+    const direction = cameraForwardScratch;
     camera.getWorldDirection(direction);
     direction.y = 0;
 
@@ -5419,13 +7345,94 @@ function getForwardRightVectors() {
         state.lastForward.copy(direction);
     }
 
-    const right = new THREE.Vector3();
-    right.crossVectors(direction, new THREE.Vector3(0, 1, 0)).normalize();
+    const right = cameraRightScratch;
+    right.crossVectors(direction, worldUpVector).normalize();
 
-    return { forward: direction, right };
+    return forwardRightResult;
+}
+
+function getPoseAnchorFromProp(placed, poseMode) {
+    const yaw = Number(placed?.yaw) || 0;
+    if (poseMode === "lie") {
+        const x = (Number(placed?.x) || 0) + Math.sin(yaw) * 0.16;
+        const z = (Number(placed?.z) || 0) + Math.cos(yaw) * 0.16;
+        const y = (Number(placed?.y) || 0) + 1.12;
+        return { x, y, z, eyeY: y + 0.46 };
+    }
+
+    const x = Number(placed?.x) || 0;
+    const z = Number(placed?.z) || 0;
+    const y = (Number(placed?.y) || 0) + 0.34;
+    return { x, y, z, eyeY: y + 1.06 };
+}
+
+function findSafeExitPositionFromPose(placed, poseMode = "") {
+    if (!placed) {
+        return null;
+    }
+
+    const yaw = Number(placed.yaw) || 0;
+    const extents = getRotatedPropHalfExtents(placed.propType, yaw);
+    const baseRadius = Math.max(extents.x, extents.z) + PLAYER_RADIUS + (poseMode === "lie" ? 0.45 : 0.28);
+    const angles = [
+        yaw,
+        yaw + Math.PI,
+        yaw + Math.PI * 0.5,
+        yaw - Math.PI * 0.5,
+        yaw + Math.PI * 0.25,
+        yaw - Math.PI * 0.25,
+        yaw + Math.PI * 0.75,
+        yaw - Math.PI * 0.75
+    ];
+
+    const groundY = Math.max(0.01, (Number(placed.y) || 0) + 0.02);
+    for (let ring = 0; ring < 5; ring += 1) {
+        const radius = baseRadius + ring * 0.38;
+        for (const angle of angles) {
+            const candidateX = (Number(placed.x) || 0) + Math.sin(angle) * radius;
+            const candidateZ = (Number(placed.z) || 0) + Math.cos(angle) * radius;
+            for (let yStep = 0; yStep < 5; yStep += 1) {
+                const candidateY = groundY + yStep * 0.2;
+                if (!collidesAt(candidateX, candidateY, candidateZ)) {
+                    return { x: candidateX, y: candidateY, z: candidateZ };
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+function updateLocalPoseLock() {
+    const pose = interactionState.pose;
+    if (!pose) {
+        return false;
+    }
+
+    const poseMode = normalizePoseMode(pose.mode);
+    const placed = placedProps.get(String(pose.propId || ""));
+    if (!poseMode || !placed) {
+        clearLocalPoseActivity(true);
+        return false;
+    }
+
+    const anchor = getPoseAnchorFromProp(placed, poseMode);
+    state.playerPosition.x = anchor.x;
+    state.playerPosition.y = anchor.y;
+    state.playerPosition.z = anchor.z;
+    state.velocityY = 0;
+    state.onGround = true;
+
+    controls.getObject().position.set(anchor.x, anchor.eyeY, anchor.z);
+    return true;
 }
 
 function updatePlayer(deltaSeconds) {
+    if (interactionState.pose) {
+        updateLocalPoseLock();
+        return;
+    }
+
     const turnSpeed = 1.6 * deltaSeconds;
     const isSprinting = state.keyDown.has("ShiftLeft");
 
@@ -5450,7 +7457,8 @@ function updatePlayer(deltaSeconds) {
     if (state.keyDown.has("KeyD")) moveRight += 1;
     if (state.keyDown.has("KeyA")) moveRight -= 1;
 
-    const moveVector = new THREE.Vector3();
+    const moveVector = moveVectorScratch;
+    moveVector.set(0, 0, 0);
     if (moveForward !== 0) moveVector.addScaledVector(forward, moveForward);
     if (moveRight !== 0) moveVector.addScaledVector(right, moveRight);
 
@@ -5480,8 +7488,17 @@ function updatePlayer(deltaSeconds) {
 function updateHud() {
     const p = state.playerPosition;
     const previewSuffix = state.avatarPreviewOpen ? " | Vista avatar" : "";
-    coordsEl.textContent = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}${previewSuffix}`;
-    setChunkInfo(`Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Flores activas: ${floraState.sunflowers.size} | Girasoles (moneda): ${economyState.sunflowers} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`);
+    const coordsText = `X: ${p.x.toFixed(1)} Y: ${p.y.toFixed(1)} Z: ${p.z.toFixed(1)}${previewSuffix}`;
+    if (coordsText !== uiState.lastCoordsText) {
+        coordsEl.textContent = coordsText;
+        uiState.lastCoordsText = coordsText;
+    }
+
+    const chunkInfoText = `Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Flores activas: ${floraState.sunflowers.size} | Girasoles (moneda): ${economyState.sunflowers} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`;
+    if (chunkInfoText !== uiState.lastChunkInfoText) {
+        setChunkInfo(chunkInfoText);
+        uiState.lastChunkInfoText = chunkInfoText;
+    }
 }
 
 function updateSelectedMaterialHud() {
@@ -5526,7 +7543,7 @@ function renderInventoryUi() {
             card.className = "inventory-item";
             card.draggable = true;
             card.style.backgroundColor = getInventoryItemTint(item);
-            card.innerHTML = `<span class="inventory-item-label">${item.label}</span><span class="inventory-item-meta">${item.kind === ITEM_KIND.PROP ? "Objeto decorativo" : "Bloque"}</span>`;
+            card.innerHTML = `<span class="inventory-item-label">${item.label}</span><span class="inventory-item-meta">${item.meta || (item.kind === ITEM_KIND.PROP ? "Objeto decorativo" : "Bloque")}</span>`;
 
             card.addEventListener("dragstart", (event) => {
                 draggedInventoryItemId = item.id;
@@ -5582,12 +7599,12 @@ function setInventoryOpen(open, showFeedback = false) {
         return;
     }
 
-    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible) {
+    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.interactionPanelOpen) {
         if (crosshairEl) {
             crosshairEl.classList.remove("hidden");
         }
 
-        if (state.worldStarted && !controls.isLocked) {
+        if (canRelockGameplayControls() && !controls.isLocked) {
             try {
                 controls.lock();
             } catch (error) {
@@ -5597,6 +7614,405 @@ function setInventoryOpen(open, showFeedback = false) {
 
     if (showFeedback) {
         showToast("Inventario cerrado", "info", 800);
+    }
+}
+
+function canRelockGameplayControls() {
+    return (
+        state.worldStarted
+        && !state.paused
+        && !state.tutorialVisible
+        && !state.inventoryOpen
+        && !state.avatarPreviewOpen
+        && !state.interactionPanelOpen
+    );
+}
+
+function markInteractionPanelDirty() {
+    if (!state.interactionPanelOpen) {
+        return;
+    }
+    interactionState.panelNeedsRender = true;
+    interactionState.panelRefreshTick = 0;
+}
+
+function clearInteractionPanelState() {
+    interactionState.panelPropId = "";
+    interactionState.panelMode = "";
+    interactionState.panelNeedsRender = false;
+    interactionState.panelRefreshTick = 0;
+}
+
+function closeInteractionPanel(showFeedback = false, preservePose = false) {
+    if (!state.interactionPanelOpen && !interactionState.panelPropId) {
+        return;
+    }
+
+    const previousPropId = String(interactionState.panelPropId || "");
+    state.interactionPanelOpen = false;
+    clearInteractionPanelState();
+
+    if (interactionPanelEl) {
+        interactionPanelEl.classList.add("hidden");
+    }
+    if (interactionPanelBodyEl) {
+        interactionPanelBodyEl.innerHTML = "";
+    }
+
+    if (interactionState.localUsing && (!previousPropId || interactionState.localUsing.propId === previousPropId)) {
+        clearLocalUsingActivity(true);
+    }
+    if (!preservePose) {
+        clearLocalPoseActivity(true);
+    }
+
+    if (!state.inventoryOpen && !state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && crosshairEl) {
+        crosshairEl.classList.remove("hidden");
+    }
+
+    if (canRelockGameplayControls() && !controls.isLocked) {
+        try {
+            controls.lock();
+        } catch (error) {
+        }
+    }
+
+    if (showFeedback) {
+        showToast("Interaccion cerrada", "info", 900);
+    }
+}
+
+function openInteractionPanel(propHit, panelMode, usageKind = "") {
+    const propId = String(propHit?.propId || "");
+    const placed = propId ? placedProps.get(propId) : null;
+    if (!placed) {
+        return false;
+    }
+
+    if (state.avatarPreviewOpen) {
+        setAvatarPreviewOpen(false);
+    }
+    if (interactionState.pose) {
+        clearLocalPoseActivity(true);
+    }
+
+    state.interactionPanelOpen = true;
+    interactionState.panelPropId = propId;
+    interactionState.panelMode = String(panelMode || "");
+    interactionState.panelNeedsRender = true;
+    interactionState.panelRefreshTick = 0;
+    state.keyDown.clear();
+
+    if (usageKind) {
+        setLocalUsingActivity(propId, usageKind, true);
+    } else {
+        clearLocalUsingActivity(true);
+    }
+
+    if (interactionPanelTitleEl) {
+        interactionPanelTitleEl.textContent = getPropLabel(placed.propType);
+    }
+    if (interactionPanelHintEl) {
+        interactionPanelHintEl.textContent = "E interactuar | Esc cerrar panel";
+    }
+    if (interactionPanelEl) {
+        interactionPanelEl.classList.remove("hidden");
+    }
+    if (crosshairEl) {
+        crosshairEl.classList.add("hidden");
+    }
+
+    if (controls.isLocked) {
+        try {
+            controls.unlock();
+        } catch (error) {
+        }
+    }
+
+    return true;
+}
+
+function appendInteractionInfoLine(text) {
+    if (!interactionPanelBodyEl) {
+        return;
+    }
+    const line = document.createElement("p");
+    line.textContent = text;
+    interactionPanelBodyEl.appendChild(line);
+}
+
+function appendInteractionAction(label, handler) {
+    if (!interactionPanelBodyEl) {
+        return;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "interaction-action";
+    button.textContent = label;
+    button.addEventListener("click", handler);
+    interactionPanelBodyEl.appendChild(button);
+}
+
+function resolveDraggedInventoryItemId(event) {
+    const droppedId = String(event?.dataTransfer?.getData("text/plain") || draggedInventoryItemId || "").trim();
+    if (!droppedId || !INVENTORY_ITEM_BY_ID.has(droppedId)) {
+        return "";
+    }
+    return droppedId;
+}
+
+function playJukeboxTrackPreview(track = 1) {
+    const clampedTrack = THREE.MathUtils.clamp(Math.floor(Number(track) || 1), 1, JUKEBOX_TRACK_COUNT);
+    let context = interactionState.localAudioContext || null;
+    if (!context) {
+        try {
+            context = new (window.AudioContext || window.webkitAudioContext)();
+            interactionState.localAudioContext = context;
+        } catch (error) {
+            return;
+        }
+    }
+    if (!context) {
+        return;
+    }
+    if (context.state === "suspended") {
+        context.resume().catch(() => {
+        });
+    }
+
+    const now = context.currentTime;
+    const gain = context.createGain();
+    const oscillator = context.createOscillator();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(190 + clampedTrack * 95, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.24);
+}
+
+function renderContainerInteractionPanel(placed) {
+    const slotCount = Array.isArray(getPropDefinition(placed.propType)?.stateDefaults?.items)
+        ? getPropDefinition(placed.propType).stateDefaults.items.length
+        : 6;
+    const currentItems = sanitizeContainerItems(placed.state?.items, slotCount);
+    appendInteractionInfoLine("Arrastra desde inventario/barra al cofre. Click izq en slot ocupado: retirar.");
+
+    const getLiveItems = () => {
+        const livePlaced = placedProps.get(placed.id);
+        return sanitizeContainerItems(livePlaced?.state?.items, slotCount);
+    };
+    const commitItems = (nextItems, feedbackText) => {
+        const normalizedItems = sanitizeContainerItems(nextItems, slotCount);
+        if (updatePropSharedState(placed.id, { items: normalizedItems }, feedbackText)) {
+            markInteractionPanelDirty();
+            return true;
+        }
+        return false;
+    };
+
+    const slotsWrap = document.createElement("div");
+    slotsWrap.className = "interaction-slots";
+    for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+        const slotButton = document.createElement("button");
+        slotButton.type = "button";
+        slotButton.className = "interaction-slot";
+        const slotItemId = String(currentItems[slotIndex] || "");
+        const slotItemLabel = slotItemId
+            ? (INVENTORY_ITEM_BY_ID.get(slotItemId)?.label || slotItemId)
+            : "Vacio";
+        slotButton.textContent = `${slotIndex + 1}. ${slotItemLabel}`;
+        if (slotItemId) {
+            slotButton.classList.add("occupied");
+        }
+
+        slotButton.addEventListener("click", () => {
+            const liveItems = getLiveItems();
+            const currentSlotItemId = String(liveItems[slotIndex] || "");
+            if (currentSlotItemId) {
+                const nextItems = [...liveItems];
+                nextItems[slotIndex] = "";
+                commitItems(nextItems, `Slot ${slotIndex + 1} retirado`);
+                return;
+            }
+
+            const selected = getSelectedHotbarItem();
+            const selectedId = String(selected?.id || "");
+            if (!selectedId || !INVENTORY_ITEM_BY_ID.has(selectedId)) {
+                showToast("Selecciona o arrastra un item para guardarlo", "info", 900);
+                return;
+            }
+
+            const nextItems = [...liveItems];
+            nextItems[slotIndex] = selectedId;
+            commitItems(nextItems, `Guardado en slot ${slotIndex + 1}`);
+        });
+
+        slotButton.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            const liveItems = getLiveItems();
+            const nextItems = [...liveItems];
+            nextItems[slotIndex] = "";
+            commitItems(nextItems, `Slot ${slotIndex + 1} vaciado`);
+        });
+
+        slotButton.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            slotButton.classList.add("drag-target");
+        });
+        slotButton.addEventListener("dragleave", () => {
+            slotButton.classList.remove("drag-target");
+        });
+        slotButton.addEventListener("drop", (event) => {
+            event.preventDefault();
+            slotButton.classList.remove("drag-target");
+            const droppedId = resolveDraggedInventoryItemId(event);
+            draggedInventoryItemId = "";
+            if (!droppedId) {
+                return;
+            }
+            const liveItems = getLiveItems();
+            const nextItems = [...liveItems];
+            nextItems[slotIndex] = droppedId;
+            commitItems(nextItems, `Guardado en slot ${slotIndex + 1}`);
+        });
+        slotsWrap.appendChild(slotButton);
+    }
+    interactionPanelBodyEl?.appendChild(slotsWrap);
+}
+
+function renderFurnaceInteractionPanel(placed) {
+    const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
+    const inputId = String(safeState.input || "");
+    const fuel = THREE.MathUtils.clamp(Math.floor(Number(safeState.fuel) || 0), 0, 100);
+    const lit = Boolean(safeState.lit);
+    const inputLabel = inputId ? (INVENTORY_ITEM_BY_ID.get(inputId)?.label || inputId) : "Sin entrada";
+    appendInteractionInfoLine(`Entrada: ${inputLabel}`);
+    appendInteractionInfoLine(`Combustible: ${fuel}%`);
+    appendInteractionInfoLine(`Estado: ${lit ? "Encendido" : "Apagado"}`);
+
+    appendInteractionAction("Cargar item seleccionado", () => {
+        const selected = getSelectedHotbarItem();
+        const selectedId = String(selected?.id || "");
+        if (!selectedId || !INVENTORY_ITEM_BY_ID.has(selectedId)) {
+            return;
+        }
+        if (updatePropSharedState(placed.id, { input: selectedId }, "Horno: entrada actualizada")) {
+            markInteractionPanelDirty();
+        }
+    });
+    appendInteractionAction("Vaciar entrada", () => {
+        if (updatePropSharedState(placed.id, { input: "" }, "Horno: entrada vaciada")) {
+            markInteractionPanelDirty();
+        }
+    });
+    appendInteractionAction("Agregar combustible (+10)", () => {
+        const nextFuel = THREE.MathUtils.clamp(fuel + 10, 0, 100);
+        if (updatePropSharedState(placed.id, { fuel: nextFuel }, "Horno: combustible agregado")) {
+            markInteractionPanelDirty();
+        }
+    });
+    appendInteractionAction(lit ? "Apagar horno" : "Encender horno", () => {
+        if (!lit && fuel <= 0) {
+            showToast("Agrega combustible para encender", "warning", 1000);
+            return;
+        }
+        const nextLit = !lit;
+        const nextFuel = nextLit ? Math.max(0, fuel - 10) : fuel;
+        if (updatePropSharedState(placed.id, { lit: nextLit, fuel: nextFuel }, `Horno ${nextLit ? "encendido" : "apagado"}`)) {
+            markInteractionPanelDirty();
+        }
+    });
+}
+
+function renderJukeboxInteractionPanel(placed) {
+    const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
+    const playing = Boolean(safeState.playing);
+    const track = sanitizeJukeboxTrack(safeState.track) || 1;
+    appendInteractionInfoLine(`Estado: ${playing ? "Reproduciendo" : "Detenida"}`);
+    appendInteractionInfoLine(`Pista activa: ${track}`);
+
+    const row = document.createElement("div");
+    row.className = "interaction-row";
+    for (let i = 1; i <= JUKEBOX_TRACK_COUNT; i += 1) {
+        const trackButton = document.createElement("button");
+        trackButton.type = "button";
+        trackButton.className = "interaction-action";
+        trackButton.textContent = `Pista ${i}`;
+        trackButton.addEventListener("click", () => {
+            if (updatePropSharedState(placed.id, { track: i, playing: true, source: "local-playlist-v1" }, `Jukebox: pista ${i}`)) {
+                playJukeboxTrackPreview(i);
+                markInteractionPanelDirty();
+            }
+        });
+        row.appendChild(trackButton);
+    }
+    interactionPanelBodyEl?.appendChild(row);
+
+    appendInteractionAction(playing ? "Detener" : "Reproducir", () => {
+        const nextPlaying = !playing;
+        if (updatePropSharedState(placed.id, { playing: nextPlaying, track, source: "local-playlist-v1" }, nextPlaying ? "Jukebox iniciada" : "Jukebox detenida")) {
+            if (nextPlaying) {
+                playJukeboxTrackPreview(track);
+            }
+            markInteractionPanelDirty();
+        }
+    });
+}
+
+function renderInteractionPanelNow() {
+    if (!state.interactionPanelOpen || !interactionPanelBodyEl) {
+        return;
+    }
+
+    const propId = String(interactionState.panelPropId || "");
+    const placed = propId ? placedProps.get(propId) : null;
+    if (!placed) {
+        closeInteractionPanel(false, true);
+        return;
+    }
+
+    const config = getPropInteractionConfig(placed.propType);
+    const panelMode = String(interactionState.panelMode || config?.kind || "");
+    interactionPanelBodyEl.innerHTML = "";
+    if (interactionPanelTitleEl) {
+        interactionPanelTitleEl.textContent = getPropLabel(placed.propType);
+    }
+    if (interactionPanelHintEl) {
+        const poseHint = interactionState.pose ? " | Shift levantarte" : "";
+        interactionPanelHintEl.textContent = `E interactuar | Esc cerrar${poseHint}`;
+    }
+
+    if (panelMode === INTERACTION_KIND.CONTAINER_OPEN) {
+        renderContainerInteractionPanel(placed);
+    } else if (panelMode === INTERACTION_KIND.FURNACE_OPEN) {
+        renderFurnaceInteractionPanel(placed);
+    } else if (panelMode === INTERACTION_KIND.JUKEBOX_CONTROL) {
+        renderJukeboxInteractionPanel(placed);
+    } else {
+        appendInteractionInfoLine("Este objeto no tiene panel detallado todavia.");
+    }
+}
+
+function updateInteractionPanel(deltaSeconds = 0) {
+    if (!state.interactionPanelOpen) {
+        return;
+    }
+
+    const propId = String(interactionState.panelPropId || "");
+    if (!propId || !placedProps.has(propId)) {
+        closeInteractionPanel(false, true);
+        return;
+    }
+
+    interactionState.panelRefreshTick -= Math.max(0, deltaSeconds);
+    if (interactionState.panelNeedsRender || interactionState.panelRefreshTick <= 0) {
+        interactionState.panelNeedsRender = false;
+        interactionState.panelRefreshTick = 0.2;
+        renderInteractionPanelNow();
     }
 }
 
@@ -5630,9 +8046,29 @@ function refreshHotbarUi() {
         slot.setAttribute("aria-label", `${index + 1} ${item.label}`);
         slot.style.backgroundColor = getInventoryItemTint(item);
         slot.textContent = `${index + 1}\n${item.label}`;
+        slot.draggable = true;
 
         slot.addEventListener("click", () => {
             setSelectedHotbar(index);
+        });
+
+        slot.addEventListener("dragstart", (event) => {
+            const itemId = String(item?.id || "");
+            if (!itemId || !INVENTORY_ITEM_BY_ID.has(itemId)) {
+                event.preventDefault();
+                return;
+            }
+            draggedInventoryItemId = itemId;
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData("text/plain", itemId);
+            }
+            slot.classList.add("dragging-item");
+        });
+
+        slot.addEventListener("dragend", () => {
+            draggedInventoryItemId = "";
+            slot.classList.remove("dragging-item");
         });
 
         slot.addEventListener("dragover", (event) => {
@@ -5681,12 +8117,12 @@ function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
         return null;
     }
 
-    const normal = getWorldNormalFromRayHit(hit) || hit.face?.normal?.clone() || null;
+    const normal = getWorldNormalFromRayHit(hit) || (hit.face?.normal ? worldNormalScratch.copy(hit.face.normal).normalize() : null);
     if (!normal) {
         return null;
     }
 
-    const samplePoint = hit.point.clone().addScaledVector(normal, -0.0012);
+    const samplePoint = blockSamplePointScratch.copy(hit.point).addScaledVector(normal, -0.0012);
     const x = Math.floor(samplePoint.x);
     const y = Math.floor(samplePoint.y);
     const z = Math.floor(samplePoint.z);
@@ -5703,7 +8139,7 @@ function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
 }
 
 function findTargetedBlockHit() {
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    raycaster.setFromCamera(blockRayCenterNdc, camera);
     raycaster.far = MAX_REACH;
     const intersects = raycaster.intersectObjects(blockMeshes, false);
     if (!intersects.length) {
@@ -5735,13 +8171,34 @@ function findTargetedBlockHit() {
 }
 
 function findTargetedPropHit(blockingDistance = null) {
-    if (propsRoot.children.length === 0) {
+    if (placedProps.size === 0 || propsRoot.children.length === 0) {
         return null;
     }
 
-    raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+    const searchRadius = MAX_REACH + 1.2;
+    const nearbyIds = queryNearbyPropIdsReusable(
+        state.playerPosition.x - searchRadius,
+        state.playerPosition.x + searchRadius,
+        state.playerPosition.y - searchRadius,
+        state.playerPosition.y + searchRadius,
+        state.playerPosition.z - searchRadius,
+        state.playerPosition.z + searchRadius
+    );
+    propRaycastCandidates.length = 0;
+    for (const propId of nearbyIds) {
+        const placed = placedProps.get(propId);
+        if (!placed?.node || placed.node.visible === false) {
+            continue;
+        }
+        propRaycastCandidates.push(placed.node);
+    }
+    if (propRaycastCandidates.length === 0) {
+        return null;
+    }
+
+    raycaster.setFromCamera(blockRayCenterNdc, camera);
     raycaster.far = MAX_REACH;
-    const propHits = raycaster.intersectObjects(propsRoot.children, true);
+    const propHits = raycaster.intersectObjects(propRaycastCandidates, true);
     if (!propHits.length) {
         return null;
     }
@@ -5776,9 +8233,47 @@ function findTargetedPropHit(blockingDistance = null) {
     };
 }
 
+function findInteractablePropHit() {
+    const blockHit = findTargetedBlockHit();
+    const blockDistance = blockHit?.hit?.distance ?? Number.POSITIVE_INFINITY;
+    const propHit = findTargetedPropHit(blockDistance);
+    if (!propHit) {
+        return null;
+    }
+    if (!isInteractionDistanceValid(propHit.distance)) {
+        return null;
+    }
+
+    const config = getPropInteractionConfig(propHit.placed.propType);
+    if (!config || !config.kind || config.kind === INTERACTION_KIND.NONE) {
+        return null;
+    }
+
+    return {
+        ...propHit,
+        config
+    };
+}
+
 function hasPropNearPosition(x, y, z, radius = 0.32) {
+    if (placedProps.size === 0) {
+        return false;
+    }
+
     const radiusSq = radius * radius;
-    for (const prop of placedProps.values()) {
+    const nearbyIds = queryNearbyPropIdsReusable(
+        x - radius,
+        x + radius,
+        y - radius,
+        y + radius,
+        z - radius,
+        z + radius
+    );
+    for (const propId of nearbyIds) {
+        const prop = placedProps.get(propId);
+        if (!prop) {
+            continue;
+        }
         const dx = prop.x - x;
         const dy = prop.y - y;
         const dz = prop.z - z;
@@ -5852,7 +8347,7 @@ function attemptMineOrPlace(isPlacing) {
             }
 
             const targetId = getBlock(placeX, placeY, placeZ);
-            if (targetId !== BLOCK.AIR && targetId !== BLOCK.WATER) {
+            if (targetId !== BLOCK.AIR && isSolidBlock(targetId)) {
                 const now = performance.now();
                 if (now - uiState.noSpaceToastAt > 700) {
                     showToast("No hay espacio", "warning", 800);
@@ -5895,7 +8390,7 @@ function attemptMineOrPlace(isPlacing) {
             x: propX,
             y: propY,
             z: propZ,
-            lampLevel: propType === PROP_TYPE.LAMP ? 0 : undefined,
+            lampLevel: isLightPropType(propType) ? 0 : undefined,
             yaw: propYaw
         }, "local");
 
@@ -5924,7 +8419,7 @@ function attemptMineOrPlace(isPlacing) {
     }
 
     const targetId = getBlock(placeX, placeY, placeZ);
-    if (targetId !== BLOCK.AIR && targetId !== BLOCK.WATER) {
+    if (targetId !== BLOCK.AIR && isSolidBlock(targetId)) {
         const now = performance.now();
         if (now - uiState.noSpaceToastAt > 700) {
             showToast("No hay espacio", "warning", 800);
@@ -6008,7 +8503,7 @@ function cycleLampIntensity(propId, showFeedback = true) {
     }
 
     const placed = placedProps.get(id);
-    if (!placed || placed.propType !== PROP_TYPE.LAMP) {
+    if (!placed || !isLightPropType(placed.propType)) {
         return false;
     }
 
@@ -6019,18 +8514,206 @@ function cycleLampIntensity(propId, showFeedback = true) {
     publishPropUpsert(id);
 
     if (showFeedback) {
-        showToast(`Lampara: ${getLampIntensityLabel(nextLevel)}`, "info", 900);
+        showToast(`${getPropLabel(placed.propType)}: ${getLampIntensityLabel(nextLevel)}`, "info", 900);
     }
     return true;
 }
 
-function tryCycleLampAtCrosshair() {
-    const propHit = findTargetedPropHit();
-    if (!propHit || propHit.placed.propType !== PROP_TYPE.LAMP) {
+function updatePropSharedState(propId, patchState, showFeedbackText = "") {
+    const id = String(propId || "");
+    if (!id || !patchState || typeof patchState !== "object") {
         return false;
     }
 
-    return cycleLampIntensity(propHit.propId, true);
+    const placed = placedProps.get(id);
+    if (!placed) {
+        return false;
+    }
+
+    const mergedState = {
+        ...(placed.state || {}),
+        ...patchState
+    };
+    const normalizedState = normalizePropSharedState(placed.propType, mergedState, mergedState);
+    if (!normalizedState) {
+        return false;
+    }
+
+    if (arePropStatesEqual(placed.state, normalizedState)) {
+        return true;
+    }
+
+    placed.state = normalizedState;
+    applyPropSharedVisualState(placed);
+    if (state.interactionPanelOpen && interactionState.panelPropId === id) {
+        markInteractionPanelDirty();
+    }
+    scheduleWorldSave();
+    publishPropUpsert(id);
+
+    if (showFeedbackText) {
+        showToast(showFeedbackText, "info", 1000);
+    }
+
+    return true;
+}
+
+function tryEditSignProp(propHit) {
+    const placed = propHit?.placed;
+    if (!placed || placed.propType !== PROP_TYPE.EDITABLE_SIGN) {
+        return false;
+    }
+
+    setLocalUsingActivity(placed.id, INTERACTION_USAGE_KIND.SIGN, true);
+
+    const previousText = sanitizeEditableSignText(placed.state?.text || "Nuestro lugar");
+    const shouldReLock = controls.isLocked;
+    if (shouldReLock) {
+        try {
+            controls.unlock();
+        } catch (error) {
+        }
+    }
+
+    let inputValue = null;
+    try {
+        inputValue = window.prompt("Texto del cartel:", previousText);
+    } catch (error) {
+        inputValue = previousText;
+    }
+
+    if (shouldReLock && state.worldStarted && !state.paused && !state.inventoryOpen && !state.tutorialVisible) {
+        try {
+            controls.lock();
+        } catch (error) {
+        }
+    }
+
+    if (inputValue === null) {
+        clearLocalUsingActivity(true);
+        return true;
+    }
+
+    const nextText = sanitizeEditableSignText(inputValue, previousText);
+    const applied = updatePropSharedState(propHit.propId, { text: nextText }, "Cartel actualizado");
+    clearLocalUsingActivity(true);
+    return applied;
+}
+
+function tryCycleVariantProp(propHit) {
+    const placed = propHit?.placed;
+    if (!placed) {
+        return false;
+    }
+
+    const currentVariant = sanitizeVariantIndex(placed.propType, placed.state?.variant);
+    const maxVariant = Number(VARIANT_MAX_BY_PROP[placed.propType]);
+    if (!Number.isFinite(maxVariant) || maxVariant <= 0) {
+        return false;
+    }
+    const nextVariant = (currentVariant + 1) % (maxVariant + 1);
+    return updatePropSharedState(propHit.propId, { variant: nextVariant }, `${getPropLabel(placed.propType)} variante ${nextVariant + 1}`);
+}
+
+function enterLocalPose(propHit, mode) {
+    const placed = propHit?.placed;
+    const poseMode = normalizePoseMode(mode);
+    if (!placed || !poseMode) {
+        return false;
+    }
+
+    if (interactionState.pose?.propId === placed.id && interactionState.pose.mode === poseMode) {
+        return exitLocalPose(true);
+    }
+
+    closeInteractionPanel(false, true);
+    clearLocalUsingActivity(true);
+    setLocalPoseActivity(placed.id, poseMode, true);
+    controls.getObject().rotation.y = Number(placed.yaw) || controls.getObject().rotation.y || 0;
+    if (poseMode === "lie") {
+        camera.rotation.x = -0.08;
+    }
+    persistPlayerStateSnapshot(true);
+    showToast(poseMode === "sit" ? "Te sentaste. Shift para levantarte." : "Te acostaste. Shift para levantarte.", "info", 1300);
+    return true;
+}
+
+function exitLocalPose(showFeedback = false) {
+    const currentPose = interactionState.pose;
+    if (!currentPose) {
+        return false;
+    }
+
+    const poseMode = normalizePoseMode(currentPose.mode);
+    const placed = placedProps.get(String(currentPose.propId || ""));
+    const safeExit = findSafeExitPositionFromPose(placed, poseMode);
+    if (safeExit) {
+        state.playerPosition.x = safeExit.x;
+        state.playerPosition.y = safeExit.y;
+        state.playerPosition.z = safeExit.z;
+    } else {
+        const spawn = findSpawnPoint();
+        state.playerPosition.copy(spawn);
+    }
+
+    clearLocalPoseActivity(true);
+    state.keyDown.clear();
+    state.velocityY = 0;
+    updateOnGroundFlag();
+    controls.getObject().position.set(
+        state.playerPosition.x,
+        state.playerPosition.y + EYE_HEIGHT,
+        state.playerPosition.z
+    );
+
+    if (showFeedback) {
+        showToast("Te levantaste", "info", 900);
+    }
+    persistPlayerStateSnapshot(true);
+    return true;
+}
+
+function tryInteractAtCrosshair() {
+    const propHit = findInteractablePropHit();
+    if (!propHit) {
+        return false;
+    }
+
+    const config = propHit.config || getPropInteractionConfig(propHit.placed.propType);
+    if (!config) {
+        return false;
+    }
+
+    if (config.kind === INTERACTION_KIND.SIT) {
+        return enterLocalPose(propHit, "sit");
+    }
+    if (config.kind === INTERACTION_KIND.LIE) {
+        return enterLocalPose(propHit, "lie");
+    }
+    if (config.kind === INTERACTION_KIND.LIGHT_CYCLE && isLightPropType(propHit.placed.propType)) {
+        return cycleLampIntensity(propHit.propId, true);
+    }
+    if (config.kind === INTERACTION_KIND.EDIT_TEXT) {
+        return tryEditSignProp(propHit);
+    }
+    if (config.kind === INTERACTION_KIND.CYCLE_VARIANT) {
+        return tryCycleVariantProp(propHit);
+    }
+    if (config.kind === INTERACTION_KIND.CONTAINER_OPEN) {
+        return openInteractionPanel(propHit, INTERACTION_KIND.CONTAINER_OPEN, config.usageKind || INTERACTION_USAGE_KIND.CONTAINER);
+    }
+    if (config.kind === INTERACTION_KIND.FURNACE_OPEN) {
+        return openInteractionPanel(propHit, INTERACTION_KIND.FURNACE_OPEN, config.usageKind || INTERACTION_USAGE_KIND.FURNACE);
+    }
+    if (config.kind === INTERACTION_KIND.JUKEBOX_CONTROL) {
+        return openInteractionPanel(propHit, INTERACTION_KIND.JUKEBOX_CONTROL, config.usageKind || INTERACTION_USAGE_KIND.JUKEBOX);
+    }
+    if (config.kind === INTERACTION_KIND.TOGGLE_STATE && propHit.placed.propType === PROP_TYPE.FURNACE) {
+        const nextLit = !Boolean(propHit.placed.state?.lit);
+        return updatePropSharedState(propHit.propId, { lit: nextLit }, `Horno ${nextLit ? "encendido" : "apagado"}`);
+    }
+
+    return false;
 }
 
 function tryRemovePlacedPropAtCrosshair() {
@@ -6043,7 +8726,7 @@ function tryRemovePlacedPropAtCrosshair() {
 }
 
 function onMouseWheel(event) {
-    if (!state.worldStarted || !state.worldReady || state.paused || state.tutorialVisible || state.inventoryOpen || !controls.isLocked) {
+    if (!state.worldStarted || !state.worldReady || state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen || !controls.isLocked) {
         return;
     }
 
@@ -6089,6 +8772,10 @@ function onKeyDown(event) {
             setPauseMenuOpen(false);
         }
 
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
+
         setAvatarPreviewOpen(!state.avatarPreviewOpen, true);
         return;
     }
@@ -6127,6 +8814,11 @@ function onKeyDown(event) {
             return;
         }
 
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(true, true);
+            return;
+        }
+
         if (state.avatarPreviewOpen) {
             setAvatarPreviewOpen(false, true);
             return;
@@ -6157,7 +8849,13 @@ function onKeyDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.inventoryOpen) {
+    if (event.code === INTERACTION_EXIT_KEY && interactionState.pose) {
+        event.preventDefault();
+        exitLocalPose(true);
+        return;
+    }
+
+    if (state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen) {
         return;
     }
 
@@ -6167,19 +8865,29 @@ function onKeyDown(event) {
             || event.code === "KeyA"
             || event.code === "KeyS"
             || event.code === "KeyD"
-            || event.code === "ShiftLeft"
+            || event.code === INTERACTION_EXIT_KEY
         ) {
             state.keyDown.add(event.code);
         }
         return;
     }
 
-    if (event.code === "KeyE") {
+    if (event.code === INTERACTION_KEY) {
         event.preventDefault();
         if (event.repeat || !controls.isLocked) {
             return;
         }
+        if (interactionState.pose) {
+            return;
+        }
+        if (tryInteractAtCrosshair()) {
+            return;
+        }
         tryHarvestSunflowerAtCrosshair();
+        return;
+    }
+
+    if (interactionState.pose) {
         return;
     }
 
@@ -6215,7 +8923,7 @@ function onMouseDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen) {
+    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen || state.interactionPanelOpen) {
         return;
     }
 
@@ -6236,9 +8944,6 @@ function onMouseDown(event) {
     }
 
     if (event.button === 2) {
-        if (tryCycleLampAtCrosshair()) {
-            return;
-        }
         attemptMineOrPlace(true);
     }
 }
@@ -6266,6 +8971,9 @@ function setupEvents() {
         setPauseMenuOpen(false);
         if (state.inventoryOpen) {
             setInventoryOpen(false);
+        }
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
         }
     });
 
@@ -6311,6 +9019,12 @@ function setupEvents() {
     if (inventoryCloseButtonEl) {
         inventoryCloseButtonEl.addEventListener("click", () => {
             setInventoryOpen(false, true);
+        });
+    }
+
+    if (interactionCloseButtonEl) {
+        interactionCloseButtonEl.addEventListener("click", () => {
+            closeInteractionPanel(true, true);
         });
     }
 
@@ -6385,6 +9099,9 @@ function setupEvents() {
     }
 
     window.addEventListener("beforeunload", () => {
+        persistPlayerStateSnapshot(true);
+        clearAllTemporaryInteractionState(false);
+        clearInteractionPanelState();
         flushWorldSave(true);
         flushCloudEditWrites();
         flushCloudPropWrites();
@@ -6401,6 +9118,7 @@ function animate() {
     requestAnimationFrame(animate);
 
     const delta = Math.min(clock.getDelta(), 1 / 30);
+    state.playerStateSaveTick += delta;
     if (!state.paused) {
         state.chunkTick += delta;
         state.autoSaveTick += delta;
@@ -6436,11 +9154,18 @@ function animate() {
         state.autoSaveTick = 0;
         flushWorldSave();
     }
+    if (state.playerStateSaveTick >= PLAYER_STATE_SAVE_INTERVAL_SECONDS) {
+        persistPlayerStateSnapshot(false);
+    }
 
     updateAvatarPreviewCamera(delta);
+    updateInteractionPanel(delta);
     updateTargetedBlockUi(delta);
-
-    updateHud();
+    state.hudTick -= delta;
+    if (state.hudTick <= 0) {
+        updateHud();
+        state.hudTick = HUD_UPDATE_INTERVAL;
+    }
     renderer.render(scene, camera);
 }
 
@@ -6450,7 +9175,7 @@ function findSpawnPoint() {
 
     for (let y = WORLD_MAX_Y - 1; y >= 1; y -= 1) {
         const id = getBlock(sx, y, sz);
-        if (id !== BLOCK.AIR && id !== BLOCK.WATER) {
+        if (isSolidBlock(id)) {
             return new THREE.Vector3(sx + 0.5, y + 1.01, sz + 0.5);
         }
     }
@@ -6460,6 +9185,7 @@ function findSpawnPoint() {
 
 function init() {
     setBootStatus("Cargando mundo guardado...");
+    logRegistryValidationIssues();
     initDayNightClockFromStorage();
     createSkyDecor();
     setPauseMenuOpen(false);
@@ -6477,9 +9203,13 @@ function init() {
         setBootStatus("Generando mundo por chunks...");
     }
 
-    const spawn = findSpawnPoint();
-    state.playerPosition.copy(spawn);
-    controls.getObject().position.set(spawn.x, spawn.y + EYE_HEIGHT, spawn.z);
+    const savedPlayerState = loadPlayerStateSnapshot();
+    const restoredPlayerState = savedPlayerState ? restoreLocalPlayerStateFromSnapshot(savedPlayerState) : false;
+    if (!restoredPlayerState) {
+        const spawn = findSpawnPoint();
+        state.playerPosition.copy(spawn);
+        controls.getObject().position.set(spawn.x, spawn.y + EYE_HEIGHT, spawn.z);
+    }
     camera.position.set(0, 0, 0);
 
     refreshHotbarUi();
@@ -6495,7 +9225,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E cosechar girasol - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;
