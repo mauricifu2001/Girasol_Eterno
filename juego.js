@@ -308,6 +308,7 @@ scene.background = new THREE.Color(0x9bc7ff);
 scene.fog = new THREE.Fog(0x9bc7ff, 30, 220);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
+camera.rotation.order = "YXZ";
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 const basePixelRatio = Math.min(window.devicePixelRatio, 2);
 renderer.setPixelRatio(basePixelRatio);
@@ -640,6 +641,7 @@ const blockPositionLookup = new Map();
 
 const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
+const cameraYawScratch = new THREE.Vector3();
 const targetHighlight = new THREE.LineSegments(
     new THREE.EdgesGeometry(new THREE.BoxGeometry(BLOCK_HIGHLIGHT_SIZE, BLOCK_HIGHLIGHT_SIZE, BLOCK_HIGHLIGHT_SIZE)),
     new THREE.LineBasicMaterial({ color: 0xffd789, transparent: true, opacity: 0.92 })
@@ -3854,6 +3856,18 @@ function updateRemotePlayers(deltaSeconds) {
     }
 }
 
+function getCameraYawForMultiplayer() {
+    camera.getWorldDirection(cameraYawScratch);
+    cameraYawScratch.y = 0;
+
+    if (cameraYawScratch.lengthSq() < 1e-6) {
+        return Number(controls.getObject().rotation.y) || 0;
+    }
+
+    cameraYawScratch.normalize();
+    return Math.atan2(-cameraYawScratch.x, -cameraYawScratch.z);
+}
+
 function isFirebaseConfigReady(config) {
     if (!config || typeof config !== "object") {
         return false;
@@ -4585,7 +4599,7 @@ function broadcastLocalPlayerState(force = false) {
     }
 
     multiplayer.lastBroadcastMs = now;
-    const cameraHolder = controls.getObject();
+    const cameraYaw = getCameraYawForMultiplayer();
 
     const payload = {
         label: multiplayer.profile.label,
@@ -4594,7 +4608,7 @@ function broadcastLocalPlayerState(force = false) {
         x: Number(state.playerPosition.x.toFixed(3)),
         y: Number(state.playerPosition.y.toFixed(3)),
         z: Number(state.playerPosition.z.toFixed(3)),
-        yaw: Number(cameraHolder.rotation.y.toFixed(4)),
+        yaw: Number(cameraYaw.toFixed(4)),
         pitch: Number(camera.rotation.x.toFixed(4)),
         started: state.worldStarted,
         updatedAt: Date.now()
