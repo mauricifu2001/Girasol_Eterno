@@ -19,6 +19,8 @@ export const PROP_TYPE = Object.freeze({
     PICNIC_TABLE: "picnic_table",
     FOUNTAIN: "fountain",
     CAMPFIRE: "campfire",
+    CAMPFIRE_MEDIUM: "campfire_medium",
+    CAMPFIRE_LARGE: "campfire_large",
     LARGE_CHEST: "large_chest",
     FURNACE: "furnace",
     EDITABLE_SIGN: "editable_sign",
@@ -74,6 +76,7 @@ const RAW_PROP_DEFINITIONS = [
         label: "Silla",
         category: "furniture",
         tags: ["furniture", "seat"],
+        interaction: "sit",
         visual: { tint: "rgba(177, 140, 92, 0.42)" },
         profile: { halfExtents: { x: 0.28, z: 0.28 }, minY: 0, maxY: 0.99, supportY: 0.49 }
     },
@@ -109,6 +112,8 @@ const RAW_PROP_DEFINITIONS = [
         label: "Cofre",
         category: "utility",
         tags: ["storage", "wood"],
+        interaction: "container-open",
+        stateDefaults: { items: ["", "", "", "", "", ""] },
         visual: { tint: "rgba(173, 132, 82, 0.44)" },
         profile: { halfExtents: { x: 0.38, z: 0.28 }, minY: 0, maxY: 0.56, supportY: 0.54 }
     },
@@ -117,6 +122,7 @@ const RAW_PROP_DEFINITIONS = [
         label: "Cama",
         category: "furniture",
         tags: ["rest", "interior"],
+        interaction: "lie",
         visual: { tint: "rgba(196, 138, 146, 0.42)" },
         profile: { halfExtents: { x: 0.46, z: 0.92 }, minY: 0, maxY: 0.54, supportY: 0.52 }
     },
@@ -178,6 +184,8 @@ const RAW_PROP_DEFINITIONS = [
         category: "furniture",
         tags: ["decor", "art"],
         solid: false,
+        interaction: "cycle-variant",
+        stateDefaults: { variant: 0 },
         visual: { tint: "rgba(163, 125, 88, 0.36)" },
         profile: { halfExtents: { x: 0.44, z: 0.08 }, minY: 0, maxY: 0.86, supportY: 0.82 }
     },
@@ -187,6 +195,8 @@ const RAW_PROP_DEFINITIONS = [
         category: "furniture",
         tags: ["decor", "cloth"],
         solid: false,
+        interaction: "cycle-variant",
+        stateDefaults: { variant: 0 },
         visual: { tint: "rgba(206, 155, 176, 0.34)" },
         profile: { halfExtents: { x: 0.46, z: 0.08 }, minY: 0, maxY: 1.04, supportY: 1.02 }
     },
@@ -217,6 +227,7 @@ const RAW_PROP_DEFINITIONS = [
         label: "Banco",
         category: "furniture",
         tags: ["seat", "outdoor"],
+        interaction: "sit",
         visual: { tint: "rgba(161, 120, 82, 0.42)" },
         profile: { halfExtents: { x: 0.52, z: 0.26 }, minY: 0, maxY: 0.88, supportY: 0.86 }
     },
@@ -248,10 +259,34 @@ const RAW_PROP_DEFINITIONS = [
         profile: { halfExtents: { x: 0.3, z: 0.3 }, minY: 0, maxY: 0.52, supportY: 0.5 }
     },
     {
+        id: PROP_TYPE.CAMPFIRE_MEDIUM,
+        label: "Fogata mediana",
+        category: "utility",
+        tags: ["light", "fire", "outdoor", "medium"],
+        emitsLight: true,
+        lightCycle: true,
+        interaction: "light-cycle",
+        visual: { tint: "rgba(214, 132, 82, 0.44)" },
+        profile: { halfExtents: { x: 0.41, z: 0.41 }, minY: 0, maxY: 0.7, supportY: 0.66 }
+    },
+    {
+        id: PROP_TYPE.CAMPFIRE_LARGE,
+        label: "Fogata grande",
+        category: "utility",
+        tags: ["light", "fire", "outdoor", "large"],
+        emitsLight: true,
+        lightCycle: true,
+        interaction: "light-cycle",
+        visual: { tint: "rgba(218, 138, 86, 0.44)" },
+        profile: { halfExtents: { x: 0.54, z: 0.54 }, minY: 0, maxY: 0.92, supportY: 0.86 }
+    },
+    {
         id: PROP_TYPE.LARGE_CHEST,
         label: "Cofre grande",
         category: "utility",
         tags: ["storage", "wood", "large"],
+        interaction: "container-open",
+        stateDefaults: { items: ["", "", "", "", "", "", "", "", "", "", "", ""] },
         visual: { tint: "rgba(181, 136, 92, 0.44)" },
         profile: { halfExtents: { x: 0.56, z: 0.34 }, minY: 0, maxY: 0.64, supportY: 0.6 }
     },
@@ -260,8 +295,8 @@ const RAW_PROP_DEFINITIONS = [
         label: "Horno",
         category: "utility",
         tags: ["craft", "stone", "interactive"],
-        interaction: "toggle-state",
-        stateDefaults: { lit: false },
+        interaction: "furnace-open",
+        stateDefaults: { lit: false, input: "", fuel: 0 },
         visual: { tint: "rgba(127, 128, 136, 0.44)" },
         profile: { halfExtents: { x: 0.34, z: 0.34 }, minY: 0, maxY: 0.56, supportY: 0.54 }
     },
@@ -280,8 +315,8 @@ const RAW_PROP_DEFINITIONS = [
         label: "Jukebox",
         category: "utility",
         tags: ["interactive", "music"],
-        interaction: "toggle-jukebox",
-        stateDefaults: { playing: false, track: 0 },
+        interaction: "jukebox-control",
+        stateDefaults: { playing: false, track: 0, source: "local-playlist-v1" },
         visual: { tint: "rgba(128, 88, 64, 0.44)" },
         profile: { halfExtents: { x: 0.34, z: 0.34 }, minY: 0, maxY: 0.62, supportY: 0.6 }
     },

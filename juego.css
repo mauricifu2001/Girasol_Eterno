@@ -273,6 +273,97 @@ body {
     gap: 9px;
 }
 
+#interactionPanel {
+    position: fixed;
+    left: 50%;
+    top: 96px;
+    transform: translateX(-50%);
+    z-index: 34;
+    width: min(92vw, 460px);
+    max-height: min(74vh, 520px);
+    overflow: auto;
+    padding: 10px;
+}
+
+.interaction-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.interaction-head .title {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.74rem;
+    color: #f4cf85;
+}
+
+#interactionCloseButton {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(17, 20, 28, 0.82);
+    color: #efe9db;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.72rem;
+}
+
+.interaction-note {
+    margin: 7px 0 8px;
+    font-size: 0.68rem;
+    color: #b7e1ff;
+}
+
+.interaction-body {
+    display: grid;
+    gap: 8px;
+}
+
+.interaction-body p {
+    margin: 0;
+    font-size: 0.72rem;
+    color: #f1ead7;
+}
+
+.interaction-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.interaction-action {
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.05);
+    color: #efe9db;
+    padding: 7px 10px;
+    cursor: pointer;
+    font-size: 0.72rem;
+}
+
+.interaction-slots {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 8px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.interaction-slot {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 6px 6px 5px;
+    min-height: 34px;
+    font-size: 0.64rem;
+    color: #dce8f5;
+    background: rgba(4, 8, 14, 0.42);
+}
+
 .inventory-section {
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 10px;
@@ -601,8 +692,18 @@ body {
         max-height: min(70vh, 500px);
     }
 
+    #interactionPanel {
+        top: 92px;
+        width: min(94vw, 420px);
+        max-height: min(70vh, 500px);
+    }
+
     .inventory-section-grid {
         grid-template-columns: 1fr;
+    }
+
+    .interaction-slots {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
     }
 
     #toastContainer {

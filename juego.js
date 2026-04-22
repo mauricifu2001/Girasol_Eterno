@@ -160,6 +160,9 @@ const LAMP_SHADOW_REFRESH_SECONDS = 0.45;
 const LAMP_SHADOW_MIN_LEVEL = 3;
 const SIGN_TEXT_MAX_LENGTH = 52;
 const JUKEBOX_TRACK_COUNT = 4;
+const INTERACTION_KEY = "KeyE";
+const INTERACTION_EXIT_KEY = "ShiftLeft";
+const INTERACTION_MAX_DISTANCE = 3.2;
 const SKY_SHADOW_REFRESH_SECONDS = 0.82;
 const PROP_ROTATION_STEP = Math.PI * 0.5;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
@@ -215,6 +218,11 @@ const pointerSensitivitySliderEl = document.getElementById("pointerSensitivitySl
 const pointerSensitivityValueEl = document.getElementById("pointerSensitivityValue");
 const tutorialPanelEl = document.getElementById("tutorialPanel");
 const tutorialCloseButton = document.getElementById("tutorialCloseButton");
+const interactionPanelEl = document.getElementById("interactionPanel");
+const interactionPanelTitleEl = document.getElementById("interactionPanelTitle");
+const interactionPanelHintEl = document.getElementById("interactionPanelHint");
+const interactionPanelBodyEl = document.getElementById("interactionPanelBody");
+const interactionCloseButtonEl = document.getElementById("interactionCloseButton");
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
@@ -820,7 +828,8 @@ const state = {
     lastForward: new THREE.Vector3(0, 0, -1),
     autoSaveTick: 0,
     targetUiTick: 0,
-    hudTick: 0
+    hudTick: 0,
+    interactionPanelOpen: false
 };
 
 const multiplayer = {
@@ -914,6 +923,18 @@ const floraState = {
     nextId: 1,
     spawnTimer: 3,
     lastHarvestAt: 0
+};
+
+const interactionState = {
+    pose: null,
+    localUsing: null,
+    panelPropId: "",
+    panelMode: "",
+    panelNeedsRender: false,
+    panelRefreshTick: 0,
+    remoteUsingByProp: new Map(),
+    previousRemoteUsingByProp: new Map(),
+    localAudioContext: null
 };
 
 let draggedInventoryItemId = "";
@@ -1247,6 +1268,9 @@ function setAvatarPreviewOpen(open, showFeedback = false) {
     state.avatarPreviewOpen = next;
 
     if (state.avatarPreviewOpen) {
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
         if (state.inventoryOpen) {
             setInventoryOpen(false);
         }
@@ -1351,6 +1375,9 @@ function setPauseMenuOpen(open) {
     }
     if (open && state.inventoryOpen) {
         setInventoryOpen(false);
+    }
+    if (open && state.interactionPanelOpen) {
+        closeInteractionPanel(false, true);
     }
 
     state.paused = Boolean(open);
@@ -1469,23 +1496,34 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     if (propHit && propDistance <= blockDistance + 0.001) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
-            const definition = getPropDefinition(propHit.placed.propType);
-            const interaction = definition?.interaction || "";
-            if (interaction === "light-cycle" && isLightPropType(propHit.placed.propType)) {
-                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (click der cambiar luz, click izq quitar)`;
-            } else if (interaction === "edit-text") {
+            const config = getPropInteractionConfig(propHit.placed.propType);
+            const kind = config?.kind || INTERACTION_KIND.NONE;
+            const canInteract = propDistance <= INTERACTION_MAX_DISTANCE + 0.001;
+
+            if (kind === INTERACTION_KIND.LIGHT_CYCLE && isLightPropType(propHit.placed.propType)) {
+                const actionHint = canInteract ? "E cambiar intensidad" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (${actionHint} | click izq quitar)`;
+            } else if (kind === INTERACTION_KIND.EDIT_TEXT) {
                 const textPreview = sanitizeEditableSignText(propHit.placed.state?.text || "").slice(0, 26);
-                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)}: "${textPreview}" (click der editar, click izq quitar)`;
-            } else if (interaction === "toggle-jukebox") {
+                const actionHint = canInteract ? "E editar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)}: "${textPreview}" (${actionHint} | click izq quitar)`;
+            } else if (kind === INTERACTION_KIND.JUKEBOX_CONTROL) {
                 const playing = Boolean(propHit.placed.state?.playing);
                 const track = sanitizeJukeboxTrack(propHit.placed.state?.track);
                 const modeLabel = playing ? `Reproduciendo pista ${track || 1}` : "Detenida";
-                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (click der alternar, click izq quitar)`;
-            } else if (interaction === "toggle-state" && propHit.placed.propType === PROP_TYPE.FURNACE) {
+                const actionHint = canInteract ? "E controlar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (${actionHint} | click izq quitar)`;
+            } else if (kind === INTERACTION_KIND.FURNACE_OPEN) {
                 const lit = Boolean(propHit.placed.state?.lit);
-                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${lit ? "Encendido" : "Apagado"} (click der alternar, click izq quitar)`;
+                const actionHint = canInteract ? "E abrir" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${lit ? "Encendido" : "Apagado"} (${actionHint} | click izq quitar)`;
+            } else if (kind !== INTERACTION_KIND.NONE) {
+                const hint = canInteract
+                    ? (config?.hudHint || "E interactuar")
+                    : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} (${hint} | click izq quitar)`;
             } else {
-                targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq para quitar)`;
+                targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq quitar)`;
             }
             targetBlockLabelEl.classList.remove("hidden");
         }
@@ -2141,6 +2179,308 @@ function getPropProfile(propType) {
     return getPropDefinition(propType)?.profile || fallbackProfile;
 }
 
+const INTERACTION_KIND = Object.freeze({
+    NONE: "none",
+    SIT: "sit",
+    LIE: "lie",
+    LIGHT_CYCLE: "light-cycle",
+    EDIT_TEXT: "edit-text",
+    CONTAINER_OPEN: "container-open",
+    FURNACE_OPEN: "furnace-open",
+    JUKEBOX_CONTROL: "jukebox-control",
+    CYCLE_VARIANT: "cycle-variant",
+    TOGGLE_STATE: "toggle-state"
+});
+
+const INTERACTION_USAGE_KIND = Object.freeze({
+    CONTAINER: "container",
+    FURNACE: "furnace",
+    JUKEBOX: "jukebox",
+    SIGN: "sign"
+});
+
+const VARIANT_MAX_BY_PROP = Object.freeze({
+    [PROP_TYPE.PAINTING]: 3,
+    [PROP_TYPE.CURTAINS]: 2
+});
+
+const PROP_INTERACTION_CONFIG = Object.freeze({
+    [PROP_TYPE.CHAIR]: Object.freeze({
+        kind: INTERACTION_KIND.SIT,
+        hudHint: "E sentarte | Shift levantarte",
+        temporarySync: ["pose"]
+    }),
+    [PROP_TYPE.BENCH]: Object.freeze({
+        kind: INTERACTION_KIND.SIT,
+        hudHint: "E sentarte | Shift levantarte",
+        temporarySync: ["pose"]
+    }),
+    [PROP_TYPE.BED]: Object.freeze({
+        kind: INTERACTION_KIND.LIE,
+        hudHint: "E acostarte | Shift levantarte",
+        temporarySync: ["pose"]
+    }),
+    [PROP_TYPE.LAMP]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.LANTERN]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.WALL_LANTERN]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.LIGHT_POST]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.CAMPFIRE]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.CAMPFIRE_MEDIUM]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.CAMPFIRE_LARGE]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.EDITABLE_SIGN]: Object.freeze({
+        kind: INTERACTION_KIND.EDIT_TEXT,
+        hudHint: "E editar texto",
+        persistentSync: ["state.text"],
+        usageKind: INTERACTION_USAGE_KIND.SIGN
+    }),
+    [PROP_TYPE.JUKEBOX]: Object.freeze({
+        kind: INTERACTION_KIND.JUKEBOX_CONTROL,
+        hudHint: "E abrir controles jukebox",
+        persistentSync: ["state.playing", "state.track", "state.source"],
+        usageKind: INTERACTION_USAGE_KIND.JUKEBOX
+    }),
+    [PROP_TYPE.CHEST]: Object.freeze({
+        kind: INTERACTION_KIND.CONTAINER_OPEN,
+        hudHint: "E abrir cofre",
+        persistentSync: ["state.items"],
+        temporarySync: ["using"],
+        usageKind: INTERACTION_USAGE_KIND.CONTAINER
+    }),
+    [PROP_TYPE.LARGE_CHEST]: Object.freeze({
+        kind: INTERACTION_KIND.CONTAINER_OPEN,
+        hudHint: "E abrir cofre grande",
+        persistentSync: ["state.items"],
+        temporarySync: ["using"],
+        usageKind: INTERACTION_USAGE_KIND.CONTAINER
+    }),
+    [PROP_TYPE.FURNACE]: Object.freeze({
+        kind: INTERACTION_KIND.FURNACE_OPEN,
+        hudHint: "E abrir horno",
+        persistentSync: ["state.input", "state.lit", "state.fuel"],
+        temporarySync: ["using"],
+        usageKind: INTERACTION_USAGE_KIND.FURNACE
+    }),
+    [PROP_TYPE.PAINTING]: Object.freeze({
+        kind: INTERACTION_KIND.CYCLE_VARIANT,
+        hudHint: "E cambiar variante",
+        persistentSync: ["state.variant"]
+    }),
+    [PROP_TYPE.CURTAINS]: Object.freeze({
+        kind: INTERACTION_KIND.CYCLE_VARIANT,
+        hudHint: "E cambiar variante",
+        persistentSync: ["state.variant"]
+    })
+});
+
+function getPropInteractionConfig(propType) {
+    return PROP_INTERACTION_CONFIG[propType] || null;
+}
+
+function isInteractionDistanceValid(distance) {
+    const numeric = Number(distance);
+    if (!Number.isFinite(numeric)) {
+        return false;
+    }
+    return numeric <= INTERACTION_MAX_DISTANCE + 0.001;
+}
+
+function setLocalPoseActivity(propId, mode, forceBroadcast = true) {
+    const nextPropId = String(propId || "");
+    const nextMode = normalizePoseMode(mode);
+    if (!nextPropId || !nextMode) {
+        clearLocalPoseActivity(forceBroadcast);
+        return;
+    }
+
+    if (
+        interactionState.pose
+        && interactionState.pose.propId === nextPropId
+        && interactionState.pose.mode === nextMode
+    ) {
+        return;
+    }
+
+    interactionState.pose = {
+        propId: nextPropId,
+        mode: nextMode
+    };
+    state.keyDown.clear();
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function clearLocalPoseActivity(forceBroadcast = true) {
+    if (!interactionState.pose) {
+        return;
+    }
+    interactionState.pose = null;
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function setLocalUsingActivity(propId, usageKind, forceBroadcast = true) {
+    const nextPropId = String(propId || "");
+    const nextUsageKind = String(usageKind || "");
+    if (!nextPropId || !nextUsageKind) {
+        clearLocalUsingActivity(forceBroadcast);
+        return;
+    }
+
+    const previous = interactionState.localUsing;
+    if (
+        previous
+        && previous.propId === nextPropId
+        && previous.usageKind === nextUsageKind
+    ) {
+        return;
+    }
+
+    interactionState.localUsing = {
+        propId: nextPropId,
+        usageKind: nextUsageKind
+    };
+
+    if (previous?.propId && previous.propId !== nextPropId) {
+        applyPropVisualStateById(previous.propId);
+    }
+    applyPropVisualStateById(nextPropId);
+
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function clearLocalUsingActivity(forceBroadcast = true) {
+    const previous = interactionState.localUsing;
+    if (!previous) {
+        return;
+    }
+
+    interactionState.localUsing = null;
+    if (previous.propId) {
+        applyPropVisualStateById(previous.propId);
+    }
+
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function clearAllTemporaryInteractionState(forceBroadcast = true) {
+    const hadPose = Boolean(interactionState.pose);
+    const hadUsing = Boolean(interactionState.localUsing);
+    if (!hadPose && !hadUsing) {
+        return;
+    }
+
+    interactionState.pose = null;
+    const previousUsing = interactionState.localUsing;
+    interactionState.localUsing = null;
+    if (previousUsing?.propId) {
+        applyPropVisualStateById(previousUsing.propId);
+    }
+
+    if (forceBroadcast) {
+        broadcastLocalPlayerState(true);
+    }
+}
+
+function sanitizeVariantIndex(propType, value) {
+    const max = Number(VARIANT_MAX_BY_PROP[propType]);
+    if (!Number.isFinite(max) || max < 0) {
+        return 0;
+    }
+    const numeric = Math.floor(Number(value));
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return 0;
+    }
+    return Math.min(numeric, max);
+}
+
+function sanitizeContainerItems(rawValue, slotCount = 0) {
+    const normalizedCount = Math.max(0, Math.floor(Number(slotCount) || 0));
+    const incoming = Array.isArray(rawValue) ? rawValue : [];
+    const next = [];
+    for (let i = 0; i < normalizedCount; i += 1) {
+        const id = String(incoming[i] || "");
+        next.push(INVENTORY_ITEM_BY_ID.has(id) ? id : "");
+    }
+    return next;
+}
+
+function areStringArraysEqual(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) {
+        return false;
+    }
+    for (let i = 0; i < a.length; i += 1) {
+        if (String(a[i] || "") !== String(b[i] || "")) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function getTemporaryUsageEntry(propId) {
+    const key = String(propId || "");
+    if (!key) {
+        return null;
+    }
+    const remote = interactionState.remoteUsingByProp.get(key);
+    const localMatches = interactionState.localUsing?.propId === key
+        ? interactionState.localUsing
+        : null;
+    return {
+        total: (remote?.count || 0) + (localMatches ? 1 : 0),
+        hasLocal: Boolean(localMatches),
+        remoteCount: remote?.count || 0,
+        usageKinds: new Set([
+            ...(remote?.usageKinds ? Array.from(remote.usageKinds) : []),
+            ...(localMatches?.usageKind ? [localMatches.usageKind] : [])
+        ])
+    };
+}
+
+function isPropBeingTemporarilyUsed(propId, usageKind = "") {
+    const usage = getTemporaryUsageEntry(propId);
+    if (!usage) {
+        return false;
+    }
+    if (!usageKind) {
+        return usage.total > 0;
+    }
+    return usage.usageKinds.has(String(usageKind));
+}
+
 function getRotatedPropHalfExtents(propType, yaw = 0) {
     const profile = getPropProfile(propType);
     const base = profile.halfExtents || { x: 0.25, z: 0.25 };
@@ -2477,6 +2817,26 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
             normalized[key] = sanitizeJukeboxTrack(incoming ?? defaultValue);
             continue;
         }
+        if (key === "items") {
+            const defaultSize = Array.isArray(defaultValue) ? defaultValue.length : 0;
+            const incomingItems = Array.isArray(incoming) ? incoming : defaultValue;
+            normalized[key] = sanitizeContainerItems(incomingItems, defaultSize);
+            continue;
+        }
+        if (key === "variant") {
+            normalized[key] = sanitizeVariantIndex(propType, incoming ?? defaultValue);
+            continue;
+        }
+        if (key === "fuel") {
+            const numericFuel = Number(incoming ?? defaultValue);
+            normalized[key] = THREE.MathUtils.clamp(Number.isFinite(numericFuel) ? numericFuel : 0, 0, 100);
+            continue;
+        }
+        if (key === "source") {
+            const sourceText = String((incoming ?? defaultValue) || "local-playlist-v1");
+            normalized[key] = sourceText || "local-playlist-v1";
+            continue;
+        }
 
         if (typeof defaultValue === "boolean") {
             normalized[key] = incoming === undefined ? Boolean(defaultValue) : Boolean(incoming);
@@ -2518,6 +2878,12 @@ function arePropStatesEqual(a, b) {
     }
 
     for (const key of leftKeys) {
+        if (Array.isArray(left[key]) || Array.isArray(right[key])) {
+            if (!areStringArraysEqual(left[key], right[key])) {
+                return false;
+            }
+            continue;
+        }
         if (left[key] !== right[key]) {
             return false;
         }
@@ -2606,6 +2972,16 @@ function applyPropSharedVisualState(placed) {
             ledMaterial.emissive.setHex(ledColor);
             ledMaterial.emissiveIntensity = playing ? 0.68 : 0;
         }
+
+        const usage = getTemporaryUsageEntry(placed.id);
+        if (usage && usage.total > 0 && !playing) {
+            const ledMaterialMuted = placed.node.userData?.jukeboxLedMaterial || null;
+            if (ledMaterialMuted) {
+                const ledColor = Number(ledMaterialMuted.userData?.jukeboxLedEmissiveColor ?? 0x80beff);
+                ledMaterialMuted.emissive.setHex(ledColor);
+                ledMaterialMuted.emissiveIntensity = 0.22;
+            }
+        }
         return;
     }
 
@@ -2632,7 +3008,60 @@ function applyPropSharedVisualState(placed) {
             furnaceLight.distance = lit ? 4.6 : 0;
             furnaceLight.visible = lit;
         }
+        return;
     }
+
+    if (propType === PROP_TYPE.CHEST || propType === PROP_TYPE.LARGE_CHEST) {
+        const lidPivot = placed.node.userData?.containerLidPivot || null;
+        if (lidPivot) {
+            const isOpen = isPropBeingTemporarilyUsed(placed.id, INTERACTION_USAGE_KIND.CONTAINER);
+            lidPivot.rotation.x = isOpen ? -1.02 : 0;
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.PAINTING) {
+        const variant = sanitizeVariantIndex(propType, placed.state?.variant);
+        if (!placed.state || placed.state.variant !== variant) {
+            placed.state = {
+                ...(placed.state || {}),
+                variant
+            };
+        }
+        const canvasMaterial = placed.node.userData?.paintingCanvasMaterial || null;
+        if (canvasMaterial) {
+            const colors = [0x7e9bc2, 0xc27e8f, 0x8ab67e, 0xd6b779];
+            canvasMaterial.color.setHex(colors[variant] || colors[0]);
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.CURTAINS) {
+        const variant = sanitizeVariantIndex(propType, placed.state?.variant);
+        if (!placed.state || placed.state.variant !== variant) {
+            placed.state = {
+                ...(placed.state || {}),
+                variant
+            };
+        }
+        const curtainsMaterial = placed.node.userData?.curtainsFabricMaterial || null;
+        if (curtainsMaterial) {
+            const colors = [0xc58aa5, 0x8aa5c5, 0xbfd1a2];
+            curtainsMaterial.color.setHex(colors[variant] || colors[0]);
+        }
+    }
+}
+
+function applyPropVisualStateById(propId) {
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+    const placed = placedProps.get(id);
+    if (!placed) {
+        return;
+    }
+    applyPropSharedVisualState(placed);
 }
 
 function normalizeYawRadians(value) {
@@ -2776,9 +3205,14 @@ function buildPlanterNode(root) {
 
 function buildChestNode(root) {
     root.add(createDetailPart({ x: 0.78, y: 0.34, z: 0.56 }, { x: 0, y: 0.17, z: 0 }, 0x8e613a));
-    root.add(createDetailPart({ x: 0.8, y: 0.18, z: 0.58 }, { x: 0, y: 0.43, z: 0 }, 0xaa7a4a));
+    const lidPivot = new THREE.Group();
+    lidPivot.position.set(0, 0.35, -0.26);
+    lidPivot.add(createDetailPart({ x: 0.8, y: 0.16, z: 0.58 }, { x: 0, y: 0.08, z: 0.29 }, 0xaa7a4a));
+    lidPivot.add(createDetailPart({ x: 0.82, y: 0.02, z: 0.02 }, { x: 0, y: 0.02, z: 0.57 }, 0x6c482a));
+    root.add(lidPivot);
     root.add(createDetailPart({ x: 0.1, y: 0.16, z: 0.06 }, { x: 0, y: 0.34, z: 0.31 }, 0xccb57a));
     root.add(createDetailPart({ x: 0.82, y: 0.02, z: 0.02 }, { x: 0, y: 0.25, z: 0.29 }, 0x6c482a));
+    root.userData.containerLidPivot = lidPivot;
 }
 
 function buildBedNode(root) {
@@ -2873,18 +3307,30 @@ function buildRugNode(root) {
 
 function buildPaintingNode(root) {
     root.add(createDetailPart({ x: 0.88, y: 0.62, z: 0.06 }, { x: 0, y: 0.72, z: 0 }, 0x6f4b31));
-    root.add(createDetailPart({ x: 0.74, y: 0.48, z: 0.04 }, { x: 0, y: 0.72, z: 0.02 }, 0x7e9bc2));
+    const paintingMaterial = createDisposableStandardMaterial({
+        color: 0x7e9bc2,
+        roughness: 0.74,
+        metalness: 0.02
+    });
+    root.add(createDynamicPart({ x: 0.74, y: 0.48, z: 0.04 }, { x: 0, y: 0.72, z: 0.02 }, paintingMaterial));
     root.add(createDetailPart({ x: 0.7, y: 0.02, z: 0.02 }, { x: 0, y: 0.87, z: 0.02 }, 0xe4d384));
     root.add(createDetailPart({ x: 0.06, y: 0.72, z: 0.06 }, { x: -0.28, y: 0.36, z: -0.02 }, 0x6d4b32));
     root.add(createDetailPart({ x: 0.06, y: 0.72, z: 0.06 }, { x: 0.28, y: 0.36, z: -0.02 }, 0x6d4b32));
+    root.userData.paintingCanvasMaterial = paintingMaterial;
 }
 
 function buildCurtainsNode(root) {
     root.add(createDetailPart({ x: 0.94, y: 0.06, z: 0.1 }, { x: 0, y: 1.0, z: 0 }, 0x7c4f66));
-    root.add(createDetailPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: -0.22, y: 0.54, z: 0 }, 0xc58aa5));
-    root.add(createDetailPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: 0.22, y: 0.54, z: 0 }, 0xc58aa5));
+    const curtainsMaterial = createDisposableStandardMaterial({
+        color: 0xc58aa5,
+        roughness: 0.86,
+        metalness: 0
+    });
+    root.add(createDynamicPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: -0.22, y: 0.54, z: 0 }, curtainsMaterial));
+    root.add(createDynamicPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: 0.22, y: 0.54, z: 0 }, curtainsMaterial));
     root.add(createDetailPart({ x: 0.04, y: 0.88, z: 0.09 }, { x: -0.39, y: 0.54, z: 0 }, 0xe7cad8));
     root.add(createDetailPart({ x: 0.04, y: 0.88, z: 0.09 }, { x: 0.39, y: 0.54, z: 0 }, 0xe7cad8));
+    root.userData.curtainsFabricMaterial = curtainsMaterial;
 }
 
 function buildWallLanternNode(root) {
@@ -2959,11 +3405,26 @@ function buildCampfireNode(root) {
     });
 }
 
+function buildCampfireMediumNode(root) {
+    buildCampfireNode(root);
+    root.scale.setScalar(1.35);
+}
+
+function buildCampfireLargeNode(root) {
+    buildCampfireNode(root);
+    root.scale.setScalar(1.75);
+}
+
 function buildLargeChestNode(root) {
     root.add(createDetailPart({ x: 1.08, y: 0.38, z: 0.64 }, { x: 0, y: 0.19, z: 0 }, 0x8f623a));
-    root.add(createDetailPart({ x: 1.1, y: 0.2, z: 0.66 }, { x: 0, y: 0.49, z: 0 }, 0xab7c4c));
+    const lidPivot = new THREE.Group();
+    lidPivot.position.set(0, 0.38, -0.31);
+    lidPivot.add(createDetailPart({ x: 1.1, y: 0.2, z: 0.66 }, { x: 0, y: 0.1, z: 0.33 }, 0xab7c4c));
+    lidPivot.add(createDetailPart({ x: 1.12, y: 0.02, z: 0.02 }, { x: 0, y: 0.03, z: 0.65 }, 0x69472a));
+    root.add(lidPivot);
     root.add(createDetailPart({ x: 0.12, y: 0.18, z: 0.08 }, { x: 0, y: 0.38, z: 0.35 }, 0xd1bc84));
     root.add(createDetailPart({ x: 1.12, y: 0.02, z: 0.02 }, { x: 0, y: 0.28, z: 0.33 }, 0x69472a));
+    root.userData.containerLidPivot = lidPivot;
 }
 
 function buildFurnaceNode(root) {
@@ -3110,6 +3571,8 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.PICNIC_TABLE]: buildPicnicTableNode,
     [PROP_TYPE.FOUNTAIN]: buildFountainNode,
     [PROP_TYPE.CAMPFIRE]: buildCampfireNode,
+    [PROP_TYPE.CAMPFIRE_MEDIUM]: buildCampfireMediumNode,
+    [PROP_TYPE.CAMPFIRE_LARGE]: buildCampfireLargeNode,
     [PROP_TYPE.LARGE_CHEST]: buildLargeChestNode,
     [PROP_TYPE.FURNACE]: buildFurnaceNode,
     [PROP_TYPE.EDITABLE_SIGN]: buildEditableSignNode,
@@ -3408,6 +3871,9 @@ function addPlacedPropEntry(entry, origin = "local") {
                 existing.lampLevel = 0;
             }
             applyPropSharedVisualState(existing);
+            if (state.interactionPanelOpen && interactionState.panelPropId === id) {
+                markInteractionPanelDirty();
+            }
 
             bumpNextPropIdFromValue(id);
             markLampShadowsDirty();
@@ -3448,6 +3914,9 @@ function addPlacedPropEntry(entry, origin = "local") {
         applyLampVisualState(placedEntry, placedEntry.lampLevel, false);
     }
     applyPropSharedVisualState(placedEntry);
+    if (state.interactionPanelOpen && interactionState.panelPropId === id) {
+        markInteractionPanelDirty();
+    }
 
     bumpNextPropIdFromValue(id);
     markLampShadowsDirty();
@@ -3469,6 +3938,16 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
     const placed = placedProps.get(id);
     if (!placed) {
         return false;
+    }
+
+    if (interactionState.panelPropId === id) {
+        closeInteractionPanel(false, true);
+    }
+    if (interactionState.localUsing?.propId === id) {
+        clearLocalUsingActivity(true);
+    }
+    if (interactionState.pose?.propId === id) {
+        exitLocalPose(false);
     }
 
     const supportY = getPlacedPropSupportY(placed);
@@ -4790,6 +5269,138 @@ function ensureLocalAvatarPreviewModel() {
     localAvatarPreviewState.modelKey = modelKey;
 }
 
+function normalizePoseMode(value) {
+    const mode = String(value || "").toLowerCase();
+    if (mode === "sit" || mode === "lie") {
+        return mode;
+    }
+    return "";
+}
+
+function normalizePlayerActivityPayload(rawActivity) {
+    if (!rawActivity || typeof rawActivity !== "object") {
+        return null;
+    }
+
+    const type = String(rawActivity.type || "").toLowerCase();
+    const propId = String(rawActivity.propId || "");
+    if (!propId) {
+        return null;
+    }
+
+    if (type === "pose") {
+        const pose = normalizePoseMode(rawActivity.pose);
+        if (!pose) {
+            return null;
+        }
+        return {
+            type: "pose",
+            propId,
+            pose
+        };
+    }
+
+    if (type === "using") {
+        const usageKind = String(rawActivity.usageKind || "").toLowerCase();
+        if (!usageKind) {
+            return null;
+        }
+        return {
+            type: "using",
+            propId,
+            usageKind
+        };
+    }
+
+    return null;
+}
+
+function arePlayerActivitiesEqual(a, b) {
+    if (!a && !b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    return (
+        a.type === b.type
+        && a.propId === b.propId
+        && a.pose === b.pose
+        && a.usageKind === b.usageKind
+    );
+}
+
+function getLocalTemporaryActivityPayload() {
+    if (interactionState.pose) {
+        return {
+            type: "pose",
+            propId: String(interactionState.pose.propId || ""),
+            pose: normalizePoseMode(interactionState.pose.mode)
+        };
+    }
+
+    if (interactionState.localUsing) {
+        return {
+            type: "using",
+            propId: String(interactionState.localUsing.propId || ""),
+            usageKind: String(interactionState.localUsing.usageKind || "")
+        };
+    }
+
+    return null;
+}
+
+function applyAvatarPose(avatarRoot, poseMode = "") {
+    if (!avatarRoot) {
+        return;
+    }
+
+    const mode = normalizePoseMode(poseMode);
+    const rig = avatarRoot.userData?.walkRig || null;
+    avatarRoot.userData.activePose = mode || "";
+    avatarRoot.rotation.x = 0;
+    avatarRoot.position.y = 0;
+
+    if (rig) {
+        rig.leftLegPivot.rotation.x = 0;
+        rig.rightLegPivot.rotation.x = 0;
+        rig.leftArmPivot.rotation.x = 0;
+        rig.rightArmPivot.rotation.x = 0;
+        if (rig.body) {
+            rig.body.position.y = rig.bodyBaseY;
+        }
+        if (rig.head) {
+            rig.head.position.y = rig.headBaseY;
+        }
+    }
+
+    if (!mode || !rig) {
+        return;
+    }
+
+    if (mode === "sit") {
+        rig.leftLegPivot.rotation.x = -1.28;
+        rig.rightLegPivot.rotation.x = -1.28;
+        rig.leftArmPivot.rotation.x = 0.16;
+        rig.rightArmPivot.rotation.x = 0.16;
+        if (rig.body) {
+            rig.body.position.y = rig.bodyBaseY - 0.15;
+        }
+        if (rig.head) {
+            rig.head.position.y = rig.headBaseY - 0.15;
+        }
+        avatarRoot.position.y = -0.34;
+        return;
+    }
+
+    if (mode === "lie") {
+        rig.leftArmPivot.rotation.x = -0.22;
+        rig.rightArmPivot.rotation.x = -0.22;
+        avatarRoot.rotation.x = -Math.PI * 0.5;
+        avatarRoot.position.y = -0.62;
+    }
+}
+
 function createRemotePlayerNode(playerId, payload) {
     const group = new THREE.Group();
     const avatarModel = createBlockyAvatar(payload || {});
@@ -4817,6 +5428,7 @@ function createRemotePlayerNode(playerId, payload) {
         targetPosition: group.position.clone(),
         targetYaw: group.rotation.y,
         nameTag,
+        activity: normalizePlayerActivityPayload(payload?.activity),
         lastSeenAt: Date.now(),
         moveSpeed: 0
     };
@@ -4839,7 +5451,59 @@ function upsertRemotePlayer(playerId, payload) {
         Number(payload.z) || 0
     );
     node.targetYaw = resolveRemoteAvatarYaw(payload.yaw);
+    node.activity = normalizePlayerActivityPayload(payload?.activity);
     node.lastSeenAt = Date.now();
+}
+
+function areUsageEntriesEquivalent(a, b) {
+    if (!a && !b) {
+        return true;
+    }
+    if (!a || !b) {
+        return false;
+    }
+    if ((a.count || 0) !== (b.count || 0)) {
+        return false;
+    }
+    const leftKinds = Array.from(a.usageKinds || []).sort().join("|");
+    const rightKinds = Array.from(b.usageKinds || []).sort().join("|");
+    return leftKinds === rightKinds;
+}
+
+function rebuildRemoteUsingByProp() {
+    const next = new Map();
+    for (const node of multiplayer.remotePlayers.values()) {
+        const activity = node?.activity;
+        if (!activity || activity.type !== "using") {
+            continue;
+        }
+
+        const propId = String(activity.propId || "");
+        if (!propId) {
+            continue;
+        }
+        let entry = next.get(propId);
+        if (!entry) {
+            entry = { count: 0, usageKinds: new Set() };
+            next.set(propId, entry);
+        }
+        entry.count += 1;
+        entry.usageKinds.add(String(activity.usageKind || ""));
+    }
+
+    const keys = new Set([
+        ...Array.from(interactionState.remoteUsingByProp.keys()),
+        ...Array.from(next.keys())
+    ]);
+    for (const key of keys) {
+        const previous = interactionState.remoteUsingByProp.get(key) || null;
+        const current = next.get(key) || null;
+        if (!areUsageEntriesEquivalent(previous, current)) {
+            applyPropVisualStateById(key);
+        }
+    }
+
+    interactionState.remoteUsingByProp = next;
 }
 
 function removeRemotePlayer(playerId) {
@@ -4875,9 +5539,14 @@ function updateRemotePlayers(deltaSeconds) {
         while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
         node.group.rotation.y += yawDelta * lerpFactor;
 
+        const poseMode = node.activity?.type === "pose" ? node.activity.pose : "";
+        applyAvatarPose(node.avatarModel, poseMode);
+
         const distance = Math.hypot(node.group.position.x - prevX, node.group.position.z - prevZ);
-        node.moveSpeed = distance / Math.max(deltaSeconds, 1e-4);
-        updateAvatarWalkAnimation(node.avatarModel, node.moveSpeed, deltaSeconds);
+        node.moveSpeed = poseMode ? 0 : (distance / Math.max(deltaSeconds, 1e-4));
+        if (!poseMode) {
+            updateAvatarWalkAnimation(node.avatarModel, node.moveSpeed, deltaSeconds);
+        }
     }
 }
 
@@ -5602,6 +6271,8 @@ async function setupRealtimeMultiplayer() {
                 }
             }
 
+            rebuildRemoteUsingByProp();
+
             const totalOnline = Object.keys(payload).length;
             setOnlineStatus(`Sala ${multiplayer.roomId}: ${totalOnline} conectado(s)`);
         });
@@ -5641,6 +6312,7 @@ function broadcastLocalPlayerState(force = false) {
     const yaw = Number(cameraYaw.toFixed(4));
     const pitch = Number(camera.rotation.x.toFixed(4));
     const sentAt = Date.now();
+    const activity = getLocalTemporaryActivityPayload();
 
     if (!force && multiplayer.lastSentState) {
         const previous = multiplayer.lastSentState;
@@ -5649,9 +6321,10 @@ function broadcastLocalPlayerState(force = false) {
             || Math.abs(z - previous.z) > 0.01;
         const turned = getAngularDistanceRadians(yaw, previous.yaw) > 0.012
             || Math.abs(pitch - previous.pitch) > 0.012;
+        const activityChanged = !arePlayerActivitiesEqual(previous.activity, activity);
         const heartbeatDue = sentAt - previous.sentAt >= multiplayer.idleHeartbeatMs;
 
-        if (!moved && !turned && !heartbeatDue) {
+        if (!moved && !turned && !activityChanged && !heartbeatDue) {
             return;
         }
     }
@@ -5665,6 +6338,7 @@ function broadcastLocalPlayerState(force = false) {
         z,
         yaw,
         pitch,
+        activity,
         started: state.worldStarted,
         updatedAt: sentAt
     };
@@ -5675,6 +6349,7 @@ function broadcastLocalPlayerState(force = false) {
         z,
         yaw,
         pitch,
+        activity,
         sentAt
     };
 
@@ -6534,7 +7209,88 @@ function getForwardRightVectors() {
     return forwardRightResult;
 }
 
+function getPoseAnchorFromProp(placed, poseMode) {
+    const yaw = Number(placed?.yaw) || 0;
+    if (poseMode === "lie") {
+        const x = (Number(placed?.x) || 0) + Math.sin(yaw) * 0.16;
+        const z = (Number(placed?.z) || 0) + Math.cos(yaw) * 0.16;
+        const y = (Number(placed?.y) || 0) + 1.12;
+        return { x, y, z, eyeY: y + 0.46 };
+    }
+
+    const x = Number(placed?.x) || 0;
+    const z = Number(placed?.z) || 0;
+    const y = (Number(placed?.y) || 0) + 0.34;
+    return { x, y, z, eyeY: y + 1.06 };
+}
+
+function findSafeExitPositionFromPose(placed, poseMode = "") {
+    if (!placed) {
+        return null;
+    }
+
+    const yaw = Number(placed.yaw) || 0;
+    const extents = getRotatedPropHalfExtents(placed.propType, yaw);
+    const baseRadius = Math.max(extents.x, extents.z) + PLAYER_RADIUS + (poseMode === "lie" ? 0.45 : 0.28);
+    const angles = [
+        yaw,
+        yaw + Math.PI,
+        yaw + Math.PI * 0.5,
+        yaw - Math.PI * 0.5,
+        yaw + Math.PI * 0.25,
+        yaw - Math.PI * 0.25,
+        yaw + Math.PI * 0.75,
+        yaw - Math.PI * 0.75
+    ];
+
+    const groundY = Math.max(0.01, (Number(placed.y) || 0) + 0.02);
+    for (let ring = 0; ring < 5; ring += 1) {
+        const radius = baseRadius + ring * 0.38;
+        for (const angle of angles) {
+            const candidateX = (Number(placed.x) || 0) + Math.sin(angle) * radius;
+            const candidateZ = (Number(placed.z) || 0) + Math.cos(angle) * radius;
+            for (let yStep = 0; yStep < 5; yStep += 1) {
+                const candidateY = groundY + yStep * 0.2;
+                if (!collidesAt(candidateX, candidateY, candidateZ)) {
+                    return { x: candidateX, y: candidateY, z: candidateZ };
+                }
+            }
+        }
+    }
+
+    return null;
+}
+
+function updateLocalPoseLock() {
+    const pose = interactionState.pose;
+    if (!pose) {
+        return false;
+    }
+
+    const poseMode = normalizePoseMode(pose.mode);
+    const placed = placedProps.get(String(pose.propId || ""));
+    if (!poseMode || !placed) {
+        clearLocalPoseActivity(true);
+        return false;
+    }
+
+    const anchor = getPoseAnchorFromProp(placed, poseMode);
+    state.playerPosition.x = anchor.x;
+    state.playerPosition.y = anchor.y;
+    state.playerPosition.z = anchor.z;
+    state.velocityY = 0;
+    state.onGround = true;
+
+    controls.getObject().position.set(anchor.x, anchor.eyeY, anchor.z);
+    return true;
+}
+
 function updatePlayer(deltaSeconds) {
+    if (interactionState.pose) {
+        updateLocalPoseLock();
+        return;
+    }
+
     const turnSpeed = 1.6 * deltaSeconds;
     const isSprinting = state.keyDown.has("ShiftLeft");
 
@@ -6683,6 +7439,9 @@ function setInventoryOpen(open, showFeedback = false) {
     }
 
     if (state.inventoryOpen) {
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
         if (crosshairEl) {
             crosshairEl.classList.add("hidden");
         }
@@ -6716,6 +7475,354 @@ function setInventoryOpen(open, showFeedback = false) {
 
     if (showFeedback) {
         showToast("Inventario cerrado", "info", 800);
+    }
+}
+
+function canRelockGameplayControls() {
+    return (
+        state.worldStarted
+        && !state.paused
+        && !state.tutorialVisible
+        && !state.inventoryOpen
+        && !state.avatarPreviewOpen
+        && !state.interactionPanelOpen
+    );
+}
+
+function markInteractionPanelDirty() {
+    if (!state.interactionPanelOpen) {
+        return;
+    }
+    interactionState.panelNeedsRender = true;
+    interactionState.panelRefreshTick = 0;
+}
+
+function clearInteractionPanelState() {
+    interactionState.panelPropId = "";
+    interactionState.panelMode = "";
+    interactionState.panelNeedsRender = false;
+    interactionState.panelRefreshTick = 0;
+}
+
+function closeInteractionPanel(showFeedback = false, preservePose = false) {
+    if (!state.interactionPanelOpen && !interactionState.panelPropId) {
+        return;
+    }
+
+    const previousPropId = String(interactionState.panelPropId || "");
+    state.interactionPanelOpen = false;
+    clearInteractionPanelState();
+
+    if (interactionPanelEl) {
+        interactionPanelEl.classList.add("hidden");
+    }
+    if (interactionPanelBodyEl) {
+        interactionPanelBodyEl.innerHTML = "";
+    }
+
+    if (interactionState.localUsing && (!previousPropId || interactionState.localUsing.propId === previousPropId)) {
+        clearLocalUsingActivity(true);
+    }
+    if (!preservePose) {
+        clearLocalPoseActivity(true);
+    }
+
+    if (!state.inventoryOpen && !state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && crosshairEl) {
+        crosshairEl.classList.remove("hidden");
+    }
+
+    if (canRelockGameplayControls() && !controls.isLocked) {
+        try {
+            controls.lock();
+        } catch (error) {
+        }
+    }
+
+    if (showFeedback) {
+        showToast("Interaccion cerrada", "info", 900);
+    }
+}
+
+function openInteractionPanel(propHit, panelMode, usageKind = "") {
+    const propId = String(propHit?.propId || "");
+    const placed = propId ? placedProps.get(propId) : null;
+    if (!placed) {
+        return false;
+    }
+
+    if (state.inventoryOpen) {
+        setInventoryOpen(false);
+    }
+    if (state.avatarPreviewOpen) {
+        setAvatarPreviewOpen(false);
+    }
+    if (interactionState.pose) {
+        clearLocalPoseActivity(true);
+    }
+
+    state.interactionPanelOpen = true;
+    interactionState.panelPropId = propId;
+    interactionState.panelMode = String(panelMode || "");
+    interactionState.panelNeedsRender = true;
+    interactionState.panelRefreshTick = 0;
+    state.keyDown.clear();
+
+    if (usageKind) {
+        setLocalUsingActivity(propId, usageKind, true);
+    } else {
+        clearLocalUsingActivity(true);
+    }
+
+    if (interactionPanelTitleEl) {
+        interactionPanelTitleEl.textContent = getPropLabel(placed.propType);
+    }
+    if (interactionPanelHintEl) {
+        interactionPanelHintEl.textContent = "E interactuar | Esc cerrar panel";
+    }
+    if (interactionPanelEl) {
+        interactionPanelEl.classList.remove("hidden");
+    }
+    if (crosshairEl) {
+        crosshairEl.classList.add("hidden");
+    }
+
+    if (controls.isLocked) {
+        try {
+            controls.unlock();
+        } catch (error) {
+        }
+    }
+
+    return true;
+}
+
+function appendInteractionInfoLine(text) {
+    if (!interactionPanelBodyEl) {
+        return;
+    }
+    const line = document.createElement("p");
+    line.textContent = text;
+    interactionPanelBodyEl.appendChild(line);
+}
+
+function appendInteractionAction(label, handler) {
+    if (!interactionPanelBodyEl) {
+        return;
+    }
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "interaction-action";
+    button.textContent = label;
+    button.addEventListener("click", handler);
+    interactionPanelBodyEl.appendChild(button);
+}
+
+function playJukeboxTrackPreview(track = 1) {
+    const clampedTrack = THREE.MathUtils.clamp(Math.floor(Number(track) || 1), 1, JUKEBOX_TRACK_COUNT);
+    let context = interactionState.localAudioContext || null;
+    if (!context) {
+        try {
+            context = new (window.AudioContext || window.webkitAudioContext)();
+            interactionState.localAudioContext = context;
+        } catch (error) {
+            return;
+        }
+    }
+    if (!context) {
+        return;
+    }
+    if (context.state === "suspended") {
+        context.resume().catch(() => {
+        });
+    }
+
+    const now = context.currentTime;
+    const gain = context.createGain();
+    const oscillator = context.createOscillator();
+    oscillator.type = "triangle";
+    oscillator.frequency.setValueAtTime(190 + clampedTrack * 95, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.24);
+}
+
+function renderContainerInteractionPanel(placed) {
+    const slotCount = Array.isArray(getPropDefinition(placed.propType)?.stateDefaults?.items)
+        ? getPropDefinition(placed.propType).stateDefaults.items.length
+        : 6;
+    const currentItems = sanitizeContainerItems(placed.state?.items, slotCount);
+    appendInteractionInfoLine("Click en slot: guardar item seleccionado. Click derecho: vaciar slot.");
+
+    const slotsWrap = document.createElement("div");
+    slotsWrap.className = "interaction-slots";
+    for (let slotIndex = 0; slotIndex < slotCount; slotIndex += 1) {
+        const slotButton = document.createElement("button");
+        slotButton.type = "button";
+        slotButton.className = "interaction-slot";
+        const slotItemId = String(currentItems[slotIndex] || "");
+        const slotItemLabel = slotItemId
+            ? (INVENTORY_ITEM_BY_ID.get(slotItemId)?.label || slotItemId)
+            : "Vacio";
+        slotButton.textContent = `${slotIndex + 1}. ${slotItemLabel}`;
+
+        slotButton.addEventListener("click", () => {
+            const selected = getSelectedHotbarItem();
+            const selectedId = String(selected?.id || "");
+            if (!selectedId || !INVENTORY_ITEM_BY_ID.has(selectedId)) {
+                return;
+            }
+            const nextItems = [...currentItems];
+            nextItems[slotIndex] = selectedId;
+            if (updatePropSharedState(placed.id, { items: nextItems }, `Guardado en slot ${slotIndex + 1}`)) {
+                markInteractionPanelDirty();
+            }
+        });
+        slotButton.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            const nextItems = [...currentItems];
+            nextItems[slotIndex] = "";
+            if (updatePropSharedState(placed.id, { items: nextItems }, `Slot ${slotIndex + 1} vaciado`)) {
+                markInteractionPanelDirty();
+            }
+        });
+        slotsWrap.appendChild(slotButton);
+    }
+    interactionPanelBodyEl?.appendChild(slotsWrap);
+}
+
+function renderFurnaceInteractionPanel(placed) {
+    const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
+    const inputId = String(safeState.input || "");
+    const fuel = THREE.MathUtils.clamp(Math.floor(Number(safeState.fuel) || 0), 0, 100);
+    const lit = Boolean(safeState.lit);
+    const inputLabel = inputId ? (INVENTORY_ITEM_BY_ID.get(inputId)?.label || inputId) : "Sin entrada";
+    appendInteractionInfoLine(`Entrada: ${inputLabel}`);
+    appendInteractionInfoLine(`Combustible: ${fuel}%`);
+    appendInteractionInfoLine(`Estado: ${lit ? "Encendido" : "Apagado"}`);
+
+    appendInteractionAction("Cargar item seleccionado", () => {
+        const selected = getSelectedHotbarItem();
+        const selectedId = String(selected?.id || "");
+        if (!selectedId || !INVENTORY_ITEM_BY_ID.has(selectedId)) {
+            return;
+        }
+        if (updatePropSharedState(placed.id, { input: selectedId }, "Horno: entrada actualizada")) {
+            markInteractionPanelDirty();
+        }
+    });
+    appendInteractionAction("Vaciar entrada", () => {
+        if (updatePropSharedState(placed.id, { input: "" }, "Horno: entrada vaciada")) {
+            markInteractionPanelDirty();
+        }
+    });
+    appendInteractionAction("Agregar combustible (+10)", () => {
+        const nextFuel = THREE.MathUtils.clamp(fuel + 10, 0, 100);
+        if (updatePropSharedState(placed.id, { fuel: nextFuel }, "Horno: combustible agregado")) {
+            markInteractionPanelDirty();
+        }
+    });
+    appendInteractionAction(lit ? "Apagar horno" : "Encender horno", () => {
+        if (!lit && fuel <= 0) {
+            showToast("Agrega combustible para encender", "warning", 1000);
+            return;
+        }
+        const nextLit = !lit;
+        const nextFuel = nextLit ? Math.max(0, fuel - 10) : fuel;
+        if (updatePropSharedState(placed.id, { lit: nextLit, fuel: nextFuel }, `Horno ${nextLit ? "encendido" : "apagado"}`)) {
+            markInteractionPanelDirty();
+        }
+    });
+}
+
+function renderJukeboxInteractionPanel(placed) {
+    const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
+    const playing = Boolean(safeState.playing);
+    const track = sanitizeJukeboxTrack(safeState.track) || 1;
+    appendInteractionInfoLine(`Estado: ${playing ? "Reproduciendo" : "Detenida"}`);
+    appendInteractionInfoLine(`Pista activa: ${track}`);
+
+    const row = document.createElement("div");
+    row.className = "interaction-row";
+    for (let i = 1; i <= JUKEBOX_TRACK_COUNT; i += 1) {
+        const trackButton = document.createElement("button");
+        trackButton.type = "button";
+        trackButton.className = "interaction-action";
+        trackButton.textContent = `Pista ${i}`;
+        trackButton.addEventListener("click", () => {
+            if (updatePropSharedState(placed.id, { track: i, playing: true, source: "local-playlist-v1" }, `Jukebox: pista ${i}`)) {
+                playJukeboxTrackPreview(i);
+                markInteractionPanelDirty();
+            }
+        });
+        row.appendChild(trackButton);
+    }
+    interactionPanelBodyEl?.appendChild(row);
+
+    appendInteractionAction(playing ? "Detener" : "Reproducir", () => {
+        const nextPlaying = !playing;
+        if (updatePropSharedState(placed.id, { playing: nextPlaying, track, source: "local-playlist-v1" }, nextPlaying ? "Jukebox iniciada" : "Jukebox detenida")) {
+            if (nextPlaying) {
+                playJukeboxTrackPreview(track);
+            }
+            markInteractionPanelDirty();
+        }
+    });
+}
+
+function renderInteractionPanelNow() {
+    if (!state.interactionPanelOpen || !interactionPanelBodyEl) {
+        return;
+    }
+
+    const propId = String(interactionState.panelPropId || "");
+    const placed = propId ? placedProps.get(propId) : null;
+    if (!placed) {
+        closeInteractionPanel(false, true);
+        return;
+    }
+
+    const config = getPropInteractionConfig(placed.propType);
+    const panelMode = String(interactionState.panelMode || config?.kind || "");
+    interactionPanelBodyEl.innerHTML = "";
+    if (interactionPanelTitleEl) {
+        interactionPanelTitleEl.textContent = getPropLabel(placed.propType);
+    }
+    if (interactionPanelHintEl) {
+        const poseHint = interactionState.pose ? " | Shift levantarte" : "";
+        interactionPanelHintEl.textContent = `E interactuar | Esc cerrar${poseHint}`;
+    }
+
+    if (panelMode === INTERACTION_KIND.CONTAINER_OPEN) {
+        renderContainerInteractionPanel(placed);
+    } else if (panelMode === INTERACTION_KIND.FURNACE_OPEN) {
+        renderFurnaceInteractionPanel(placed);
+    } else if (panelMode === INTERACTION_KIND.JUKEBOX_CONTROL) {
+        renderJukeboxInteractionPanel(placed);
+    } else {
+        appendInteractionInfoLine("Este objeto no tiene panel detallado todavia.");
+    }
+}
+
+function updateInteractionPanel(deltaSeconds = 0) {
+    if (!state.interactionPanelOpen) {
+        return;
+    }
+
+    const propId = String(interactionState.panelPropId || "");
+    if (!propId || !placedProps.has(propId)) {
+        closeInteractionPanel(false, true);
+        return;
+    }
+
+    interactionState.panelRefreshTick -= Math.max(0, deltaSeconds);
+    if (interactionState.panelNeedsRender || interactionState.panelRefreshTick <= 0) {
+        interactionState.panelNeedsRender = false;
+        interactionState.panelRefreshTick = 0.2;
+        renderInteractionPanelNow();
     }
 }
 
@@ -6913,6 +8020,28 @@ function findTargetedPropHit(blockingDistance = null) {
         placed,
         hit: nearestProp,
         distance: nearestProp.distance
+    };
+}
+
+function findInteractablePropHit() {
+    const blockHit = findTargetedBlockHit();
+    const blockDistance = blockHit?.hit?.distance ?? Number.POSITIVE_INFINITY;
+    const propHit = findTargetedPropHit(blockDistance);
+    if (!propHit) {
+        return null;
+    }
+    if (!isInteractionDistanceValid(propHit.distance)) {
+        return null;
+    }
+
+    const config = getPropInteractionConfig(propHit.placed.propType);
+    if (!config || !config.kind || config.kind === INTERACTION_KIND.NONE) {
+        return null;
+    }
+
+    return {
+        ...propHit,
+        config
     };
 }
 
@@ -7206,6 +8335,9 @@ function updatePropSharedState(propId, patchState, showFeedbackText = "") {
 
     placed.state = normalizedState;
     applyPropSharedVisualState(placed);
+    if (state.interactionPanelOpen && interactionState.panelPropId === id) {
+        markInteractionPanelDirty();
+    }
     scheduleWorldSave();
     publishPropUpsert(id);
 
@@ -7221,6 +8353,8 @@ function tryEditSignProp(propHit) {
     if (!placed || placed.propType !== PROP_TYPE.EDITABLE_SIGN) {
         return false;
     }
+
+    setLocalUsingActivity(placed.id, INTERACTION_USAGE_KIND.SIGN, true);
 
     const previousText = sanitizeEditableSignText(placed.state?.text || "Nuestro lugar");
     const shouldReLock = controls.isLocked;
@@ -7246,63 +8380,125 @@ function tryEditSignProp(propHit) {
     }
 
     if (inputValue === null) {
+        clearLocalUsingActivity(true);
         return true;
     }
 
     const nextText = sanitizeEditableSignText(inputValue, previousText);
-    return updatePropSharedState(propHit.propId, { text: nextText }, "Cartel actualizado");
+    const applied = updatePropSharedState(propHit.propId, { text: nextText }, "Cartel actualizado");
+    clearLocalUsingActivity(true);
+    return applied;
 }
 
-function tryToggleJukeboxProp(propHit) {
+function tryCycleVariantProp(propHit) {
     const placed = propHit?.placed;
-    if (!placed || placed.propType !== PROP_TYPE.JUKEBOX) {
+    if (!placed) {
         return false;
     }
 
-    const wasPlaying = Boolean(placed.state?.playing);
-    const currentTrack = sanitizeJukeboxTrack(placed.state?.track);
-    const nextPlaying = !wasPlaying;
-    const nextTrack = nextPlaying
-        ? (currentTrack % JUKEBOX_TRACK_COUNT) + 1
-        : currentTrack;
-    const label = nextPlaying
-        ? `Jukebox: pista ${nextTrack}`
-        : "Jukebox detenida";
-    return updatePropSharedState(propHit.propId, {
-        playing: nextPlaying,
-        track: nextTrack
-    }, label);
+    const currentVariant = sanitizeVariantIndex(placed.propType, placed.state?.variant);
+    const maxVariant = Number(VARIANT_MAX_BY_PROP[placed.propType]);
+    if (!Number.isFinite(maxVariant) || maxVariant <= 0) {
+        return false;
+    }
+    const nextVariant = (currentVariant + 1) % (maxVariant + 1);
+    return updatePropSharedState(propHit.propId, { variant: nextVariant }, `${getPropLabel(placed.propType)} variante ${nextVariant + 1}`);
 }
 
-function tryToggleFurnaceProp(propHit) {
+function enterLocalPose(propHit, mode) {
     const placed = propHit?.placed;
-    if (!placed || placed.propType !== PROP_TYPE.FURNACE) {
+    const poseMode = normalizePoseMode(mode);
+    if (!placed || !poseMode) {
         return false;
     }
 
-    const nextLit = !Boolean(placed.state?.lit);
-    return updatePropSharedState(propHit.propId, { lit: nextLit }, `Horno ${nextLit ? "encendido" : "apagado"}`);
+    if (interactionState.pose?.propId === placed.id && interactionState.pose.mode === poseMode) {
+        return exitLocalPose(true);
+    }
+
+    closeInteractionPanel(false, true);
+    clearLocalUsingActivity(true);
+    setLocalPoseActivity(placed.id, poseMode, true);
+    controls.getObject().rotation.y = Number(placed.yaw) || controls.getObject().rotation.y || 0;
+    if (poseMode === "lie") {
+        camera.rotation.x = -0.08;
+    }
+    showToast(poseMode === "sit" ? "Te sentaste. Shift para levantarte." : "Te acostaste. Shift para levantarte.", "info", 1300);
+    return true;
 }
 
-function tryInteractPropAtCrosshair() {
-    const propHit = findTargetedPropHit();
+function exitLocalPose(showFeedback = false) {
+    const currentPose = interactionState.pose;
+    if (!currentPose) {
+        return false;
+    }
+
+    const poseMode = normalizePoseMode(currentPose.mode);
+    const placed = placedProps.get(String(currentPose.propId || ""));
+    const safeExit = findSafeExitPositionFromPose(placed, poseMode);
+    if (safeExit) {
+        state.playerPosition.x = safeExit.x;
+        state.playerPosition.y = safeExit.y;
+        state.playerPosition.z = safeExit.z;
+    } else {
+        const spawn = findSpawnPoint();
+        state.playerPosition.copy(spawn);
+    }
+
+    clearLocalPoseActivity(true);
+    state.keyDown.clear();
+    state.velocityY = 0;
+    updateOnGroundFlag();
+    controls.getObject().position.set(
+        state.playerPosition.x,
+        state.playerPosition.y + EYE_HEIGHT,
+        state.playerPosition.z
+    );
+
+    if (showFeedback) {
+        showToast("Te levantaste", "info", 900);
+    }
+    return true;
+}
+
+function tryInteractAtCrosshair() {
+    const propHit = findInteractablePropHit();
     if (!propHit) {
         return false;
     }
 
-    const definition = getPropDefinition(propHit.placed.propType);
-    const interaction = definition?.interaction || "";
-    if (interaction === "light-cycle" && isLightPropType(propHit.placed.propType)) {
+    const config = propHit.config || getPropInteractionConfig(propHit.placed.propType);
+    if (!config) {
+        return false;
+    }
+
+    if (config.kind === INTERACTION_KIND.SIT) {
+        return enterLocalPose(propHit, "sit");
+    }
+    if (config.kind === INTERACTION_KIND.LIE) {
+        return enterLocalPose(propHit, "lie");
+    }
+    if (config.kind === INTERACTION_KIND.LIGHT_CYCLE && isLightPropType(propHit.placed.propType)) {
         return cycleLampIntensity(propHit.propId, true);
     }
-    if (interaction === "edit-text") {
+    if (config.kind === INTERACTION_KIND.EDIT_TEXT) {
         return tryEditSignProp(propHit);
     }
-    if (interaction === "toggle-jukebox") {
-        return tryToggleJukeboxProp(propHit);
+    if (config.kind === INTERACTION_KIND.CYCLE_VARIANT) {
+        return tryCycleVariantProp(propHit);
     }
-    if (interaction === "toggle-state" && propHit.placed.propType === PROP_TYPE.FURNACE) {
-        return tryToggleFurnaceProp(propHit);
+    if (config.kind === INTERACTION_KIND.CONTAINER_OPEN) {
+        return openInteractionPanel(propHit, INTERACTION_KIND.CONTAINER_OPEN, config.usageKind || INTERACTION_USAGE_KIND.CONTAINER);
+    }
+    if (config.kind === INTERACTION_KIND.FURNACE_OPEN) {
+        return openInteractionPanel(propHit, INTERACTION_KIND.FURNACE_OPEN, config.usageKind || INTERACTION_USAGE_KIND.FURNACE);
+    }
+    if (config.kind === INTERACTION_KIND.JUKEBOX_CONTROL) {
+        return openInteractionPanel(propHit, INTERACTION_KIND.JUKEBOX_CONTROL, config.usageKind || INTERACTION_USAGE_KIND.JUKEBOX);
+    }
+    if (config.kind === INTERACTION_KIND.TOGGLE_STATE && propHit.placed.propType === PROP_TYPE.FURNACE) {
+        const nextLit = !Boolean(propHit.placed.state?.lit);
+        return updatePropSharedState(propHit.propId, { lit: nextLit }, `Horno ${nextLit ? "encendido" : "apagado"}`);
     }
 
     return false;
@@ -7318,7 +8514,7 @@ function tryRemovePlacedPropAtCrosshair() {
 }
 
 function onMouseWheel(event) {
-    if (!state.worldStarted || !state.worldReady || state.paused || state.tutorialVisible || state.inventoryOpen || !controls.isLocked) {
+    if (!state.worldStarted || !state.worldReady || state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen || !controls.isLocked) {
         return;
     }
 
@@ -7364,6 +8560,10 @@ function onKeyDown(event) {
             setPauseMenuOpen(false);
         }
 
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
+
         setAvatarPreviewOpen(!state.avatarPreviewOpen, true);
         return;
     }
@@ -7386,6 +8586,10 @@ function onKeyDown(event) {
             setAvatarPreviewOpen(false);
         }
 
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
+
         setInventoryOpen(!state.inventoryOpen, true);
         return;
     }
@@ -7399,6 +8603,11 @@ function onKeyDown(event) {
 
         if (state.inventoryOpen) {
             setInventoryOpen(false, true);
+            return;
+        }
+
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(true, true);
             return;
         }
 
@@ -7432,7 +8641,13 @@ function onKeyDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.inventoryOpen) {
+    if (event.code === INTERACTION_EXIT_KEY && interactionState.pose) {
+        event.preventDefault();
+        exitLocalPose(true);
+        return;
+    }
+
+    if (state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen) {
         return;
     }
 
@@ -7442,19 +8657,29 @@ function onKeyDown(event) {
             || event.code === "KeyA"
             || event.code === "KeyS"
             || event.code === "KeyD"
-            || event.code === "ShiftLeft"
+            || event.code === INTERACTION_EXIT_KEY
         ) {
             state.keyDown.add(event.code);
         }
         return;
     }
 
-    if (event.code === "KeyE") {
+    if (event.code === INTERACTION_KEY) {
         event.preventDefault();
         if (event.repeat || !controls.isLocked) {
             return;
         }
+        if (interactionState.pose) {
+            return;
+        }
+        if (tryInteractAtCrosshair()) {
+            return;
+        }
         tryHarvestSunflowerAtCrosshair();
+        return;
+    }
+
+    if (interactionState.pose) {
         return;
     }
 
@@ -7490,7 +8715,7 @@ function onMouseDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen) {
+    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen || state.interactionPanelOpen) {
         return;
     }
 
@@ -7511,9 +8736,6 @@ function onMouseDown(event) {
     }
 
     if (event.button === 2) {
-        if (tryInteractPropAtCrosshair()) {
-            return;
-        }
         attemptMineOrPlace(true);
     }
 }
@@ -7541,6 +8763,9 @@ function setupEvents() {
         setPauseMenuOpen(false);
         if (state.inventoryOpen) {
             setInventoryOpen(false);
+        }
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
         }
     });
 
@@ -7586,6 +8811,12 @@ function setupEvents() {
     if (inventoryCloseButtonEl) {
         inventoryCloseButtonEl.addEventListener("click", () => {
             setInventoryOpen(false, true);
+        });
+    }
+
+    if (interactionCloseButtonEl) {
+        interactionCloseButtonEl.addEventListener("click", () => {
+            closeInteractionPanel(true, true);
         });
     }
 
@@ -7660,6 +8891,8 @@ function setupEvents() {
     }
 
     window.addEventListener("beforeunload", () => {
+        clearAllTemporaryInteractionState(false);
+        clearInteractionPanelState();
         flushWorldSave(true);
         flushCloudEditWrites();
         flushCloudPropWrites();
@@ -7713,6 +8946,7 @@ function animate() {
     }
 
     updateAvatarPreviewCamera(delta);
+    updateInteractionPanel(delta);
     updateTargetedBlockUi(delta);
     state.hudTick -= delta;
     if (state.hudTick <= 0) {
@@ -7774,7 +9008,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E cosechar girasol - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;
