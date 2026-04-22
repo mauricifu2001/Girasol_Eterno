@@ -20,7 +20,23 @@ export const BLOCK = Object.freeze({
     DARK_PLANKS: 18,
     BAMBOO: 19,
     TINTED_GLASS: 20,
-    GLOW_BLOCK: 21
+    GLOW_BLOCK: 21,
+    MOSSY_COBBLESTONE: 22,
+    DARK_BRICK: 23,
+    BLACK_MARBLE: 24,
+    SLATE: 25,
+    VOLCANIC_STONE: 26,
+    COPPER: 27,
+    OXIDIZED_COPPER: 28,
+    TERRACOTTA: 29,
+    ROOF_TILES: 30,
+    WHITE_PLASTER: 31,
+    PINK_PLASTER: 32,
+    LIGHT_WOOD: 33,
+    REDDISH_WOOD: 34,
+    PINK_LEAVES: 35,
+    AMBER_GLASS: 36,
+    BLUE_GLASS: 37
 });
 
 const BLOCK_KIND = "block";
@@ -308,6 +324,150 @@ const RAW_BLOCK_DEFINITIONS = [
             metalness: 0.05,
             emissive: 0xffc465,
             emissiveIntensity: 0.65
+        }
+    },
+    {
+        id: BLOCK.MOSSY_COBBLESTONE,
+        key: "mossy_cobblestone",
+        label: "Adoquin musgoso",
+        category: "construction",
+        tags: ["rock", "construction", "moss"],
+        visual: { color: 0x6f7a67, textureStyle: "mossy_cobblestone", roughness: 0.94 }
+    },
+    {
+        id: BLOCK.DARK_BRICK,
+        key: "dark_brick",
+        label: "Ladrillo oscuro",
+        category: "construction",
+        tags: ["brick", "dark"],
+        visual: { color: 0x533b3f, textureStyle: "dark_brick", roughness: 0.92 }
+    },
+    {
+        id: BLOCK.BLACK_MARBLE,
+        key: "black_marble",
+        label: "Marmol negro",
+        category: "construction",
+        tags: ["stone", "luxury", "dark"],
+        visual: { color: 0x2c2f36, textureStyle: "black_marble", roughness: 0.42, metalness: 0.06 }
+    },
+    {
+        id: BLOCK.SLATE,
+        key: "slate",
+        label: "Pizarra",
+        category: "construction",
+        tags: ["stone", "slate"],
+        visual: { color: 0x4d5663, textureStyle: "slate", roughness: 0.9 }
+    },
+    {
+        id: BLOCK.VOLCANIC_STONE,
+        key: "volcanic_stone",
+        label: "Piedra volcanica",
+        category: "construction",
+        tags: ["stone", "volcanic"],
+        visual: { color: 0x2a2426, textureStyle: "volcanic_stone", roughness: 0.96 }
+    },
+    {
+        id: BLOCK.COPPER,
+        key: "copper",
+        label: "Cobre",
+        category: "construction",
+        tags: ["metal", "copper"],
+        visual: { color: 0xbb6f46, textureStyle: "copper", roughness: 0.52, metalness: 0.42 }
+    },
+    {
+        id: BLOCK.OXIDIZED_COPPER,
+        key: "oxidized_copper",
+        label: "Cobre oxidado",
+        category: "construction",
+        tags: ["metal", "copper", "oxidized"],
+        visual: { color: 0x5f9f8d, textureStyle: "oxidized_copper", roughness: 0.68, metalness: 0.18 }
+    },
+    {
+        id: BLOCK.TERRACOTTA,
+        key: "terracotta",
+        label: "Terracota",
+        category: "construction",
+        tags: ["clay", "warm"],
+        visual: { color: 0xb66a4f, textureStyle: "terracotta", roughness: 0.91 }
+    },
+    {
+        id: BLOCK.ROOF_TILES,
+        key: "roof_tiles",
+        label: "Tejas",
+        category: "construction",
+        tags: ["roof", "clay"],
+        visual: { color: 0x7f3c2f, textureStyle: "roof_tiles", roughness: 0.9 }
+    },
+    {
+        id: BLOCK.WHITE_PLASTER,
+        key: "white_plaster",
+        label: "Yeso blanco",
+        category: "construction",
+        tags: ["plaster", "wall"],
+        visual: { color: 0xf4efe8, textureStyle: "white_plaster", roughness: 0.84 }
+    },
+    {
+        id: BLOCK.PINK_PLASTER,
+        key: "pink_plaster",
+        label: "Yeso rosado",
+        category: "construction",
+        tags: ["plaster", "wall"],
+        visual: { color: 0xe6c2ce, textureStyle: "pink_plaster", roughness: 0.84 }
+    },
+    {
+        id: BLOCK.LIGHT_WOOD,
+        key: "light_wood",
+        label: "Madera clara",
+        category: "construction",
+        tags: ["wood", "light"],
+        visual: { color: 0xcfa97c, textureStyle: "light_wood", roughness: 0.9 }
+    },
+    {
+        id: BLOCK.REDDISH_WOOD,
+        key: "reddish_wood",
+        label: "Madera rojiza",
+        category: "construction",
+        tags: ["wood", "reddish"],
+        visual: { color: 0x9a503f, textureStyle: "reddish_wood", roughness: 0.9 }
+    },
+    {
+        id: BLOCK.PINK_LEAVES,
+        key: "pink_leaves",
+        label: "Hojas rosadas",
+        category: "nature",
+        tags: ["foliage", "nature", "pink"],
+        visual: { color: 0xc97da4, textureStyle: "pink_leaves", roughness: 0.84 }
+    },
+    {
+        id: BLOCK.AMBER_GLASS,
+        key: "amber_glass",
+        label: "Cristal ambar",
+        category: "liquids",
+        tags: ["glass", "transparent", "amber"],
+        transparent: true,
+        visual: {
+            color: 0xe3a63f,
+            textureStyle: "amber_glass",
+            roughness: 0.22,
+            metalness: 0.03,
+            opacity: 0.34,
+            renderOrder: 3
+        }
+    },
+    {
+        id: BLOCK.BLUE_GLASS,
+        key: "blue_glass",
+        label: "Cristal azul",
+        category: "liquids",
+        tags: ["glass", "transparent", "blue"],
+        transparent: true,
+        visual: {
+            color: 0x61a6e5,
+            textureStyle: "blue_glass",
+            roughness: 0.22,
+            metalness: 0.03,
+            opacity: 0.34,
+            renderOrder: 3
         }
     }
 ];

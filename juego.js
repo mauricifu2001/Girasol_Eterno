@@ -158,6 +158,8 @@ const MAX_SHADOW_CASTING_LAMPS = 2;
 const LAMP_SHADOW_MAX_DISTANCE = 20;
 const LAMP_SHADOW_REFRESH_SECONDS = 0.45;
 const LAMP_SHADOW_MIN_LEVEL = 3;
+const SIGN_TEXT_MAX_LENGTH = 52;
+const JUKEBOX_TRACK_COUNT = 4;
 const SKY_SHADOW_REFRESH_SECONDS = 0.82;
 const PROP_ROTATION_STEP = Math.PI * 0.5;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
@@ -552,6 +554,110 @@ function createProceduralBlockTexture(blockId, fallbackColor) {
         glow.addColorStop(1, "rgba(255, 216, 139, 0)");
         ctx.fillStyle = glow;
         ctx.fillRect(0, 0, size, size);
+    } else if (textureStyle === "mossy_cobblestone") {
+        fillNoisyBase(ctx, size, hexToRgb(0x6e7568), 24, rng);
+        drawSpeckles(ctx, size, 250, 0x555c50, 0.26, rng, 1, 2);
+        drawRockCracks(ctx, size, rng, 0x44493f, 0.3, 9);
+        drawSpeckles(ctx, size, 170, 0x4f7b49, 0.24, rng, 1, 2);
+    } else if (textureStyle === "dark_brick") {
+        fillNoisyBase(ctx, size, hexToRgb(0x553e43), 14, rng);
+        ctx.strokeStyle = "rgba(35, 24, 28, 0.45)";
+        ctx.lineWidth = 2;
+        const darkBrickStep = 16;
+        for (let y = 0; y <= size; y += darkBrickStep) {
+            const offset = (Math.floor(y / darkBrickStep) % 2) ? 2 : 0;
+            ctx.beginPath();
+            ctx.moveTo(0, y + offset);
+            ctx.lineTo(size, y + offset);
+            ctx.stroke();
+        }
+        for (let x = 0; x <= size; x += darkBrickStep) {
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x, size);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "black_marble") {
+        fillNoisyBase(ctx, size, hexToRgb(0x2d3038), 8, rng);
+        ctx.strokeStyle = "rgba(98, 104, 119, 0.32)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i += 1) {
+            const y = Math.floor(rng() * size);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.bezierCurveTo(size * 0.32, y + 6, size * 0.66, y - 8, size, y + Math.floor(rng() * 5) - 2);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "slate") {
+        fillNoisyBase(ctx, size, hexToRgb(0x4d5663), 14, rng);
+        ctx.strokeStyle = "rgba(64, 73, 84, 0.3)";
+        ctx.lineWidth = 1;
+        for (let y = 0; y <= size; y += 6) {
+            ctx.beginPath();
+            ctx.moveTo(0, y + Math.floor(rng() * 2));
+            ctx.lineTo(size, y + Math.floor(rng() * 2));
+            ctx.stroke();
+        }
+    } else if (textureStyle === "volcanic_stone") {
+        fillNoisyBase(ctx, size, hexToRgb(0x2c2527), 18, rng);
+        drawSpeckles(ctx, size, 320, 0x1b1517, 0.3, rng, 1, 2);
+        drawSpeckles(ctx, size, 80, 0x7b3a2a, 0.2, rng, 1, 1);
+    } else if (textureStyle === "copper") {
+        fillNoisyBase(ctx, size, hexToRgb(0xbc6f45), 10, rng);
+        ctx.strokeStyle = "rgba(224, 157, 109, 0.3)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 9; i += 1) {
+            const y = 4 + i * 7 + Math.floor(rng() * 3);
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(size, y + Math.sin(i * 0.8) * 1.8);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "oxidized_copper") {
+        fillNoisyBase(ctx, size, hexToRgb(0x5f9f8d), 11, rng);
+        drawSpeckles(ctx, size, 220, 0x3a6e63, 0.22, rng, 1, 2);
+        drawSpeckles(ctx, size, 110, 0xbf7d55, 0.14, rng, 1, 1);
+    } else if (textureStyle === "terracotta") {
+        fillNoisyBase(ctx, size, hexToRgb(0xb66a4f), 12, rng);
+        drawSpeckles(ctx, size, 180, 0x8e513d, 0.22, rng, 1, 2);
+    } else if (textureStyle === "roof_tiles") {
+        fillNoisyBase(ctx, size, hexToRgb(0x7f3d31), 10, rng);
+        ctx.strokeStyle = "rgba(57, 24, 19, 0.44)";
+        ctx.lineWidth = 2;
+        for (let y = 0; y <= size; y += 8) {
+            ctx.beginPath();
+            ctx.moveTo(0, y);
+            ctx.lineTo(size, y);
+            ctx.stroke();
+        }
+    } else if (textureStyle === "white_plaster" || textureStyle === "pink_plaster") {
+        const plasterBase = textureStyle === "pink_plaster" ? 0xe6c2ce : 0xf4efe8;
+        fillNoisyBase(ctx, size, hexToRgb(plasterBase), 6, rng);
+        drawSpeckles(ctx, size, 120, textureStyle === "pink_plaster" ? 0xd5aebc : 0xd4cfc8, 0.17, rng, 1, 1);
+    } else if (textureStyle === "light_wood" || textureStyle === "reddish_wood") {
+        const woodBase = textureStyle === "reddish_wood" ? 0x9a503f : 0xcfa97c;
+        fillNoisyBase(ctx, size, hexToRgb(woodBase), 12, rng);
+        for (let y = 0; y < size; y += 5) {
+            const shade = textureStyle === "reddish_wood" ? 0.19 : 0.14;
+            ctx.fillStyle = `rgba(66, 35, 24, ${shade + rng() * 0.08})`;
+            ctx.fillRect(0, y, size, 2);
+        }
+    } else if (textureStyle === "pink_leaves") {
+        fillNoisyBase(ctx, size, hexToRgb(0xc97da4), 18, rng);
+        drawSpeckles(ctx, size, 260, 0xab648b, 0.24, rng, 1, 2);
+        drawSpeckles(ctx, size, 120, 0xe5b8cf, 0.2, rng, 1, 1);
+    } else if (textureStyle === "amber_glass" || textureStyle === "blue_glass") {
+        const glassBase = textureStyle === "amber_glass" ? 0xe3a63f : 0x61a6e5;
+        fillNoisyBase(ctx, size, hexToRgb(glassBase), 8, rng, 212);
+        ctx.strokeStyle = "rgba(240, 250, 255, 0.38)";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < 8; i += 1) {
+            const x = 4 + i * 8 + Math.floor(rng() * 2);
+            ctx.beginPath();
+            ctx.moveTo(x, 0);
+            ctx.lineTo(x + Math.sin(i) * 1.8, size);
+            ctx.stroke();
+        }
     } else {
         fillNoisyBase(ctx, size, fallbackRgb, 18, rng);
     }
@@ -608,6 +714,7 @@ function createBlockMaterial(blockId, color) {
 
 const blockGeometry = new THREE.BoxGeometry(1, 1, 1);
 const detailUnitGeometry = new THREE.BoxGeometry(1, 1, 1);
+const signFaceGeometry = new THREE.PlaneGeometry(0.62, 0.34);
 const detailMaterialCache = new Map();
 const blockMaterials = Object.fromEntries(
     blockRegistry.definitions
@@ -1362,8 +1469,21 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     if (propHit && propDistance <= blockDistance + 0.001) {
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
-            if (isLightPropType(propHit.placed.propType)) {
+            const definition = getPropDefinition(propHit.placed.propType);
+            const interaction = definition?.interaction || "";
+            if (interaction === "light-cycle" && isLightPropType(propHit.placed.propType)) {
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (click der cambiar luz, click izq quitar)`;
+            } else if (interaction === "edit-text") {
+                const textPreview = sanitizeEditableSignText(propHit.placed.state?.text || "").slice(0, 26);
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)}: "${textPreview}" (click der editar, click izq quitar)`;
+            } else if (interaction === "toggle-jukebox") {
+                const playing = Boolean(propHit.placed.state?.playing);
+                const track = sanitizeJukeboxTrack(propHit.placed.state?.track);
+                const modeLabel = playing ? `Reproduciendo pista ${track || 1}` : "Detenida";
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (click der alternar, click izq quitar)`;
+            } else if (interaction === "toggle-state" && propHit.placed.propType === PROP_TYPE.FURNACE) {
+                const lit = Boolean(propHit.placed.state?.lit);
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${lit ? "Encendido" : "Apagado"} (click der alternar, click izq quitar)`;
             } else {
                 targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq para quitar)`;
             }
@@ -2306,6 +2426,215 @@ function getLampIntensityLabel(level) {
     return "Maxima";
 }
 
+function sanitizeEditableSignText(value, fallback = "Nuestro lugar") {
+    const base = String(value ?? "").replace(/\s+/g, " ").trim();
+    if (!base) {
+        return String(fallback || "Nuestro lugar").slice(0, SIGN_TEXT_MAX_LENGTH);
+    }
+    return base.slice(0, SIGN_TEXT_MAX_LENGTH);
+}
+
+function sanitizeJukeboxTrack(value) {
+    const numeric = Math.floor(Number(value));
+    if (!Number.isFinite(numeric) || numeric < 0) {
+        return 0;
+    }
+    return Math.min(numeric, JUKEBOX_TRACK_COUNT);
+}
+
+function buildLegacyPropStateCandidate(rawEntry) {
+    if (!rawEntry || typeof rawEntry !== "object") {
+        return {};
+    }
+
+    return {
+        lit: rawEntry.lit,
+        text: rawEntry.text,
+        playing: rawEntry.playing,
+        track: rawEntry.track
+    };
+}
+
+function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
+    const definition = getPropDefinition(propType);
+    const defaults = definition?.stateDefaults;
+    if (!defaults || typeof defaults !== "object" || Object.keys(defaults).length === 0) {
+        return undefined;
+    }
+
+    const source = rawState && typeof rawState === "object"
+        ? rawState
+        : buildLegacyPropStateCandidate(fallbackRaw);
+    const normalized = {};
+
+    for (const [key, defaultValue] of Object.entries(defaults)) {
+        const incoming = source[key];
+        if (key === "text") {
+            normalized[key] = sanitizeEditableSignText(incoming, defaultValue);
+            continue;
+        }
+        if (key === "track") {
+            normalized[key] = sanitizeJukeboxTrack(incoming ?? defaultValue);
+            continue;
+        }
+
+        if (typeof defaultValue === "boolean") {
+            normalized[key] = incoming === undefined ? Boolean(defaultValue) : Boolean(incoming);
+            continue;
+        }
+
+        if (typeof defaultValue === "number") {
+            const numeric = Number(incoming);
+            normalized[key] = Number.isFinite(numeric) ? numeric : Number(defaultValue) || 0;
+            continue;
+        }
+
+        if (typeof defaultValue === "string") {
+            normalized[key] = String(incoming ?? defaultValue);
+            continue;
+        }
+
+        normalized[key] = incoming ?? defaultValue;
+    }
+
+    return normalized;
+}
+
+function getPropDefaultSharedState(propType) {
+    const defaults = getPropDefinition(propType)?.stateDefaults;
+    if (!defaults || typeof defaults !== "object" || Object.keys(defaults).length === 0) {
+        return undefined;
+    }
+    return normalizePropSharedState(propType, defaults, defaults);
+}
+
+function arePropStatesEqual(a, b) {
+    const left = a && typeof a === "object" ? a : {};
+    const right = b && typeof b === "object" ? b : {};
+    const leftKeys = Object.keys(left);
+    const rightKeys = Object.keys(right);
+    if (leftKeys.length !== rightKeys.length) {
+        return false;
+    }
+
+    for (const key of leftKeys) {
+        if (left[key] !== right[key]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+function drawEditableSignFace(node, text) {
+    const canvas = node?.userData?.signCanvas;
+    const context = node?.userData?.signContext;
+    const texture = node?.userData?.signTexture;
+    if (!canvas || !context || !texture) {
+        return;
+    }
+
+    const safeText = sanitizeEditableSignText(text);
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#c28a58";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = "#8f6039";
+    context.fillRect(14, 14, canvas.width - 28, canvas.height - 28);
+    context.fillStyle = "#dec79f";
+    context.fillRect(22, 22, canvas.width - 44, canvas.height - 44);
+    context.fillStyle = "#4b2f1f";
+    context.font = "700 52px Sora, sans-serif";
+    context.textAlign = "center";
+    context.textBaseline = "middle";
+
+    const firstLine = safeText.slice(0, 22);
+    const remaining = safeText.slice(22);
+    if (!remaining) {
+        context.fillText(firstLine, canvas.width * 0.5, canvas.height * 0.52);
+    } else {
+        const secondLine = remaining.slice(0, 22);
+        context.fillText(firstLine, canvas.width * 0.5, canvas.height * 0.42);
+        context.fillText(secondLine, canvas.width * 0.5, canvas.height * 0.65);
+    }
+    texture.needsUpdate = true;
+}
+
+function applyPropSharedVisualState(placed) {
+    if (!placed?.node) {
+        return;
+    }
+
+    const propType = placed.propType;
+    const stateData = normalizePropSharedState(propType, placed.state, placed.state);
+    if (stateData && !arePropStatesEqual(placed.state, stateData)) {
+        placed.state = stateData;
+    }
+
+    if (propType === PROP_TYPE.EDITABLE_SIGN) {
+        const textValue = sanitizeEditableSignText(placed.state?.text);
+        if (!placed.state || placed.state.text !== textValue) {
+            placed.state = {
+                ...(placed.state || {}),
+                text: textValue
+            };
+        }
+        drawEditableSignFace(placed.node, textValue);
+        return;
+    }
+
+    if (propType === PROP_TYPE.JUKEBOX) {
+        const playing = Boolean(placed.state?.playing);
+        const track = sanitizeJukeboxTrack(placed.state?.track);
+        if (!placed.state || placed.state.playing !== playing || placed.state.track !== track) {
+            placed.state = {
+                ...(placed.state || {}),
+                playing,
+                track
+            };
+        }
+
+        const discMaterial = placed.node.userData?.jukeboxDiscMaterial || null;
+        if (discMaterial) {
+            const emissiveColor = Number(discMaterial.userData?.jukeboxEmissiveColor ?? 0x5aa8ff);
+            discMaterial.color.setHex(playing ? 0x2b2f40 : 0x222329);
+            discMaterial.emissive.setHex(emissiveColor);
+            discMaterial.emissiveIntensity = playing ? 0.46 + (track * 0.07) : 0;
+        }
+
+        const ledMaterial = placed.node.userData?.jukeboxLedMaterial || null;
+        if (ledMaterial) {
+            const ledColor = Number(ledMaterial.userData?.jukeboxLedEmissiveColor ?? 0x80beff);
+            ledMaterial.emissive.setHex(ledColor);
+            ledMaterial.emissiveIntensity = playing ? 0.68 : 0;
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.FURNACE) {
+        const lit = Boolean(placed.state?.lit);
+        if (!placed.state || placed.state.lit !== lit) {
+            placed.state = {
+                ...(placed.state || {}),
+                lit
+            };
+        }
+
+        const emberMaterial = placed.node.userData?.furnaceEmberMaterial || null;
+        if (emberMaterial) {
+            const emberColor = Number(emberMaterial.userData?.furnaceEmissiveColor ?? 0xff7f34);
+            emberMaterial.emissive.setHex(emberColor);
+            emberMaterial.emissiveIntensity = lit ? 0.72 : 0;
+            emberMaterial.color.setHex(lit ? 0x803723 : 0x391f15);
+        }
+
+        const furnaceLight = placed.node.userData?.furnacePointLight || null;
+        if (furnaceLight) {
+            furnaceLight.intensity = lit ? 0.74 : 0;
+            furnaceLight.distance = lit ? 4.6 : 0;
+            furnaceLight.visible = lit;
+        }
+    }
+}
+
 function normalizeYawRadians(value) {
     const numeric = Number(value);
     if (!Number.isFinite(numeric)) {
@@ -2485,6 +2814,281 @@ function buildLanternNode(root) {
     });
 }
 
+function createDisposableStandardMaterial(options = {}) {
+    const material = new THREE.MeshStandardMaterial(options);
+    material.userData.disposeOnRemove = true;
+    if (options?.map) {
+        material.userData.disposeMapOnRemove = true;
+    }
+    return material;
+}
+
+function createDynamicPart(size, position, material, rotation = null) {
+    const mesh = new THREE.Mesh(detailUnitGeometry, material);
+    mesh.scale.set(size.x, size.y, size.z);
+    mesh.position.set(position.x, position.y, position.z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    if (rotation) {
+        mesh.rotation.set(rotation.x || 0, rotation.y || 0, rotation.z || 0);
+    }
+    return mesh;
+}
+
+function buildBookshelfNode(root) {
+    root.add(createDetailPart({ x: 0.92, y: 1.14, z: 0.42 }, { x: 0, y: 0.57, z: 0 }, 0x7e5a39));
+    root.add(createDetailPart({ x: 0.82, y: 0.94, z: 0.34 }, { x: 0, y: 0.57, z: 0 }, 0x5b3e2b));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.38 }, { x: 0, y: 0.34, z: 0 }, 0x9b6f47));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.38 }, { x: 0, y: 0.62, z: 0 }, 0x9b6f47));
+    root.add(createDetailPart({ x: 0.82, y: 0.06, z: 0.38 }, { x: 0, y: 0.9, z: 0 }, 0x9b6f47));
+    root.add(createDetailPart({ x: 0.16, y: 0.18, z: 0.1 }, { x: -0.24, y: 0.43, z: 0.13 }, 0x934d4c));
+    root.add(createDetailPart({ x: 0.1, y: 0.2, z: 0.1 }, { x: -0.06, y: 0.44, z: 0.13 }, 0x4d6f9d));
+    root.add(createDetailPart({ x: 0.12, y: 0.18, z: 0.1 }, { x: 0.1, y: 0.43, z: 0.13 }, 0xa57f53));
+    root.add(createDetailPart({ x: 0.14, y: 0.18, z: 0.1 }, { x: 0.26, y: 0.43, z: 0.13 }, 0x5d8d57));
+}
+
+function buildBarrelNode(root) {
+    root.add(createDetailPart({ x: 0.52, y: 0.68, z: 0.52 }, { x: 0, y: 0.34, z: 0 }, 0x7f5636));
+    root.add(createDetailPart({ x: 0.56, y: 0.06, z: 0.56 }, { x: 0, y: 0.67, z: 0 }, 0x4a3830));
+    root.add(createDetailPart({ x: 0.56, y: 0.06, z: 0.56 }, { x: 0, y: 0.03, z: 0 }, 0x4a3830));
+    root.add(createDetailPart({ x: 0.58, y: 0.08, z: 0.08 }, { x: 0, y: 0.34, z: 0.24 }, 0x4a3830));
+    root.add(createDetailPart({ x: 0.58, y: 0.08, z: 0.08 }, { x: 0, y: 0.34, z: -0.24 }, 0x4a3830));
+}
+
+function buildWoodCrateNode(root) {
+    root.add(createDetailPart({ x: 0.7, y: 0.46, z: 0.7 }, { x: 0, y: 0.23, z: 0 }, 0x9a6d43));
+    root.add(createDetailPart({ x: 0.64, y: 0.34, z: 0.64 }, { x: 0, y: 0.23, z: 0 }, 0x744f32));
+    root.add(createDetailPart({ x: 0.7, y: 0.06, z: 0.12 }, { x: 0, y: 0.43, z: 0.24 }, 0xb18255));
+    root.add(createDetailPart({ x: 0.7, y: 0.06, z: 0.12 }, { x: 0, y: 0.43, z: -0.24 }, 0xb18255));
+    root.add(createDetailPart({ x: 0.12, y: 0.46, z: 0.7 }, { x: 0.24, y: 0.23, z: 0 }, 0xb18255));
+    root.add(createDetailPart({ x: 0.12, y: 0.46, z: 0.7 }, { x: -0.24, y: 0.23, z: 0 }, 0xb18255));
+}
+
+function buildRugNode(root) {
+    root.add(createDetailPart({ x: 0.96, y: 0.02, z: 0.96 }, { x: 0, y: 0.01, z: 0 }, 0x8f2f4f));
+    root.add(createDetailPart({ x: 0.86, y: 0.01, z: 0.86 }, { x: 0, y: 0.021, z: 0 }, 0xbe6f89));
+    root.add(createDetailPart({ x: 0.08, y: 0.02, z: 0.92 }, { x: -0.44, y: 0.01, z: 0 }, 0x784966));
+    root.add(createDetailPart({ x: 0.08, y: 0.02, z: 0.92 }, { x: 0.44, y: 0.01, z: 0 }, 0x784966));
+}
+
+function buildPaintingNode(root) {
+    root.add(createDetailPart({ x: 0.88, y: 0.62, z: 0.06 }, { x: 0, y: 0.72, z: 0 }, 0x6f4b31));
+    root.add(createDetailPart({ x: 0.74, y: 0.48, z: 0.04 }, { x: 0, y: 0.72, z: 0.02 }, 0x7e9bc2));
+    root.add(createDetailPart({ x: 0.7, y: 0.02, z: 0.02 }, { x: 0, y: 0.87, z: 0.02 }, 0xe4d384));
+    root.add(createDetailPart({ x: 0.06, y: 0.72, z: 0.06 }, { x: -0.28, y: 0.36, z: -0.02 }, 0x6d4b32));
+    root.add(createDetailPart({ x: 0.06, y: 0.72, z: 0.06 }, { x: 0.28, y: 0.36, z: -0.02 }, 0x6d4b32));
+}
+
+function buildCurtainsNode(root) {
+    root.add(createDetailPart({ x: 0.94, y: 0.06, z: 0.1 }, { x: 0, y: 1.0, z: 0 }, 0x7c4f66));
+    root.add(createDetailPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: -0.22, y: 0.54, z: 0 }, 0xc58aa5));
+    root.add(createDetailPart({ x: 0.38, y: 0.88, z: 0.08 }, { x: 0.22, y: 0.54, z: 0 }, 0xc58aa5));
+    root.add(createDetailPart({ x: 0.04, y: 0.88, z: 0.09 }, { x: -0.39, y: 0.54, z: 0 }, 0xe7cad8));
+    root.add(createDetailPart({ x: 0.04, y: 0.88, z: 0.09 }, { x: 0.39, y: 0.54, z: 0 }, 0xe7cad8));
+}
+
+function buildWallLanternNode(root) {
+    root.add(createDetailPart({ x: 0.16, y: 0.8, z: 0.16 }, { x: 0, y: 0.4, z: -0.1 }, 0x4e3c2f));
+    root.add(createDetailPart({ x: 0.36, y: 0.08, z: 0.08 }, { x: 0, y: 0.72, z: 0.08 }, 0x584330));
+    root.add(createDetailPart({ x: 0.22, y: 0.06, z: 0.22 }, { x: 0, y: 0.52, z: 0.2 }, 0x2f2a28));
+    root.add(createDetailPart({ x: 0.18, y: 0.28, z: 0.18 }, { x: 0, y: 0.38, z: 0.2 }, 0xccaa73));
+    root.add(createDetailPart({ x: 0.22, y: 0.05, z: 0.22 }, { x: 0, y: 0.24, z: 0.2 }, 0x2f2a28));
+    createLampPointLightRig(root, {
+        baseColor: 0xffdc9d,
+        emissiveColor: 0xffc06c,
+        pointLightColor: 0xffd28a,
+        bulbScale: { x: 0.09, y: 0.09, z: 0.09 },
+        bulbPosition: { x: 0, y: 0.39, z: 0.2 }
+    });
+}
+
+function buildLightPostNode(root) {
+    root.add(createDetailPart({ x: 0.18, y: 1.65, z: 0.18 }, { x: 0, y: 0.83, z: 0 }, 0x4f4f56));
+    root.add(createDetailPart({ x: 0.42, y: 0.08, z: 0.14 }, { x: 0.12, y: 1.58, z: 0 }, 0x4f4f56));
+    root.add(createDetailPart({ x: 0.08, y: 0.18, z: 0.08 }, { x: 0.28, y: 1.5, z: 0 }, 0x4f4f56));
+    root.add(createDetailPart({ x: 0.24, y: 0.3, z: 0.24 }, { x: 0.28, y: 1.3, z: 0 }, 0xcfb37b));
+    root.add(createDetailPart({ x: 0.28, y: 0.06, z: 0.28 }, { x: 0.28, y: 1.47, z: 0 }, 0x35343a));
+    createLampPointLightRig(root, {
+        baseColor: 0xffe2a8,
+        emissiveColor: 0xffd58a,
+        pointLightColor: 0xffdca2,
+        bulbScale: { x: 0.13, y: 0.13, z: 0.13 },
+        bulbPosition: { x: 0.28, y: 1.3, z: 0 }
+    });
+}
+
+function buildBenchNode(root) {
+    root.add(createDetailPart({ x: 0.96, y: 0.09, z: 0.26 }, { x: 0, y: 0.5, z: 0 }, 0x8f623d));
+    root.add(createDetailPart({ x: 0.96, y: 0.08, z: 0.18 }, { x: 0, y: 0.69, z: -0.08 }, 0x986a43));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: -0.36, y: 0.23, z: -0.08 }, 0x6f4f31));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: 0.36, y: 0.23, z: -0.08 }, 0x6f4f31));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: -0.36, y: 0.23, z: 0.08 }, 0x6f4f31));
+    root.add(createDetailPart({ x: 0.08, y: 0.46, z: 0.08 }, { x: 0.36, y: 0.23, z: 0.08 }, 0x6f4f31));
+}
+
+function buildPicnicTableNode(root) {
+    root.add(createDetailPart({ x: 1.18, y: 0.09, z: 0.72 }, { x: 0, y: 0.68, z: 0 }, 0x9a6a44));
+    root.add(createDetailPart({ x: 1.06, y: 0.08, z: 0.18 }, { x: 0, y: 0.42, z: -0.34 }, 0x835a3a));
+    root.add(createDetailPart({ x: 1.06, y: 0.08, z: 0.18 }, { x: 0, y: 0.42, z: 0.34 }, 0x835a3a));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: -0.38, y: 0.35, z: -0.12 }, 0x724e33));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: 0.38, y: 0.35, z: -0.12 }, 0x724e33));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: -0.38, y: 0.35, z: 0.12 }, 0x724e33));
+    root.add(createDetailPart({ x: 0.12, y: 0.7, z: 0.12 }, { x: 0.38, y: 0.35, z: 0.12 }, 0x724e33));
+}
+
+function buildFountainNode(root) {
+    root.add(createDetailPart({ x: 0.92, y: 0.18, z: 0.92 }, { x: 0, y: 0.09, z: 0 }, 0x8d939e));
+    root.add(createDetailPart({ x: 0.72, y: 0.18, z: 0.72 }, { x: 0, y: 0.21, z: 0 }, 0x75818d));
+    root.add(createDetailPart({ x: 0.4, y: 0.46, z: 0.4 }, { x: 0, y: 0.42, z: 0 }, 0x95a4b4));
+    root.add(createDetailPart({ x: 0.28, y: 0.06, z: 0.28 }, { x: 0, y: 0.68, z: 0 }, 0xdce9f4));
+    root.add(createDetailPart({ x: 0.82, y: 0.08, z: 0.82 }, { x: 0, y: 0.31, z: 0 }, 0x5a94d8));
+}
+
+function buildCampfireNode(root) {
+    root.add(createDetailPart({ x: 0.52, y: 0.08, z: 0.12 }, { x: 0, y: 0.05, z: 0 }, 0x6a4629, { x: 0, y: Math.PI / 4, z: 0 }));
+    root.add(createDetailPart({ x: 0.52, y: 0.08, z: 0.12 }, { x: 0, y: 0.05, z: 0 }, 0x6a4629, { x: 0, y: -Math.PI / 4, z: 0 }));
+    root.add(createDetailPart({ x: 0.26, y: 0.12, z: 0.26 }, { x: 0, y: 0.12, z: 0 }, 0x50352b));
+    root.add(createDetailPart({ x: 0.14, y: 0.24, z: 0.14 }, { x: 0, y: 0.24, z: 0 }, 0xd56c35));
+    root.add(createDetailPart({ x: 0.08, y: 0.2, z: 0.08 }, { x: 0.08, y: 0.27, z: -0.04 }, 0xffaf4e));
+    createLampPointLightRig(root, {
+        baseColor: 0xffb56b,
+        emissiveColor: 0xff8a38,
+        pointLightColor: 0xffaf63,
+        bulbScale: { x: 0.11, y: 0.11, z: 0.11 },
+        bulbPosition: { x: 0, y: 0.27, z: 0 }
+    });
+}
+
+function buildLargeChestNode(root) {
+    root.add(createDetailPart({ x: 1.08, y: 0.38, z: 0.64 }, { x: 0, y: 0.19, z: 0 }, 0x8f623a));
+    root.add(createDetailPart({ x: 1.1, y: 0.2, z: 0.66 }, { x: 0, y: 0.49, z: 0 }, 0xab7c4c));
+    root.add(createDetailPart({ x: 0.12, y: 0.18, z: 0.08 }, { x: 0, y: 0.38, z: 0.35 }, 0xd1bc84));
+    root.add(createDetailPart({ x: 1.12, y: 0.02, z: 0.02 }, { x: 0, y: 0.28, z: 0.33 }, 0x69472a));
+}
+
+function buildFurnaceNode(root) {
+    root.add(createDetailPart({ x: 0.7, y: 0.56, z: 0.7 }, { x: 0, y: 0.28, z: 0 }, 0x6f737b));
+    root.add(createDetailPart({ x: 0.62, y: 0.48, z: 0.62 }, { x: 0, y: 0.28, z: 0 }, 0x595d64));
+    root.add(createDetailPart({ x: 0.24, y: 0.08, z: 0.06 }, { x: 0, y: 0.4, z: 0.32 }, 0x2b2d31));
+
+    const emberMaterial = createDisposableStandardMaterial({
+        color: 0x391f15,
+        roughness: 0.6,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    emberMaterial.userData.furnaceEmissiveColor = 0xff7f34;
+    const emberMesh = createDynamicPart(
+        { x: 0.2, y: 0.12, z: 0.06 },
+        { x: 0, y: 0.2, z: 0.32 },
+        emberMaterial
+    );
+    root.add(emberMesh);
+
+    const furnaceLight = new THREE.PointLight(0xff8a42, 0, 0, 2);
+    furnaceLight.position.set(0, 0.22, 0.26);
+    furnaceLight.castShadow = false;
+    root.add(furnaceLight);
+
+    root.userData.furnaceEmberMaterial = emberMaterial;
+    root.userData.furnacePointLight = furnaceLight;
+}
+
+function buildEditableSignNode(root) {
+    root.add(createDetailPart({ x: 0.08, y: 1.04, z: 0.08 }, { x: 0, y: 0.52, z: 0 }, 0x7e562f));
+    root.add(createDetailPart({ x: 0.74, y: 0.42, z: 0.14 }, { x: 0, y: 0.79, z: 0 }, 0xa97748));
+    root.add(createDetailPart({ x: 0.72, y: 0.02, z: 0.16 }, { x: 0, y: 1.0, z: 0 }, 0x7d5633));
+    root.add(createDetailPart({ x: 0.72, y: 0.02, z: 0.16 }, { x: 0, y: 0.58, z: 0 }, 0x7d5633));
+    root.add(createDetailPart({ x: 0.02, y: 0.38, z: 0.16 }, { x: -0.36, y: 0.79, z: 0 }, 0x7d5633));
+    root.add(createDetailPart({ x: 0.02, y: 0.38, z: 0.16 }, { x: 0.36, y: 0.79, z: 0 }, 0x7d5633));
+
+    const signCanvas = document.createElement("canvas");
+    signCanvas.width = 512;
+    signCanvas.height = 256;
+    const signContext = signCanvas.getContext("2d");
+    if (!signContext) {
+        return;
+    }
+
+    const signTexture = new THREE.CanvasTexture(signCanvas);
+    signTexture.needsUpdate = true;
+    signTexture.userData.disposeOnRemove = true;
+    const signMaterial = createDisposableStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.9,
+        metalness: 0,
+        map: signTexture
+    });
+    const signFace = new THREE.Mesh(signFaceGeometry, signMaterial);
+    signFace.position.set(0, 0.79, 0.081);
+    signFace.castShadow = false;
+    signFace.receiveShadow = false;
+    root.add(signFace);
+
+    root.userData.signCanvas = signCanvas;
+    root.userData.signContext = signContext;
+    root.userData.signTexture = signTexture;
+    root.userData.signMaterial = signMaterial;
+}
+
+function buildJukeboxNode(root) {
+    root.add(createDetailPart({ x: 0.66, y: 0.62, z: 0.66 }, { x: 0, y: 0.31, z: 0 }, 0x5f3c2e));
+    root.add(createDetailPart({ x: 0.58, y: 0.54, z: 0.58 }, { x: 0, y: 0.31, z: 0 }, 0x43281f));
+
+    const discMaterial = createDisposableStandardMaterial({
+        color: 0x222329,
+        roughness: 0.2,
+        metalness: 0.12,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    discMaterial.userData.jukeboxEmissiveColor = 0x5aa8ff;
+    const disc = createDynamicPart(
+        { x: 0.24, y: 0.04, z: 0.24 },
+        { x: 0, y: 0.62, z: 0 },
+        discMaterial
+    );
+    root.add(disc);
+
+    const ledMaterial = createDisposableStandardMaterial({
+        color: 0x2f3137,
+        roughness: 0.36,
+        metalness: 0.04,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    ledMaterial.userData.jukeboxLedEmissiveColor = 0x80beff;
+    const ledMesh = createDynamicPart(
+        { x: 0.16, y: 0.08, z: 0.06 },
+        { x: 0, y: 0.35, z: 0.33 },
+        ledMaterial
+    );
+    root.add(ledMesh);
+
+    root.userData.jukeboxDiscMaterial = discMaterial;
+    root.userData.jukeboxLedMaterial = ledMaterial;
+}
+
+function buildGiantSunflowerNode(root) {
+    root.add(createDetailPart({ x: 0.08, y: 1.7, z: 0.08 }, { x: 0, y: 0.85, z: 0 }, 0x4d8f43));
+    root.add(createDetailPart({ x: 0.24, y: 0.12, z: 0.08 }, { x: -0.14, y: 0.92, z: 0.02 }, 0x4d8f43, { x: 0, y: 0, z: 0.55 }));
+    root.add(createDetailPart({ x: 0.24, y: 0.12, z: 0.08 }, { x: 0.14, y: 1.1, z: -0.02 }, 0x4d8f43, { x: 0, y: 0, z: -0.45 }));
+    root.add(createDetailPart({ x: 0.5, y: 0.5, z: 0.12 }, { x: 0, y: 1.72, z: 0 }, 0xf4d35e));
+    root.add(createDetailPart({ x: 0.52, y: 0.12, z: 0.52 }, { x: 0, y: 1.72, z: 0 }, 0x5c3a26));
+    root.add(createDetailPart({ x: 0.1, y: 0.62, z: 0.48 }, { x: 0, y: 1.72, z: 0 }, 0xf4d35e));
+    root.add(createDetailPart({ x: 0.48, y: 0.62, z: 0.1 }, { x: 0, y: 1.72, z: 0 }, 0xf4d35e));
+}
+
+function buildRabbitHouseNode(root) {
+    root.add(createDetailPart({ x: 1.02, y: 0.18, z: 0.82 }, { x: 0, y: 0.09, z: 0 }, 0x8a6243));
+    root.add(createDetailPart({ x: 0.94, y: 0.44, z: 0.72 }, { x: 0, y: 0.4, z: 0 }, 0xac7f59));
+    root.add(createDetailPart({ x: 0.96, y: 0.08, z: 0.74 }, { x: 0, y: 0.66, z: 0 }, 0x704c2f));
+    root.add(createDetailPart({ x: 0.26, y: 0.24, z: 0.04 }, { x: 0, y: 0.24, z: 0.36 }, 0x2a2320));
+    root.add(createDetailPart({ x: 0.18, y: 0.36, z: 0.04 }, { x: 0, y: 0.36, z: 0.36 }, 0x2a2320));
+    root.add(createDetailPart({ x: 0.42, y: 0.06, z: 0.9 }, { x: 0, y: 0.71, z: 0 }, 0x8f6544, { x: Math.PI * 0.11, y: 0, z: 0 }));
+}
+
 const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.CHAIR]: buildChairNode,
     [PROP_TYPE.TABLE]: buildTableNode,
@@ -2493,7 +3097,25 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.CHEST]: buildChestNode,
     [PROP_TYPE.BED]: buildBedNode,
     [PROP_TYPE.FENCE]: buildFenceNode,
-    [PROP_TYPE.LANTERN]: buildLanternNode
+    [PROP_TYPE.LANTERN]: buildLanternNode,
+    [PROP_TYPE.BOOKSHELF]: buildBookshelfNode,
+    [PROP_TYPE.BARREL]: buildBarrelNode,
+    [PROP_TYPE.WOOD_CRATE]: buildWoodCrateNode,
+    [PROP_TYPE.RUG]: buildRugNode,
+    [PROP_TYPE.PAINTING]: buildPaintingNode,
+    [PROP_TYPE.CURTAINS]: buildCurtainsNode,
+    [PROP_TYPE.WALL_LANTERN]: buildWallLanternNode,
+    [PROP_TYPE.LIGHT_POST]: buildLightPostNode,
+    [PROP_TYPE.BENCH]: buildBenchNode,
+    [PROP_TYPE.PICNIC_TABLE]: buildPicnicTableNode,
+    [PROP_TYPE.FOUNTAIN]: buildFountainNode,
+    [PROP_TYPE.CAMPFIRE]: buildCampfireNode,
+    [PROP_TYPE.LARGE_CHEST]: buildLargeChestNode,
+    [PROP_TYPE.FURNACE]: buildFurnaceNode,
+    [PROP_TYPE.EDITABLE_SIGN]: buildEditableSignNode,
+    [PROP_TYPE.JUKEBOX]: buildJukeboxNode,
+    [PROP_TYPE.GIANT_SUNFLOWER]: buildGiantSunflowerNode,
+    [PROP_TYPE.RABBIT_HOUSE]: buildRabbitHouseNode
 });
 
 const registryValidationIssues = [
@@ -2663,6 +3285,11 @@ function normalizePropEntry(rawEntry, fallbackId = "") {
         yaw
     };
 
+    const normalizedState = normalizePropSharedState(propType, rawEntry?.state, rawEntry);
+    if (normalizedState && Object.keys(normalizedState).length > 0) {
+        normalized.state = normalizedState;
+    }
+
     if (isLightPropType(propType)) {
         normalized.lampLevel = normalizeLampLevel(rawEntry?.lampLevel);
     }
@@ -2686,6 +3313,15 @@ function serializePropForCloud(rawEntry, fallbackId = "") {
 
     if (isLightPropType(normalized.propType)) {
         serialized.lampLevel = normalizeLampLevel(normalized.lampLevel);
+    }
+
+    const defaultState = getPropDefaultSharedState(normalized.propType);
+    if (
+        normalized.state
+        && Object.keys(normalized.state).length > 0
+        && !arePropStatesEqual(normalized.state, defaultState)
+    ) {
+        serialized.state = normalized.state;
     }
 
     return serialized;
@@ -2714,6 +3350,9 @@ function disposePropNodeResources(node) {
         const material = child.material;
         if (Array.isArray(material)) {
             for (const item of material) {
+                if (item?.map?.userData?.disposeOnRemove || item?.userData?.disposeMapOnRemove) {
+                    item.map.dispose?.();
+                }
                 if (item?.userData?.disposeOnRemove) {
                     item.dispose?.();
                 }
@@ -2721,6 +3360,9 @@ function disposePropNodeResources(node) {
             return;
         }
 
+        if (material?.map?.userData?.disposeOnRemove || material?.userData?.disposeMapOnRemove) {
+            material.map.dispose?.();
+        }
         if (material?.userData?.disposeOnRemove) {
             material.dispose?.();
         }
@@ -2737,7 +3379,7 @@ function addPlacedPropEntry(entry, origin = "local") {
         return null;
     }
 
-    const { id, propType, x, y, z, yaw, lampLevel } = normalized;
+    const { id, propType, x, y, z, yaw, lampLevel, state: sharedState } = normalized;
     const existing = placedProps.get(id);
     if (!existing && origin === "local" && placedProps.size >= MAX_PLACED_PROPS) {
         showToast("Limite de objetos alcanzado", "warning", 1100);
@@ -2753,6 +3395,9 @@ function addPlacedPropEntry(entry, origin = "local") {
             existing.y = y;
             existing.z = z;
             existing.yaw = yaw;
+            existing.state = sharedState && typeof sharedState === "object"
+                ? { ...sharedState }
+                : undefined;
             existing.node.position.set(x, y, z);
             existing.node.rotation.y = yaw;
             refreshSinglePropVisibility(existing);
@@ -2762,6 +3407,7 @@ function addPlacedPropEntry(entry, origin = "local") {
             } else {
                 existing.lampLevel = 0;
             }
+            applyPropSharedVisualState(existing);
 
             bumpNextPropIdFromValue(id);
             markLampShadowsDirty();
@@ -2788,6 +3434,9 @@ function addPlacedPropEntry(entry, origin = "local") {
         z,
         yaw,
         lampLevel,
+        state: sharedState && typeof sharedState === "object"
+            ? { ...sharedState }
+            : undefined,
         chunkKey: chunkKey(worldToChunkCoord(x), worldToChunkCoord(z)),
         node
     };
@@ -2798,6 +3447,7 @@ function addPlacedPropEntry(entry, origin = "local") {
     if (isLightPropType(propType)) {
         applyLampVisualState(placedEntry, placedEntry.lampLevel, false);
     }
+    applyPropSharedVisualState(placedEntry);
 
     bumpNextPropIdFromValue(id);
     markLampShadowsDirty();
@@ -5806,6 +6456,10 @@ function collidesAt(x, y, z) {
         if (!placed) {
             continue;
         }
+        const definition = getPropDefinition(placed.propType);
+        if (definition && !definition.solid) {
+            continue;
+        }
         if (!placed?.node || placed.node.visible === false) {
             continue;
         }
@@ -6526,13 +7180,132 @@ function cycleLampIntensity(propId, showFeedback = true) {
     return true;
 }
 
-function tryCycleLampAtCrosshair() {
-    const propHit = findTargetedPropHit();
-    if (!propHit || !isLightPropType(propHit.placed.propType)) {
+function updatePropSharedState(propId, patchState, showFeedbackText = "") {
+    const id = String(propId || "");
+    if (!id || !patchState || typeof patchState !== "object") {
         return false;
     }
 
-    return cycleLampIntensity(propHit.propId, true);
+    const placed = placedProps.get(id);
+    if (!placed) {
+        return false;
+    }
+
+    const mergedState = {
+        ...(placed.state || {}),
+        ...patchState
+    };
+    const normalizedState = normalizePropSharedState(placed.propType, mergedState, mergedState);
+    if (!normalizedState) {
+        return false;
+    }
+
+    if (arePropStatesEqual(placed.state, normalizedState)) {
+        return true;
+    }
+
+    placed.state = normalizedState;
+    applyPropSharedVisualState(placed);
+    scheduleWorldSave();
+    publishPropUpsert(id);
+
+    if (showFeedbackText) {
+        showToast(showFeedbackText, "info", 1000);
+    }
+
+    return true;
+}
+
+function tryEditSignProp(propHit) {
+    const placed = propHit?.placed;
+    if (!placed || placed.propType !== PROP_TYPE.EDITABLE_SIGN) {
+        return false;
+    }
+
+    const previousText = sanitizeEditableSignText(placed.state?.text || "Nuestro lugar");
+    const shouldReLock = controls.isLocked;
+    if (shouldReLock) {
+        try {
+            controls.unlock();
+        } catch (error) {
+        }
+    }
+
+    let inputValue = null;
+    try {
+        inputValue = window.prompt("Texto del cartel:", previousText);
+    } catch (error) {
+        inputValue = previousText;
+    }
+
+    if (shouldReLock && state.worldStarted && !state.paused && !state.inventoryOpen && !state.tutorialVisible) {
+        try {
+            controls.lock();
+        } catch (error) {
+        }
+    }
+
+    if (inputValue === null) {
+        return true;
+    }
+
+    const nextText = sanitizeEditableSignText(inputValue, previousText);
+    return updatePropSharedState(propHit.propId, { text: nextText }, "Cartel actualizado");
+}
+
+function tryToggleJukeboxProp(propHit) {
+    const placed = propHit?.placed;
+    if (!placed || placed.propType !== PROP_TYPE.JUKEBOX) {
+        return false;
+    }
+
+    const wasPlaying = Boolean(placed.state?.playing);
+    const currentTrack = sanitizeJukeboxTrack(placed.state?.track);
+    const nextPlaying = !wasPlaying;
+    const nextTrack = nextPlaying
+        ? (currentTrack % JUKEBOX_TRACK_COUNT) + 1
+        : currentTrack;
+    const label = nextPlaying
+        ? `Jukebox: pista ${nextTrack}`
+        : "Jukebox detenida";
+    return updatePropSharedState(propHit.propId, {
+        playing: nextPlaying,
+        track: nextTrack
+    }, label);
+}
+
+function tryToggleFurnaceProp(propHit) {
+    const placed = propHit?.placed;
+    if (!placed || placed.propType !== PROP_TYPE.FURNACE) {
+        return false;
+    }
+
+    const nextLit = !Boolean(placed.state?.lit);
+    return updatePropSharedState(propHit.propId, { lit: nextLit }, `Horno ${nextLit ? "encendido" : "apagado"}`);
+}
+
+function tryInteractPropAtCrosshair() {
+    const propHit = findTargetedPropHit();
+    if (!propHit) {
+        return false;
+    }
+
+    const definition = getPropDefinition(propHit.placed.propType);
+    const interaction = definition?.interaction || "";
+    if (interaction === "light-cycle" && isLightPropType(propHit.placed.propType)) {
+        return cycleLampIntensity(propHit.propId, true);
+    }
+    if (interaction === "edit-text") {
+        return tryEditSignProp(propHit);
+    }
+    if (interaction === "toggle-jukebox") {
+        return tryToggleJukeboxProp(propHit);
+    }
+    if (interaction === "toggle-state" && propHit.placed.propType === PROP_TYPE.FURNACE) {
+        return tryToggleFurnaceProp(propHit);
+    }
+
+    return false;
 }
 
 function tryRemovePlacedPropAtCrosshair() {
@@ -6738,7 +7511,7 @@ function onMouseDown(event) {
     }
 
     if (event.button === 2) {
-        if (tryCycleLampAtCrosshair()) {
+        if (tryInteractPropAtCrosshair()) {
             return;
         }
         attemptMineOrPlace(true);
