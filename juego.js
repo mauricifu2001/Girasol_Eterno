@@ -12,17 +12,17 @@ function clampInt(value, min, max) {
 const WORLD_MAX_Y = 48;
 const CHUNK_SIZE = 16;
 const CHUNK_MANAGEMENT_INTERVAL = 0.22;
-const CHUNK_REBUILD_BUDGET_PER_FRAME = 2;
+const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
 const CLOUD_EDIT_WRITE_BATCH_MS = 220;
 const CLOUD_EDIT_RETRY_MS = 1200;
 const SEA_LEVEL = 14;
 const CLOUD_COUNT = 22;
-const RABBIT_MAX_COUNT = 22;
-const RABBIT_SPAWN_INTERVAL_MIN = 3.8;
-const RABBIT_SPAWN_INTERVAL_MAX = 11.4;
-const RABBIT_SPAWN_ATTEMPTS = 9;
-const RABBIT_DESPAWN_DISTANCE = 175;
+const RABBIT_MAX_COUNT = 12;
+const RABBIT_SPAWN_INTERVAL_MIN = 7.2;
+const RABBIT_SPAWN_INTERVAL_MAX = 18.4;
+const RABBIT_SPAWN_ATTEMPTS = 6;
+const RABBIT_DESPAWN_DISTANCE = 155;
 const RABBIT_MIN_PLAYER_DISTANCE = 10;
 const RABBIT_MIN_RABBIT_DISTANCE = 2.4;
 const DEBUG_VISIBILITY_STORAGE_KEY = "girasolDebugHudVisible";
@@ -34,6 +34,7 @@ const AVATAR_PREVIEW_RADIUS = 2.55;
 const AVATAR_WALK_BLEND_SPEED = 9.5;
 const AVATAR_WALK_MIN_SPEED = 0.05;
 const AVATAR_WALK_SWING = 0.78;
+const REMOTE_AVATAR_YAW_OFFSET = Math.PI;
 
 const PLAYER_HEIGHT = 1.8;
 const PLAYER_RADIUS = 0.32;
@@ -44,6 +45,7 @@ const SPRINT_SPEED = 9.4;
 const JUMP_SPEED = 9.2;
 const MAX_REACH = 6;
 const DEFAULT_POINTER_SPEED = 0.68;
+const TARGET_UI_SCAN_INTERVAL = 0.055;
 
 const BLOCK = {
     AIR: 0,
@@ -222,13 +224,14 @@ const urlParams = new URLSearchParams(window.location.search);
 const MAX_EDITED_BLOCKS = clampInt(Number(gameConfig.maxEditedBlocks) || 120000, 2000, 500000);
 const MAX_PLACED_PROPS = clampInt(Number(gameConfig.maxPlacedProps) || 2400, 100, 10000);
 const WORLD_SAVE_KEY = `girasolWorldEdits:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
+const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
 const WORLD_SAVE_VERSION = 2;
 const AUTO_SAVE_SECONDS = 12;
-const SUNFLOWER_MAX_COUNT = clampInt(Number(gameConfig.sunflowerMaxCount) || 130, 20, 500);
-const SUNFLOWER_SPAWN_INTERVAL_MIN = 1.5;
-const SUNFLOWER_SPAWN_INTERVAL_MAX = 4.2;
-const SUNFLOWER_SPAWN_ATTEMPTS = 16;
-const SUNFLOWER_DESPAWN_DISTANCE = 150;
+const SUNFLOWER_MAX_COUNT = clampInt(Number(gameConfig.sunflowerMaxCount) || 68, 12, 300);
+const SUNFLOWER_SPAWN_INTERVAL_MIN = 3.6;
+const SUNFLOWER_SPAWN_INTERVAL_MAX = 8.9;
+const SUNFLOWER_SPAWN_ATTEMPTS = 10;
+const SUNFLOWER_DESPAWN_DISTANCE = 130;
 const SUNFLOWER_MIN_PLAYER_DISTANCE = 5;
 const SUNFLOWER_MIN_FLOWER_DISTANCE = 1.25;
 const DAY_DURATION_SECONDS = 30 * 60;
@@ -237,13 +240,14 @@ const DAY_NIGHT_CYCLE_SECONDS = DAY_DURATION_SECONDS + NIGHT_DURATION_SECONDS;
 const SUN_ORBIT_RADIUS = 150;
 const SUN_ORBIT_HEIGHT = 98;
 const LAMP_INTENSITY_LEVELS = [0, 0.85, 1.7, 2.75];
-const LAMP_DISTANCE_LEVELS = [0, 9, 13, 17];
+const LAMP_DISTANCE_LEVELS = [0, 8, 11, 14];
 const LAMP_BULB_EMISSIVE_LEVELS = [0.01, 0.28, 0.56, 0.92];
-const LAMP_SHADOW_MAP_SIZE = 128;
-const MAX_SHADOW_CASTING_LAMPS = 3;
-const LAMP_SHADOW_MAX_DISTANCE = 26;
-const LAMP_SHADOW_REFRESH_SECONDS = 0.24;
-const SKY_SHADOW_REFRESH_SECONDS = 0.28;
+const LAMP_SHADOW_MAP_SIZE = 96;
+const MAX_SHADOW_CASTING_LAMPS = 2;
+const LAMP_SHADOW_MAX_DISTANCE = 20;
+const LAMP_SHADOW_REFRESH_SECONDS = 0.45;
+const LAMP_SHADOW_MIN_LEVEL = 3;
+const SKY_SHADOW_REFRESH_SECONDS = 0.82;
 const PROP_ROTATION_STEP = Math.PI * 0.5;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
 const SKY_DUSK_COLOR = new THREE.Color(0xffb579);
@@ -326,7 +330,7 @@ scene.add(ambientFill);
 const sun = new THREE.DirectionalLight(0xffffff, 0.9);
 sun.position.set(16, 30, 8);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.mapSize.set(768, 768);
 sun.shadow.camera.near = 20;
 sun.shadow.camera.far = 280;
 sun.shadow.camera.left = -64;
@@ -341,7 +345,7 @@ scene.add(sun);
 
 const moon = new THREE.DirectionalLight(0x8ba9ff, 0.16);
 moon.castShadow = true;
-moon.shadow.mapSize.set(512, 512);
+moon.shadow.mapSize.set(384, 384);
 moon.shadow.camera.near = 20;
 moon.shadow.camera.far = 240;
 moon.shadow.camera.left = -54;
@@ -664,7 +668,8 @@ const state = {
     loadedChunkCount: 0,
     pendingChunkBuildCount: 0,
     lastForward: new THREE.Vector3(0, 0, -1),
-    autoSaveTick: 0
+    autoSaveTick: 0,
+    targetUiTick: 0
 };
 
 const multiplayer = {
@@ -679,7 +684,8 @@ const multiplayer = {
         myPlayerRef: null,
         chunksRootRef: null,
         propsRootRef: null,
-        metaRef: null
+        metaRef: null,
+        dayNightRef: null
     },
     remotePlayers: new Map(),
     chunkEditSubscriptions: new Map(),
@@ -715,6 +721,8 @@ const skyState = {
     moonCore: null,
     moonGlow: null,
     cycleSeconds: DAY_DURATION_SECONDS * 0.35,
+    sharedEpochMs: 0,
+    clockSynced: false,
     shadowRefreshTimer: 0,
     lastShadowAnchorX: 0,
     lastShadowAnchorZ: 0,
@@ -1267,14 +1275,21 @@ function getBlockLabel(blockId) {
     return BLOCK_LABELS[blockId] || `Bloque ${blockId}`;
 }
 
-function updateTargetedBlockUi() {
+function updateTargetedBlockUi(deltaSeconds = 0) {
     if (!state.worldStarted || !state.worldReady || state.paused || state.avatarPreviewOpen || state.inventoryOpen || !controls.isLocked) {
+        state.targetUiTick = 0;
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
             targetBlockLabelEl.classList.add("hidden");
         }
         return;
     }
+
+    state.targetUiTick -= Math.max(0, deltaSeconds);
+    if (state.targetUiTick > 0) {
+        return;
+    }
+    state.targetUiTick = TARGET_UI_SCAN_INTERVAL;
 
     const blockHit = findTargetedBlockHit();
     const blockDistance = blockHit?.hit?.distance ?? Number.POSITIVE_INFINITY;
@@ -1421,6 +1436,67 @@ function createSkyDecor() {
     }
 }
 
+function normalizeDayNightCycleSeconds(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) {
+        return 0;
+    }
+
+    const wrapped = numeric % DAY_NIGHT_CYCLE_SECONDS;
+    return wrapped < 0 ? wrapped + DAY_NIGHT_CYCLE_SECONDS : wrapped;
+}
+
+function cycleSecondsToEpochMs(cycleSeconds, referenceMs = Date.now()) {
+    const normalizedSeconds = normalizeDayNightCycleSeconds(cycleSeconds);
+    return Math.floor(Number(referenceMs) - normalizedSeconds * 1000);
+}
+
+function computeCycleSecondsFromEpochMs(epochMs, referenceMs = Date.now()) {
+    const epoch = Number(epochMs);
+    const now = Number(referenceMs);
+    if (!Number.isFinite(epoch) || epoch <= 0 || !Number.isFinite(now)) {
+        return null;
+    }
+
+    return normalizeDayNightCycleSeconds((now - epoch) / 1000);
+}
+
+function applyDayNightEpochMs(epochMs, persist = true) {
+    const epoch = Math.floor(Number(epochMs));
+    if (!Number.isFinite(epoch) || epoch <= 0) {
+        return false;
+    }
+
+    skyState.sharedEpochMs = epoch;
+    skyState.clockSynced = true;
+    const syncedCycle = computeCycleSecondsFromEpochMs(epoch);
+    if (syncedCycle !== null) {
+        skyState.cycleSeconds = syncedCycle;
+    }
+
+    if (persist) {
+        writeStorageValue(DAY_NIGHT_EPOCH_STORAGE_KEY, epoch);
+    }
+    return true;
+}
+
+function initDayNightClockFromStorage() {
+    const storedEpoch = Math.floor(readStorageNumber(DAY_NIGHT_EPOCH_STORAGE_KEY, 0));
+    if (Number.isFinite(storedEpoch) && storedEpoch > 0) {
+        if (applyDayNightEpochMs(storedEpoch, false)) {
+            return;
+        }
+    }
+
+    const fallbackEpoch = cycleSecondsToEpochMs(skyState.cycleSeconds);
+    applyDayNightEpochMs(fallbackEpoch, true);
+}
+
+function resolveRemoteAvatarYaw(yawValue) {
+    const yaw = Number(yawValue);
+    return (Number.isFinite(yaw) ? yaw : 0) + REMOTE_AVATAR_YAW_OFFSET;
+}
+
 function getSkyOrbitAngle(cycleSeconds) {
     const wrapped = ((cycleSeconds % DAY_NIGHT_CYCLE_SECONDS) + DAY_NIGHT_CYCLE_SECONDS) % DAY_NIGHT_CYCLE_SECONDS;
     if (wrapped < DAY_DURATION_SECONDS) {
@@ -1433,12 +1509,22 @@ function getSkyOrbitAngle(cycleSeconds) {
 }
 
 function updateSky(deltaSeconds) {
-    skyState.cycleSeconds = (skyState.cycleSeconds + deltaSeconds) % DAY_NIGHT_CYCLE_SECONDS;
+    const syncedCycle = computeCycleSecondsFromEpochMs(skyState.sharedEpochMs);
+    if (syncedCycle === null) {
+        skyState.cycleSeconds = normalizeDayNightCycleSeconds(skyState.cycleSeconds + deltaSeconds);
+    } else {
+        skyState.cycleSeconds = syncedCycle;
+    }
     const orbitAngle = getSkyOrbitAngle(skyState.cycleSeconds);
     const sunDir = skyVectorScratchA
         .set(Math.cos(orbitAngle), Math.sin(orbitAngle), Math.sin(orbitAngle * 0.42 + 1.1))
         .normalize();
     const moonDir = skyVectorScratchB.copy(sunDir).multiplyScalar(-1);
+    const dayFactor = smoothstep(-0.09, 0.2, sunDir.y);
+    const nightFactor = smoothstep(-0.08, 0.2, moonDir.y);
+    const twilightFactor = 1 - Math.min(1, Math.abs(sunDir.y) * 5);
+    const sunShadowActive = dayFactor > 0.12;
+    const moonShadowActive = nightFactor > 0.18;
 
     const anchorX = state.playerPosition.x;
     const anchorY = state.playerPosition.y + 6;
@@ -1457,13 +1543,24 @@ function updateSky(deltaSeconds) {
     sun.target.updateMatrixWorld();
     moon.target.updateMatrixWorld();
 
+    if (sun.castShadow !== sunShadowActive) {
+        sun.castShadow = sunShadowActive;
+    }
+    if (moon.castShadow !== moonShadowActive) {
+        moon.castShadow = moonShadowActive;
+    }
+
     skyState.shadowRefreshTimer -= deltaSeconds;
     const movedX = Math.abs(anchorX - skyState.lastShadowAnchorX);
     const movedZ = Math.abs(anchorZ - skyState.lastShadowAnchorZ);
     const sunYDelta = Math.abs(sunDir.y - skyState.lastShadowSunY);
     if (skyState.shadowRefreshTimer <= 0 || movedX > 1.25 || movedZ > 1.25 || sunYDelta > 0.025) {
-        sun.shadow.needsUpdate = true;
-        moon.shadow.needsUpdate = true;
+        if (sunShadowActive) {
+            sun.shadow.needsUpdate = true;
+        }
+        if (moonShadowActive) {
+            moon.shadow.needsUpdate = true;
+        }
         skyState.shadowRefreshTimer = SKY_SHADOW_REFRESH_SECONDS;
         skyState.lastShadowAnchorX = anchorX;
         skyState.lastShadowAnchorZ = anchorZ;
@@ -1483,9 +1580,6 @@ function updateSky(deltaSeconds) {
         skyState.moonGlow.position.set(moonPosX, moonPosY, moonPosZ);
     }
 
-    const dayFactor = smoothstep(-0.09, 0.2, sunDir.y);
-    const nightFactor = smoothstep(-0.08, 0.2, moonDir.y);
-    const twilightFactor = 1 - Math.min(1, Math.abs(sunDir.y) * 5);
     skyColorScratch.copy(SKY_NIGHT_COLOR).lerp(SKY_DAY_COLOR, dayFactor);
     if (twilightFactor > 0.001) {
         skyColorScratch.lerp(SKY_DUSK_COLOR, twilightFactor * (1 - dayFactor * 0.6));
@@ -1819,9 +1913,9 @@ function updateWildlife(deltaSeconds) {
         resetRabbitSpawnTimer();
 
         const occupancy = wildlifeState.rabbits.size / RABBIT_MAX_COUNT;
-        const spawnChance = Math.max(0.18, 0.82 - occupancy * 0.7);
+        const spawnChance = Math.max(0.08, 0.36 - occupancy * 0.3);
         if (Math.random() < spawnChance) {
-            const spawnBursts = wildlifeState.rabbits.size < 6 ? randomIntInclusive(1, 2) : 1;
+            const spawnBursts = 1;
             for (let i = 0; i < spawnBursts; i += 1) {
                 if (!trySpawnRabbitNearPlayer(false)) {
                     break;
@@ -1853,7 +1947,7 @@ function initWildlife() {
     wildlifeState.nextId = 1;
     resetRabbitSpawnTimer();
 
-    const initialCount = randomIntInclusive(2, 4);
+    const initialCount = randomIntInclusive(1, 2);
     for (let i = 0; i < initialCount; i += 1) {
         if (!trySpawnRabbitNearPlayer(true)) {
             break;
@@ -2164,7 +2258,7 @@ function applyLampVisualState(placed, lampLevel, persist = true) {
         pointLight.intensity = LAMP_INTENSITY_LEVELS[normalizedLevel];
         pointLight.distance = LAMP_DISTANCE_LEVELS[normalizedLevel];
         pointLight.visible = normalizedLevel > 0;
-        pointLight.shadow.needsUpdate = normalizedLevel > 0;
+        pointLight.shadow.needsUpdate = normalizedLevel >= LAMP_SHADOW_MIN_LEVEL;
     }
 
     if (bulbMaterial) {
@@ -2215,7 +2309,7 @@ function updateActiveLampShadowCasters(deltaSeconds) {
             continue;
         }
 
-        if (placed.node?.visible === false) {
+        if (placed.node?.visible === false || lampLevel < LAMP_SHADOW_MIN_LEVEL) {
             if (pointLight.castShadow) {
                 pointLight.castShadow = false;
                 pointLight.shadow.needsUpdate = true;
@@ -2238,7 +2332,7 @@ function updateActiveLampShadowCasters(deltaSeconds) {
         if (pointLight.castShadow !== shouldCast) {
             pointLight.castShadow = shouldCast;
             pointLight.shadow.needsUpdate = true;
-        } else if (shouldCast && (forceShadowRefresh || candidates[i].lampLevel > 0)) {
+        } else if (shouldCast && forceShadowRefresh) {
             pointLight.shadow.needsUpdate = true;
         }
     }
@@ -2642,7 +2736,7 @@ function initSunflowers() {
     floraState.nextId = 1;
     resetSunflowerSpawnTimer();
 
-    const initialCount = randomIntInclusive(16, 30);
+    const initialCount = randomIntInclusive(8, 16);
     for (let i = 0; i < initialCount; i += 1) {
         if (!trySpawnSunflowerNearPlayer(true)) {
             break;
@@ -2659,9 +2753,9 @@ function updateSunflowers(deltaSeconds) {
     if (floraState.spawnTimer <= 0) {
         resetSunflowerSpawnTimer();
         const occupancy = floraState.sunflowers.size / SUNFLOWER_MAX_COUNT;
-        const spawnChance = Math.max(0.24, 0.9 - occupancy * 0.75);
+        const spawnChance = Math.max(0.06, 0.28 - occupancy * 0.24);
         if (Math.random() < spawnChance) {
-            const bursts = floraState.sunflowers.size < 20 ? randomIntInclusive(1, 3) : 1;
+            const bursts = 1;
             for (let i = 0; i < bursts; i += 1) {
                 if (!trySpawnSunflowerNearPlayer(false)) {
                     break;
@@ -3685,7 +3779,7 @@ function createRemotePlayerNode(playerId, payload) {
         Number(payload.y) || 10,
         Number(payload.z) || 0
     );
-    group.rotation.y = Number(payload.yaw) || 0;
+    group.rotation.y = resolveRemoteAvatarYaw(payload.yaw);
 
     remotePlayersRoot.add(group);
 
@@ -3717,7 +3811,7 @@ function upsertRemotePlayer(playerId, payload) {
         Number(payload.y) || 10,
         Number(payload.z) || 0
     );
-    node.targetYaw = Number(payload.yaw) || 0;
+    node.targetYaw = resolveRemoteAvatarYaw(payload.yaw);
     node.lastSeenAt = Date.now();
 }
 
@@ -4298,7 +4392,7 @@ function getDynamicChunkBuildBudget() {
     }
 
     if (perfState.fpsEma > 58 && state.pendingChunkBuildCount > 14) {
-        return 3;
+        return 2;
     }
 
     return CHUNK_REBUILD_BUDGET_PER_FRAME;
@@ -4334,6 +4428,63 @@ async function resolveFirebaseConfig() {
     }
 
     return runtimeFirebaseConfigPromise;
+}
+
+async function ensureSharedDayNightClock(dbModule, db, worldPath) {
+    const dayNightRef = dbModule.ref(db, `${worldPath}/meta/dayNightEpochMs`);
+    multiplayer.refs.dayNightRef = dayNightRef;
+
+    const localEpochFallback = Math.floor(
+        skyState.sharedEpochMs > 0
+            ? skyState.sharedEpochMs
+            : cycleSecondsToEpochMs(skyState.cycleSeconds)
+    );
+    applyDayNightEpochMs(localEpochFallback, true);
+
+    try {
+        if (typeof dbModule.runTransaction === "function") {
+            await dbModule.runTransaction(
+                dayNightRef,
+                (currentValue) => {
+                    const currentEpoch = Math.floor(Number(currentValue));
+                    if (Number.isFinite(currentEpoch) && currentEpoch > 0) {
+                        return currentEpoch;
+                    }
+                    return localEpochFallback;
+                },
+                { applyLocally: false }
+            );
+        } else {
+            const currentSnap = await dbModule.get(dayNightRef);
+            if (!currentSnap.exists()) {
+                await dbModule.set(dayNightRef, localEpochFallback);
+            }
+        }
+    } catch (error) {
+        console.warn("No pude asegurar reloj compartido de dia/noche", error);
+    }
+
+    const unsubDayNight = dbModule.onValue(dayNightRef, (snapshot) => {
+        const remoteEpoch = Math.floor(Number(snapshot.val()));
+        if (Number.isFinite(remoteEpoch) && remoteEpoch > 0) {
+            applyDayNightEpochMs(remoteEpoch, true);
+            return;
+        }
+
+        if (!snapshot.exists()) {
+            const fallbackEpoch = Math.floor(
+                skyState.sharedEpochMs > 0
+                    ? skyState.sharedEpochMs
+                    : cycleSecondsToEpochMs(skyState.cycleSeconds)
+            );
+            applyDayNightEpochMs(fallbackEpoch, true);
+            dbModule.set(dayNightRef, fallbackEpoch).catch((error) => {
+                console.warn("No pude restaurar reloj compartido de dia/noche", error);
+            });
+        }
+    });
+
+    multiplayer.unsubscribers.push(unsubDayNight);
 }
 
 async function setupRealtimeMultiplayer() {
@@ -4375,6 +4526,7 @@ async function setupRealtimeMultiplayer() {
         multiplayer.refs.chunksRootRef = dbModule.ref(db, `${worldPath}/chunks`);
         multiplayer.refs.propsRootRef = dbModule.ref(db, `${worldPath}/props`);
         multiplayer.refs.metaRef = dbModule.ref(db, `${worldPath}/meta`);
+        await ensureSharedDayNightClock(dbModule, db, worldPath);
 
         const connectedRef = dbModule.ref(db, ".info/connected");
         const unsubConnected = dbModule.onValue(connectedRef, (snapshot) => {
@@ -5261,7 +5413,6 @@ function getForwardRightVectors() {
 
 function updatePlayer(deltaSeconds) {
     const turnSpeed = 1.6 * deltaSeconds;
-    const pitchSpeed = 1.25 * deltaSeconds;
     const isSprinting = state.keyDown.has("ShiftLeft");
 
     if (!controls.isLocked) {
@@ -5271,22 +5422,6 @@ function updatePlayer(deltaSeconds) {
 
         if (state.keyDown.has("ArrowRight")) {
             controls.getObject().rotation.y -= turnSpeed;
-        }
-
-        if (state.keyDown.has("ArrowUp")) {
-            camera.rotation.x = THREE.MathUtils.clamp(
-                camera.rotation.x + pitchSpeed,
-                -Math.PI * 0.5,
-                Math.PI * 0.5
-            );
-        }
-
-        if (state.keyDown.has("ArrowDown")) {
-            camera.rotation.x = THREE.MathUtils.clamp(
-                camera.rotation.x - pitchSpeed,
-                -Math.PI * 0.5,
-                Math.PI * 0.5
-            );
         }
     }
 
@@ -5910,6 +6045,15 @@ function onMouseWheel(event) {
 }
 
 function onKeyDown(event) {
+    if (
+        event.code === "ArrowUp"
+        || event.code === "ArrowDown"
+        || event.code === "ArrowLeft"
+        || event.code === "ArrowRight"
+    ) {
+        event.preventDefault();
+    }
+
     if (event.code === "F3" || event.code === "Backquote") {
         event.preventDefault();
         setDebugVisible(!state.debugVisible, true);
@@ -6038,6 +6182,10 @@ function onKeyDown(event) {
 
     if (event.code === "Minus") {
         setChunkRadius(state.chunkRadius - 1);
+        return;
+    }
+
+    if (event.code === "ArrowUp" || event.code === "ArrowDown") {
         return;
     }
 
@@ -6276,7 +6424,7 @@ function animate() {
     }
 
     updateAvatarPreviewCamera(delta);
-    updateTargetedBlockUi();
+    updateTargetedBlockUi(delta);
 
     updateHud();
     renderer.render(scene, camera);
@@ -6298,6 +6446,7 @@ function findSpawnPoint() {
 
 function init() {
     setBootStatus("Cargando mundo guardado...");
+    initDayNightClockFromStorage();
     createSkyDecor();
     setPauseMenuOpen(false);
     setPauseSettingsOpen(false);
