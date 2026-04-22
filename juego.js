@@ -135,9 +135,11 @@ const urlParams = new URLSearchParams(window.location.search);
 const MAX_EDITED_BLOCKS = clampInt(Number(gameConfig.maxEditedBlocks) || 120000, 2000, 500000);
 const MAX_PLACED_PROPS = clampInt(Number(gameConfig.maxPlacedProps) || 2400, 100, 10000);
 const WORLD_SAVE_KEY = `girasolWorldEdits:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
+const PLAYER_STATE_STORAGE_KEY = `girasolPlayerStateV1:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
 const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
 const WORLD_SAVE_VERSION = 2;
 const AUTO_SAVE_SECONDS = 12;
+const PLAYER_STATE_SAVE_INTERVAL_SECONDS = 1.8;
 const SUNFLOWER_MAX_COUNT = clampInt(Number(gameConfig.sunflowerMaxCount) || 68, 12, 300);
 const SUNFLOWER_SPAWN_INTERVAL_MIN = 3.6;
 const SUNFLOWER_SPAWN_INTERVAL_MAX = 8.9;
@@ -150,9 +152,9 @@ const NIGHT_DURATION_SECONDS = 10 * 60;
 const DAY_NIGHT_CYCLE_SECONDS = DAY_DURATION_SECONDS + NIGHT_DURATION_SECONDS;
 const SUN_ORBIT_RADIUS = 150;
 const SUN_ORBIT_HEIGHT = 98;
-const LAMP_INTENSITY_LEVELS = [0, 0.85, 1.7, 2.75];
-const LAMP_DISTANCE_LEVELS = [0, 8, 11, 14];
-const LAMP_BULB_EMISSIVE_LEVELS = [0.01, 0.28, 0.56, 0.92];
+const LAMP_INTENSITY_LEVELS = [0, 1.05, 2.35, 6.2];
+const LAMP_DISTANCE_LEVELS = [0, 9, 15, 24];
+const LAMP_BULB_EMISSIVE_LEVELS = [0.02, 0.42, 0.86, 1.52];
 const LAMP_SHADOW_MAP_SIZE = 96;
 const MAX_SHADOW_CASTING_LAMPS = 2;
 const LAMP_SHADOW_MAX_DISTANCE = 20;
@@ -827,6 +829,7 @@ const state = {
     pendingChunkBuildCount: 0,
     lastForward: new THREE.Vector3(0, 0, -1),
     autoSaveTick: 0,
+    playerStateSaveTick: 0,
     targetUiTick: 0,
     hudTick: 0,
     interactionPanelOpen: false
@@ -1106,6 +1109,140 @@ function loadHotbarConfiguration() {
     }
 
     state.hotbarItemIds = sanitizeHotbarItemIds(parsed);
+}
+
+function sanitizeStoredPlayerState(rawPayload) {
+    if (!rawPayload || typeof rawPayload !== "object") {
+        return null;
+    }
+
+    const x = Number(rawPayload.x);
+    const yRaw = Number(rawPayload.y);
+    const z = Number(rawPayload.z);
+    if (!Number.isFinite(x) || !Number.isFinite(yRaw) || !Number.isFinite(z)) {
+        return null;
+    }
+
+    const y = THREE.MathUtils.clamp(yRaw, 0.01, WORLD_MAX_Y - PLAYER_HEIGHT - 0.02);
+    const yaw = normalizeYawRadians(rawPayload.yaw);
+    const pitch = THREE.MathUtils.clamp(Number(rawPayload.pitch) || 0, -1.35, 1.35);
+
+    let pose = null;
+    if (rawPayload.pose && typeof rawPayload.pose === "object") {
+        const propId = String(rawPayload.pose.propId || "");
+        const mode = normalizePoseMode(rawPayload.pose.mode);
+        if (propId && mode) {
+            pose = { propId, mode };
+        }
+    }
+
+    return { x, y, z, yaw, pitch, pose };
+}
+
+function loadPlayerStateSnapshot() {
+    try {
+        const raw = window.localStorage.getItem(PLAYER_STATE_STORAGE_KEY);
+        if (!raw) {
+            return null;
+        }
+        const parsed = JSON.parse(raw);
+        return sanitizeStoredPlayerState(parsed);
+    } catch (error) {
+        return null;
+    }
+}
+
+function resolveRestoredPlayerPosition(savedState) {
+    const x = Number(savedState?.x);
+    const y = Number(savedState?.y);
+    const z = Number(savedState?.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        return null;
+    }
+
+    if (!collidesAt(x, y, z)) {
+        return { x, y, z };
+    }
+
+    for (let step = 1; step <= 12; step += 1) {
+        const candidateY = y + step * 0.2;
+        if (candidateY > WORLD_MAX_Y - PLAYER_HEIGHT - 0.02) {
+            break;
+        }
+        if (!collidesAt(x, candidateY, z)) {
+            return { x, y: candidateY, z };
+        }
+    }
+
+    return null;
+}
+
+function persistPlayerStateSnapshot(force = false) {
+    if (!state.worldReady) {
+        return;
+    }
+    if (!force && state.playerStateSaveTick < PLAYER_STATE_SAVE_INTERVAL_SECONDS) {
+        return;
+    }
+
+    state.playerStateSaveTick = 0;
+    const pose = interactionState.pose
+        ? {
+            propId: String(interactionState.pose.propId || ""),
+            mode: normalizePoseMode(interactionState.pose.mode)
+        }
+        : null;
+
+    const payload = {
+        version: 1,
+        updatedAt: Date.now(),
+        x: Number(state.playerPosition.x.toFixed(3)),
+        y: Number(state.playerPosition.y.toFixed(3)),
+        z: Number(state.playerPosition.z.toFixed(3)),
+        yaw: Number(normalizeYawRadians(controls.getObject().rotation.y || 0).toFixed(4)),
+        pitch: Number(THREE.MathUtils.clamp(Number(camera.rotation.x) || 0, -1.35, 1.35).toFixed(4))
+    };
+    if (pose?.propId && pose.mode) {
+        payload.pose = pose;
+    }
+
+    try {
+        window.localStorage.setItem(PLAYER_STATE_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+    }
+}
+
+function restoreLocalPlayerStateFromSnapshot(savedState) {
+    const snapshot = sanitizeStoredPlayerState(savedState);
+    if (!snapshot) {
+        return false;
+    }
+
+    const resolvedPosition = resolveRestoredPlayerPosition(snapshot);
+    if (!resolvedPosition) {
+        return false;
+    }
+
+    state.playerPosition.set(resolvedPosition.x, resolvedPosition.y, resolvedPosition.z);
+    controls.getObject().rotation.y = snapshot.yaw;
+    camera.rotation.x = snapshot.pitch;
+    state.velocityY = 0;
+    updateOnGroundFlag();
+
+    if (snapshot.pose?.propId && snapshot.pose.mode && placedProps.has(snapshot.pose.propId)) {
+        setLocalPoseActivity(snapshot.pose.propId, snapshot.pose.mode, false);
+        if (snapshot.pose.mode === "lie") {
+            camera.rotation.x = -0.08;
+        }
+        updateLocalPoseLock();
+    }
+
+    controls.getObject().position.set(
+        state.playerPosition.x,
+        state.playerPosition.y + EYE_HEIGHT,
+        state.playerPosition.z
+    );
+    return true;
 }
 
 function getHotbarItemByIndex(index) {
@@ -3155,10 +3292,10 @@ function createLampPointLightRig(root, {
     pointLight.position.set(bulbPosition.x, bulbPosition.y, bulbPosition.z);
     pointLight.castShadow = false;
     pointLight.shadow.mapSize.set(LAMP_SHADOW_MAP_SIZE, LAMP_SHADOW_MAP_SIZE);
-    pointLight.shadow.bias = -0.0006;
-    pointLight.shadow.normalBias = 0.022;
+    pointLight.shadow.bias = 0.00035;
+    pointLight.shadow.normalBias = 0.012;
     pointLight.shadow.camera.near = 0.1;
-    pointLight.shadow.camera.far = 24;
+    pointLight.shadow.camera.far = 26;
     pointLight.shadow.autoUpdate = false;
     pointLight.shadow.needsUpdate = true;
     root.add(pointLight);
@@ -3428,9 +3565,14 @@ function buildLargeChestNode(root) {
 }
 
 function buildFurnaceNode(root) {
-    root.add(createDetailPart({ x: 0.7, y: 0.56, z: 0.7 }, { x: 0, y: 0.28, z: 0 }, 0x6f737b));
-    root.add(createDetailPart({ x: 0.62, y: 0.48, z: 0.62 }, { x: 0, y: 0.28, z: 0 }, 0x595d64));
-    root.add(createDetailPart({ x: 0.24, y: 0.08, z: 0.06 }, { x: 0, y: 0.4, z: 0.32 }, 0x2b2d31));
+    root.add(createDetailPart({ x: 0.74, y: 0.62, z: 0.74 }, { x: 0, y: 0.31, z: 0 }, 0x6d727a));
+    root.add(createDetailPart({ x: 0.66, y: 0.54, z: 0.66 }, { x: 0, y: 0.31, z: -0.01 }, 0x555a62));
+    root.add(createDetailPart({ x: 0.7, y: 0.06, z: 0.7 }, { x: 0, y: 0.61, z: 0 }, 0x7f848d));
+    root.add(createDetailPart({ x: 0.46, y: 0.44, z: 0.05 }, { x: 0, y: 0.31, z: 0.355 }, 0x464b54));
+    root.add(createDetailPart({ x: 0.32, y: 0.06, z: 0.03 }, { x: 0, y: 0.44, z: 0.36 }, 0x262a2f));
+    root.add(createDetailPart({ x: 0.28, y: 0.16, z: 0.03 }, { x: 0, y: 0.2, z: 0.36 }, 0x1b1e22));
+    root.add(createDetailPart({ x: 0.12, y: 0.07, z: 0.035 }, { x: 0, y: 0.44, z: 0.372 }, 0xa78f69));
+    root.add(createDetailPart({ x: 0.66, y: 0.03, z: 0.03 }, { x: 0, y: 0.56, z: 0.326 }, 0x2b2f35));
 
     const emberMaterial = createDisposableStandardMaterial({
         color: 0x391f15,
@@ -3441,14 +3583,14 @@ function buildFurnaceNode(root) {
     });
     emberMaterial.userData.furnaceEmissiveColor = 0xff7f34;
     const emberMesh = createDynamicPart(
-        { x: 0.2, y: 0.12, z: 0.06 },
-        { x: 0, y: 0.2, z: 0.32 },
+        { x: 0.22, y: 0.11, z: 0.02 },
+        { x: 0, y: 0.2, z: 0.343 },
         emberMaterial
     );
     root.add(emberMesh);
 
     const furnaceLight = new THREE.PointLight(0xff8a42, 0, 0, 2);
-    furnaceLight.position.set(0, 0.22, 0.26);
+    furnaceLight.position.set(0, 0.22, 0.28);
     furnaceLight.castShadow = false;
     root.add(furnaceLight);
 
@@ -7439,9 +7581,6 @@ function setInventoryOpen(open, showFeedback = false) {
     }
 
     if (state.inventoryOpen) {
-        if (state.interactionPanelOpen) {
-            closeInteractionPanel(false, true);
-        }
         if (crosshairEl) {
             crosshairEl.classList.add("hidden");
         }
@@ -7460,12 +7599,12 @@ function setInventoryOpen(open, showFeedback = false) {
         return;
     }
 
-    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible) {
+    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.interactionPanelOpen) {
         if (crosshairEl) {
             crosshairEl.classList.remove("hidden");
         }
 
-        if (state.worldStarted && !controls.isLocked) {
+        if (canRelockGameplayControls() && !controls.isLocked) {
             try {
                 controls.lock();
             } catch (error) {
@@ -7550,9 +7689,6 @@ function openInteractionPanel(propHit, panelMode, usageKind = "") {
         return false;
     }
 
-    if (state.inventoryOpen) {
-        setInventoryOpen(false);
-    }
     if (state.avatarPreviewOpen) {
         setAvatarPreviewOpen(false);
     }
@@ -7617,6 +7753,14 @@ function appendInteractionAction(label, handler) {
     interactionPanelBodyEl.appendChild(button);
 }
 
+function resolveDraggedInventoryItemId(event) {
+    const droppedId = String(event?.dataTransfer?.getData("text/plain") || draggedInventoryItemId || "").trim();
+    if (!droppedId || !INVENTORY_ITEM_BY_ID.has(droppedId)) {
+        return "";
+    }
+    return droppedId;
+}
+
 function playJukeboxTrackPreview(track = 1) {
     const clampedTrack = THREE.MathUtils.clamp(Math.floor(Number(track) || 1), 1, JUKEBOX_TRACK_COUNT);
     let context = interactionState.localAudioContext || null;
@@ -7655,7 +7799,20 @@ function renderContainerInteractionPanel(placed) {
         ? getPropDefinition(placed.propType).stateDefaults.items.length
         : 6;
     const currentItems = sanitizeContainerItems(placed.state?.items, slotCount);
-    appendInteractionInfoLine("Click en slot: guardar item seleccionado. Click derecho: vaciar slot.");
+    appendInteractionInfoLine("Arrastra desde inventario/barra al cofre. Click izq en slot ocupado: retirar.");
+
+    const getLiveItems = () => {
+        const livePlaced = placedProps.get(placed.id);
+        return sanitizeContainerItems(livePlaced?.state?.items, slotCount);
+    };
+    const commitItems = (nextItems, feedbackText) => {
+        const normalizedItems = sanitizeContainerItems(nextItems, slotCount);
+        if (updatePropSharedState(placed.id, { items: normalizedItems }, feedbackText)) {
+            markInteractionPanelDirty();
+            return true;
+        }
+        return false;
+    };
 
     const slotsWrap = document.createElement("div");
     slotsWrap.className = "interaction-slots";
@@ -7668,26 +7825,59 @@ function renderContainerInteractionPanel(placed) {
             ? (INVENTORY_ITEM_BY_ID.get(slotItemId)?.label || slotItemId)
             : "Vacio";
         slotButton.textContent = `${slotIndex + 1}. ${slotItemLabel}`;
+        if (slotItemId) {
+            slotButton.classList.add("occupied");
+        }
 
         slotButton.addEventListener("click", () => {
+            const liveItems = getLiveItems();
+            const currentSlotItemId = String(liveItems[slotIndex] || "");
+            if (currentSlotItemId) {
+                const nextItems = [...liveItems];
+                nextItems[slotIndex] = "";
+                commitItems(nextItems, `Slot ${slotIndex + 1} retirado`);
+                return;
+            }
+
             const selected = getSelectedHotbarItem();
             const selectedId = String(selected?.id || "");
             if (!selectedId || !INVENTORY_ITEM_BY_ID.has(selectedId)) {
+                showToast("Selecciona o arrastra un item para guardarlo", "info", 900);
                 return;
             }
-            const nextItems = [...currentItems];
+
+            const nextItems = [...liveItems];
             nextItems[slotIndex] = selectedId;
-            if (updatePropSharedState(placed.id, { items: nextItems }, `Guardado en slot ${slotIndex + 1}`)) {
-                markInteractionPanelDirty();
-            }
+            commitItems(nextItems, `Guardado en slot ${slotIndex + 1}`);
         });
+
         slotButton.addEventListener("contextmenu", (event) => {
             event.preventDefault();
-            const nextItems = [...currentItems];
+            const liveItems = getLiveItems();
+            const nextItems = [...liveItems];
             nextItems[slotIndex] = "";
-            if (updatePropSharedState(placed.id, { items: nextItems }, `Slot ${slotIndex + 1} vaciado`)) {
-                markInteractionPanelDirty();
+            commitItems(nextItems, `Slot ${slotIndex + 1} vaciado`);
+        });
+
+        slotButton.addEventListener("dragover", (event) => {
+            event.preventDefault();
+            slotButton.classList.add("drag-target");
+        });
+        slotButton.addEventListener("dragleave", () => {
+            slotButton.classList.remove("drag-target");
+        });
+        slotButton.addEventListener("drop", (event) => {
+            event.preventDefault();
+            slotButton.classList.remove("drag-target");
+            const droppedId = resolveDraggedInventoryItemId(event);
+            draggedInventoryItemId = "";
+            if (!droppedId) {
+                return;
             }
+            const liveItems = getLiveItems();
+            const nextItems = [...liveItems];
+            nextItems[slotIndex] = droppedId;
+            commitItems(nextItems, `Guardado en slot ${slotIndex + 1}`);
         });
         slotsWrap.appendChild(slotButton);
     }
@@ -7856,9 +8046,29 @@ function refreshHotbarUi() {
         slot.setAttribute("aria-label", `${index + 1} ${item.label}`);
         slot.style.backgroundColor = getInventoryItemTint(item);
         slot.textContent = `${index + 1}\n${item.label}`;
+        slot.draggable = true;
 
         slot.addEventListener("click", () => {
             setSelectedHotbar(index);
+        });
+
+        slot.addEventListener("dragstart", (event) => {
+            const itemId = String(item?.id || "");
+            if (!itemId || !INVENTORY_ITEM_BY_ID.has(itemId)) {
+                event.preventDefault();
+                return;
+            }
+            draggedInventoryItemId = itemId;
+            if (event.dataTransfer) {
+                event.dataTransfer.effectAllowed = "copy";
+                event.dataTransfer.setData("text/plain", itemId);
+            }
+            slot.classList.add("dragging-item");
+        });
+
+        slot.addEventListener("dragend", () => {
+            draggedInventoryItemId = "";
+            slot.classList.remove("dragging-item");
         });
 
         slot.addEventListener("dragover", (event) => {
@@ -8423,6 +8633,7 @@ function enterLocalPose(propHit, mode) {
     if (poseMode === "lie") {
         camera.rotation.x = -0.08;
     }
+    persistPlayerStateSnapshot(true);
     showToast(poseMode === "sit" ? "Te sentaste. Shift para levantarte." : "Te acostaste. Shift para levantarte.", "info", 1300);
     return true;
 }
@@ -8458,6 +8669,7 @@ function exitLocalPose(showFeedback = false) {
     if (showFeedback) {
         showToast("Te levantaste", "info", 900);
     }
+    persistPlayerStateSnapshot(true);
     return true;
 }
 
@@ -8584,10 +8796,6 @@ function onKeyDown(event) {
 
         if (state.avatarPreviewOpen) {
             setAvatarPreviewOpen(false);
-        }
-
-        if (state.interactionPanelOpen) {
-            closeInteractionPanel(false, true);
         }
 
         setInventoryOpen(!state.inventoryOpen, true);
@@ -8891,6 +9099,7 @@ function setupEvents() {
     }
 
     window.addEventListener("beforeunload", () => {
+        persistPlayerStateSnapshot(true);
         clearAllTemporaryInteractionState(false);
         clearInteractionPanelState();
         flushWorldSave(true);
@@ -8909,6 +9118,7 @@ function animate() {
     requestAnimationFrame(animate);
 
     const delta = Math.min(clock.getDelta(), 1 / 30);
+    state.playerStateSaveTick += delta;
     if (!state.paused) {
         state.chunkTick += delta;
         state.autoSaveTick += delta;
@@ -8943,6 +9153,9 @@ function animate() {
     if (!state.paused && state.autoSaveTick >= AUTO_SAVE_SECONDS) {
         state.autoSaveTick = 0;
         flushWorldSave();
+    }
+    if (state.playerStateSaveTick >= PLAYER_STATE_SAVE_INTERVAL_SECONDS) {
+        persistPlayerStateSnapshot(false);
     }
 
     updateAvatarPreviewCamera(delta);
@@ -8990,9 +9203,13 @@ function init() {
         setBootStatus("Generando mundo por chunks...");
     }
 
-    const spawn = findSpawnPoint();
-    state.playerPosition.copy(spawn);
-    controls.getObject().position.set(spawn.x, spawn.y + EYE_HEIGHT, spawn.z);
+    const savedPlayerState = loadPlayerStateSnapshot();
+    const restoredPlayerState = savedPlayerState ? restoreLocalPlayerStateFromSnapshot(savedPlayerState) : false;
+    if (!restoredPlayerState) {
+        const spawn = findSpawnPoint();
+        state.playerPosition.copy(spawn);
+        controls.getObject().position.set(spawn.x, spawn.y + EYE_HEIGHT, spawn.z);
+    }
     camera.position.set(0, 0, 0);
 
     refreshHotbarUi();

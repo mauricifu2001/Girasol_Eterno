@@ -298,7 +298,7 @@ const RAW_PROP_DEFINITIONS = [
         interaction: "furnace-open",
         stateDefaults: { lit: false, input: "", fuel: 0 },
         visual: { tint: "rgba(127, 128, 136, 0.44)" },
-        profile: { halfExtents: { x: 0.34, z: 0.34 }, minY: 0, maxY: 0.56, supportY: 0.54 }
+        profile: { halfExtents: { x: 0.36, z: 0.36 }, minY: 0, maxY: 0.64, supportY: 0.62 }
     },
     {
         id: PROP_TYPE.EDITABLE_SIGN,

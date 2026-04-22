@@ -364,6 +364,16 @@ body {
     background: rgba(4, 8, 14, 0.42);
 }
 
+.interaction-slot.occupied {
+    border-color: rgba(212, 191, 145, 0.42);
+    color: #f3e8cd;
+}
+
+.interaction-slot.drag-target {
+    border-color: #8fe6ff;
+    box-shadow: 0 0 0 1px rgba(143, 230, 255, 0.45) inset;
+}
+
 .inventory-section {
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 10px;
@@ -415,6 +425,10 @@ body {
 .slot.drag-target {
     border-color: #8fe6ff;
     box-shadow: 0 0 0 1px rgba(143, 230, 255, 0.45) inset;
+}
+
+.slot.dragging-item {
+    opacity: 0.74;
 }
 
 #targetBlockLabel {
