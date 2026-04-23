@@ -64,10 +64,16 @@
             <p class="title">Mapa</p>
             <button id="mapCloseButton" type="button" aria-label="Cerrar mapa">Cerrar</button>
         </div>
+        <div class="map-mode" role="group" aria-label="Modo de mapa">
+            <button id="mapModeLocalButton" class="active" type="button" aria-pressed="true">Local</button>
+            <button id="mapModeGlobalButton" type="button" aria-pressed="false">Global</button>
+        </div>
         <p id="mapInfo" class="map-note">X: 0 Z: 0</p>
+        <p class="map-note map-tip">Global: rueda = zoom, click = marcar destino/pin.</p>
         <canvas id="worldMapCanvas" width="320" height="320" aria-label="Mapa superior del mundo"></canvas>
         <div class="map-actions">
             <button id="mapSetPinButton" type="button">Pin aqui</button>
+            <button id="mapGoPinButton" type="button">Ir al pin</button>
             <button id="mapClearPinButton" type="button">Quitar pin</button>
         </div>
     </aside>
@@ -146,6 +152,6 @@
     </div>
 
     <script src="config.js"></script>
-    <script type="module" src="juego.js?v=31"></script>
+    <script type="module" src="juego.js?v=33"></script>
 </body>
 </html>

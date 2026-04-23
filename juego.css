@@ -343,6 +343,18 @@ body {
     gap: 8px;
 }
 
+#mapPanel.global-mode {
+    right: auto;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(96vw, 1180px);
+    max-height: min(92vh, 900px);
+    padding: 12px;
+    background: rgba(8, 11, 18, 0.86);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
 .map-head {
     display: flex;
     align-items: center;
@@ -375,6 +387,12 @@ body {
     color: #b7e1ff;
 }
 
+.map-tip {
+    color: #a5c2df;
+    opacity: 0.88;
+    font-size: 0.64rem;
+}
+
 #worldMapCanvas {
     width: 100%;
     max-width: 100%;
@@ -385,9 +403,37 @@ body {
     display: block;
 }
 
-.map-actions {
+#mapPanel.global-mode #worldMapCanvas {
+    aspect-ratio: auto;
+    height: min(72vh, 760px);
+    cursor: crosshair;
+}
+
+.map-mode {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.map-mode button {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #efe9db;
+    padding: 7px 9px;
+    font-size: 0.69rem;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.map-mode button.active {
+    border-color: rgba(244, 207, 133, 0.9);
+    background: rgba(244, 207, 133, 0.24);
+}
+
+.map-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 7px;
 }
 
@@ -853,6 +899,16 @@ body {
         top: 132px;
         width: min(94vw, 360px);
         max-height: min(70vh, 500px);
+    }
+
+    #mapPanel.global-mode {
+        width: min(98vw, 980px);
+        max-height: min(90vh, 760px);
+        top: 50%;
+    }
+
+    #mapPanel.global-mode #worldMapCanvas {
+        height: min(60vh, 560px);
     }
 
     .inventory-section-grid {

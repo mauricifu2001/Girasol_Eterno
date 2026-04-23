@@ -36,7 +36,10 @@ export const BLOCK = Object.freeze({
     REDDISH_WOOD: 34,
     PINK_LEAVES: 35,
     AMBER_GLASS: 36,
-    BLUE_GLASS: 37
+    BLUE_GLASS: 37,
+    LAVA: 38,
+    ASH: 39,
+    OBSIDIAN: 40
 });
 
 const BLOCK_KIND = "block";
@@ -468,6 +471,50 @@ const RAW_BLOCK_DEFINITIONS = [
             metalness: 0.03,
             opacity: 0.34,
             renderOrder: 3
+        }
+    },
+    {
+        id: BLOCK.LAVA,
+        key: "lava",
+        label: "Lava",
+        category: "liquids",
+        tags: ["liquid", "lava", "volcanic", "hot"],
+        solid: false,
+        transparent: true,
+        emitsLight: true,
+        liquid: true,
+        placeable: true,
+        mineable: true,
+        visual: {
+            color: 0xff7f2a,
+            textureStyle: "lava",
+            roughness: 0.22,
+            metalness: 0.01,
+            opacity: 0.88,
+            emissive: 0xff6117,
+            emissiveIntensity: 0.72,
+            renderOrder: 5
+        }
+    },
+    {
+        id: BLOCK.ASH,
+        key: "ash",
+        label: "Ceniza volcanica",
+        category: "terrain",
+        tags: ["volcanic", "ash", "terrain"],
+        visual: { color: 0x6e6766, textureStyle: "ash", roughness: 0.95 }
+    },
+    {
+        id: BLOCK.OBSIDIAN,
+        key: "obsidian",
+        label: "Obsidiana",
+        category: "construction",
+        tags: ["volcanic", "rock", "obsidian"],
+        visual: {
+            color: 0x1f1826,
+            textureStyle: "obsidian",
+            roughness: 0.42,
+            metalness: 0.08
         }
     }
 ];
