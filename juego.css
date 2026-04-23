@@ -223,6 +223,52 @@ body {
     font-size: 0.66rem;
 }
 
+#mapToggleButton {
+    position: fixed;
+    top: 104px;
+    right: 14px;
+    z-index: 23;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    color: #efe9db;
+    background: rgba(12, 16, 24, 0.86);
+    border-radius: 10px;
+    padding: 7px 10px;
+    font-size: 0.71rem;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    cursor: pointer;
+}
+
+.map-btn-icon {
+    width: 12px;
+    height: 12px;
+    border: 2px solid rgba(144, 219, 255, 0.86);
+    border-radius: 50%;
+    position: relative;
+}
+
+.map-btn-icon::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(144, 219, 255, 0.9);
+}
+
+.map-btn-label {
+    font-weight: 600;
+}
+
+.map-btn-key {
+    color: #8fe6ff;
+    font-size: 0.66rem;
+}
+
 #inventoryPanel {
     position: fixed;
     right: 14px;
@@ -283,6 +329,122 @@ body {
     max-height: min(74vh, 520px);
     overflow: auto;
     padding: 10px;
+}
+
+#mapPanel {
+    position: fixed;
+    right: 14px;
+    top: 140px;
+    z-index: 34;
+    width: min(92vw, 360px);
+    max-height: min(74vh, 560px);
+    padding: 10px;
+    display: grid;
+    gap: 8px;
+}
+
+#mapPanel.global-mode {
+    right: auto;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: min(96vw, 1180px);
+    max-height: min(92vh, 900px);
+    padding: 12px;
+    background: rgba(8, 11, 18, 0.86);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.map-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.map-head .title {
+    margin: 0;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    font-size: 0.74rem;
+    color: #f4cf85;
+}
+
+#mapCloseButton {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(17, 20, 28, 0.82);
+    color: #efe9db;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.72rem;
+}
+
+.map-note {
+    margin: 0;
+    font-size: 0.68rem;
+    color: #b7e1ff;
+}
+
+.map-tip {
+    color: #a5c2df;
+    opacity: 0.88;
+    font-size: 0.64rem;
+}
+
+#worldMapCanvas {
+    width: 100%;
+    max-width: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(10, 16, 22, 0.72);
+    display: block;
+}
+
+#mapPanel.global-mode #worldMapCanvas {
+    aspect-ratio: auto;
+    height: min(72vh, 760px);
+    cursor: crosshair;
+}
+
+.map-mode {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.map-mode button {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #efe9db;
+    padding: 7px 9px;
+    font-size: 0.69rem;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease;
+}
+
+.map-mode button.active {
+    border-color: rgba(244, 207, 133, 0.9);
+    background: rgba(244, 207, 133, 0.24);
+}
+
+.map-actions {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.map-actions button {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #efe9db;
+    padding: 8px 9px;
+    font-size: 0.71rem;
+    cursor: pointer;
 }
 
 .interaction-head {
@@ -532,6 +694,19 @@ body {
     font-variant-numeric: tabular-nums;
 }
 
+.settings-control-check {
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 6px 10px;
+}
+
+.settings-control-check input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    accent-color: #f4cf85;
+}
+
 .settings-control input[type="range"],
 .settings-control select {
     grid-column: 1 / -1;
@@ -699,6 +874,13 @@ body {
         padding: 6px 8px;
     }
 
+    #mapToggleButton {
+        top: 96px;
+        right: 10px;
+        font-size: 0.66rem;
+        padding: 6px 8px;
+    }
+
     #inventoryPanel {
         right: 10px;
         top: 92px;
@@ -710,6 +892,23 @@ body {
         top: 92px;
         width: min(94vw, 420px);
         max-height: min(70vh, 500px);
+    }
+
+    #mapPanel {
+        right: 10px;
+        top: 132px;
+        width: min(94vw, 360px);
+        max-height: min(70vh, 500px);
+    }
+
+    #mapPanel.global-mode {
+        width: min(98vw, 980px);
+        max-height: min(90vh, 760px);
+        top: 50%;
+    }
+
+    #mapPanel.global-mode #worldMapCanvas {
+        height: min(60vh, 560px);
     }
 
     .inventory-section-grid {
