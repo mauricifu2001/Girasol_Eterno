@@ -6,7 +6,7 @@
     <title>Nuestro Mundo 3D</title>
     <meta name="description" content="Sandbox 3D tipo voxel para probar mecanicas estilo Minecraft.">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="stylesheet" href="juego.css?v=14">
+    <link rel="stylesheet" href="juego.css?v=15">
 </head>
 <body>
     <canvas id="gameCanvas" aria-label="Juego 3D"></canvas>
@@ -22,7 +22,7 @@
         <p class="title">Debug</p>
         <p id="coords">X: 0 Y: 0 Z: 0</p>
         <p id="chunkInfo">Chunks: 0 | Cargados: 0 | Pendientes: 0</p>
-        <p id="helpMini">WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda/Numeros material - F3 debug - V ver avatar - ESC pausa</p>
+        <p id="helpMini">WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda/Numeros material - I inventario - M mapa - F3 debug - V ver avatar - ESC pausa</p>
     </aside>
 
     <div id="crosshair" aria-hidden="true"></div>
@@ -34,6 +34,11 @@
         <span class="inventory-btn-icon" aria-hidden="true"></span>
         <span class="inventory-btn-label">Inventario</span>
         <span class="inventory-btn-key">(I)</span>
+    </button>
+    <button id="mapToggleButton" type="button" class="panel" aria-label="Abrir mapa">
+        <span class="map-btn-icon" aria-hidden="true"></span>
+        <span class="map-btn-label">Mapa</span>
+        <span class="map-btn-key">(M)</span>
     </button>
 
     <aside id="inventoryPanel" class="panel hidden" aria-label="Inventario">
@@ -52,6 +57,19 @@
         </div>
         <p id="interactionPanelHint" class="interaction-note">Interaccion contextual</p>
         <div id="interactionPanelBody" class="interaction-body"></div>
+    </aside>
+
+    <aside id="mapPanel" class="panel hidden" aria-label="Mapa del mundo">
+        <div class="map-head">
+            <p class="title">Mapa</p>
+            <button id="mapCloseButton" type="button" aria-label="Cerrar mapa">Cerrar</button>
+        </div>
+        <p id="mapInfo" class="map-note">X: 0 Z: 0</p>
+        <canvas id="worldMapCanvas" width="320" height="320" aria-label="Mapa superior del mundo"></canvas>
+        <div class="map-actions">
+            <button id="mapSetPinButton" type="button">Pin aqui</button>
+            <button id="mapClearPinButton" type="button">Quitar pin</button>
+        </div>
     </aside>
 
     <button id="pauseButton" type="button" aria-label="Abrir pausa">II</button>
@@ -90,6 +108,12 @@
                     <span id="pointerSensitivityValue">0.68</span>
                 </label>
 
+                <label class="settings-control settings-control-check" for="flightModeToggle">
+                    <span>Modo vuelo</span>
+                    <input id="flightModeToggle" type="checkbox">
+                    <span id="flightModeValue">Desactivado</span>
+                </label>
+
                 <p class="settings-hint">Atajos: F3 debug, V vista avatar, rueda/numeros para material.</p>
             </div>
         </div>
@@ -122,6 +146,6 @@
     </div>
 
     <script src="config.js"></script>
-    <script type="module" src="juego.js?v=28"></script>
+    <script type="module" src="juego.js?v=31"></script>
 </body>
 </html>

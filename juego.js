@@ -36,15 +36,17 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, Math.round(value)));
 }
 
-const WORLD_MAX_Y = 48;
+const WORLD_MAX_Y = 480;
 const CHUNK_SIZE = 16;
 const CHUNK_MANAGEMENT_INTERVAL = 0.22;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
 const CLOUD_EDIT_WRITE_BATCH_MS = 220;
 const CLOUD_EDIT_RETRY_MS = 1200;
-const SEA_LEVEL = 14;
+const SEA_LEVEL = 72;
 const CLOUD_COUNT = 22;
+const CLOUD_BASE_HEIGHT = SEA_LEVEL + 120;
+const CLOUD_HEIGHT_VARIANCE = 56;
 const RABBIT_MAX_COUNT = 12;
 const RABBIT_SPAWN_INTERVAL_MIN = 7.2;
 const RABBIT_SPAWN_INTERVAL_MAX = 18.4;
@@ -70,11 +72,15 @@ const GRAVITY = 26;
 const BASE_SPEED = 6.2;
 const SPRINT_SPEED = 9.4;
 const JUMP_SPEED = 9.2;
+const FLIGHT_SPEED = 24;
 const MAX_REACH = 6;
 const DEFAULT_POINTER_SPEED = 0.68;
 const TARGET_UI_SCAN_INTERVAL = 0.055;
 const HUD_UPDATE_INTERVAL = 0.12;
 const PROP_SPATIAL_CELL_SIZE = 1.5;
+const MAP_VIEW_RADIUS_BLOCKS = 180;
+const MAP_RENDER_RESOLUTION = 128;
+const MAP_REFRESH_INTERVAL = 0.22;
 
 const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
 const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
@@ -82,8 +88,10 @@ const MULTIPLAYER_SESSION_ID_KEY = "girasolMultiplayerSessionId";
 const CHUNK_RADIUS_STORAGE_KEY = "girasolChunkRadiusV1";
 const POINTER_SENSITIVITY_STORAGE_KEY = "girasolPointerSensitivityV1";
 const QUALITY_PRESET_STORAGE_KEY = "girasolQualityPresetV1";
+const FLIGHT_MODE_STORAGE_KEY = "girasolFlightModeV1";
 const HOTBAR_STORAGE_KEY = "girasolHotbarSlotsV1";
 const SUNFLOWER_CURRENCY_STORAGE_KEY = "girasolSunflowerCurrencyV1";
+const MAP_PIN_STORAGE_KEY_PREFIX = "girasolMapPinV1";
 
 const PROFILE_COLORS = {
     Mauricio: "#f4cf85",
@@ -132,11 +140,13 @@ const RABBIT_VARIANTS = [
 const gameConfig = window.appConfig?.game || {};
 const multiplayerConfig = gameConfig.multiplayer || {};
 const urlParams = new URLSearchParams(window.location.search);
+const ACTIVE_ROOM_ID = sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal");
 const MAX_EDITED_BLOCKS = clampInt(Number(gameConfig.maxEditedBlocks) || 120000, 2000, 500000);
 const MAX_PLACED_PROPS = clampInt(Number(gameConfig.maxPlacedProps) || 2400, 100, 10000);
-const WORLD_SAVE_KEY = `girasolWorldEdits:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
-const PLAYER_STATE_STORAGE_KEY = `girasolPlayerStateV1:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
-const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${sanitizeRoomId(urlParams.get("room") || multiplayerConfig.roomId || "mundo-principal")}`;
+const WORLD_SAVE_KEY = `girasolWorldEdits:${ACTIVE_ROOM_ID}`;
+const PLAYER_STATE_STORAGE_KEY = `girasolPlayerStateV1:${ACTIVE_ROOM_ID}`;
+const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${ACTIVE_ROOM_ID}`;
+const MAP_PIN_STORAGE_KEY = `${MAP_PIN_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const WORLD_SAVE_VERSION = 2;
 const AUTO_SAVE_SECONDS = 12;
 const PLAYER_STATE_SAVE_INTERVAL_SECONDS = 1.8;
@@ -150,8 +160,8 @@ const SUNFLOWER_MIN_FLOWER_DISTANCE = 1.25;
 const DAY_DURATION_SECONDS = 30 * 60;
 const NIGHT_DURATION_SECONDS = 10 * 60;
 const DAY_NIGHT_CYCLE_SECONDS = DAY_DURATION_SECONDS + NIGHT_DURATION_SECONDS;
-const SUN_ORBIT_RADIUS = 150;
-const SUN_ORBIT_HEIGHT = 98;
+const SUN_ORBIT_RADIUS = 420;
+const SUN_ORBIT_HEIGHT = 310;
 const LAMP_INTENSITY_LEVELS = [0, 1.05, 2.35, 6.2];
 const LAMP_DISTANCE_LEVELS = [0, 9, 15, 24];
 const LAMP_BULB_EMISSIVE_LEVELS = [0.02, 0.42, 0.86, 1.52];
@@ -170,6 +180,16 @@ const PROP_ROTATION_STEP = Math.PI * 0.5;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
 const SKY_DUSK_COLOR = new THREE.Color(0xffb579);
 const SKY_NIGHT_COLOR = new THREE.Color(0x091327);
+const BIOME = Object.freeze({
+    SPAWN_VALLEY: "spawn_valley",
+    FOREST: "forest",
+    DESERT: "desert",
+    CORDILLERA: "cordillera",
+    MARITIME: "maritime",
+    COAST: "coast",
+    LAKE: "lake",
+    PLAINS: "plains"
+});
 const TERRAIN_SYNC_SAMPLE_POINTS = [
     [-96, -96], [-96, -32], [-96, 32], [-96, 96],
     [-32, -96], [-32, -32], [-32, 32], [-32, 96],
@@ -179,7 +199,8 @@ const TERRAIN_SYNC_SAMPLE_POINTS = [
 ];
 const TERRAIN_REACOMODO_MIN_COLUMNS = 12;
 const TERRAIN_REACOMODO_MIN_ABS_SHIFT = 2;
-const TERRAIN_REACOMODO_MAX_SHIFT = 22;
+const TERRAIN_REACOMODO_MAX_SHIFT = 320;
+const TERRAIN_GENERATION_VERSION = 3;
 
 const WORLD_SEED = Number(gameConfig.worldSeed) || 42173;
 const INITIAL_CHUNK_RADIUS = clampInt(
@@ -200,9 +221,16 @@ const selectedMaterialHudEl = document.getElementById("selectedMaterialHud");
 const sunflowerCurrencyHudEl = document.getElementById("sunflowerCurrencyHud");
 const hotbarSelectedMaterialEl = document.getElementById("hotbarSelectedMaterial");
 const inventoryToggleButtonEl = document.getElementById("inventoryToggleButton");
+const mapToggleButtonEl = document.getElementById("mapToggleButton");
 const inventoryPanelEl = document.getElementById("inventoryPanel");
 const inventoryCloseButtonEl = document.getElementById("inventoryCloseButton");
 const inventoryGridEl = document.getElementById("inventoryGrid");
+const mapPanelEl = document.getElementById("mapPanel");
+const mapCloseButtonEl = document.getElementById("mapCloseButton");
+const mapInfoEl = document.getElementById("mapInfo");
+const worldMapCanvasEl = document.getElementById("worldMapCanvas");
+const mapSetPinButtonEl = document.getElementById("mapSetPinButton");
+const mapClearPinButtonEl = document.getElementById("mapClearPinButton");
 const targetBlockLabelEl = document.getElementById("targetBlockLabel");
 const crosshairEl = document.getElementById("crosshair");
 const toastContainerEl = document.getElementById("toastContainer");
@@ -218,6 +246,8 @@ const chunkRadiusValueEl = document.getElementById("chunkRadiusValue");
 const qualityPresetSelectEl = document.getElementById("qualityPresetSelect");
 const pointerSensitivitySliderEl = document.getElementById("pointerSensitivitySlider");
 const pointerSensitivityValueEl = document.getElementById("pointerSensitivityValue");
+const flightModeToggleEl = document.getElementById("flightModeToggle");
+const flightModeValueEl = document.getElementById("flightModeValue");
 const tutorialPanelEl = document.getElementById("tutorialPanel");
 const tutorialCloseButton = document.getElementById("tutorialCloseButton");
 const interactionPanelEl = document.getElementById("interactionPanel");
@@ -225,6 +255,7 @@ const interactionPanelTitleEl = document.getElementById("interactionPanelTitle")
 const interactionPanelHintEl = document.getElementById("interactionPanelHint");
 const interactionPanelBodyEl = document.getElementById("interactionPanelBody");
 const interactionCloseButtonEl = document.getElementById("interactionCloseButton");
+const worldMapCtx = worldMapCanvasEl?.getContext("2d", { alpha: false }) || null;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
@@ -768,6 +799,7 @@ function createDetailPart(size, position, colorHex, rotation = null) {
 const chunkMap = new Map();
 const chunkRebuildQueue = new Set();
 const editedBlocks = new Map();
+const editedColumnYIndex = new Map();
 const columnCache = new Map();
 const placedProps = new Map();
 const propSpatialGrid = new Map();
@@ -818,10 +850,12 @@ const state = {
     worldReady: false,
     paused: false,
     inventoryOpen: false,
+    mapOpen: false,
     pauseSettingsOpen: false,
     debugVisible: false,
     tutorialVisible: false,
     avatarPreviewOpen: false,
+    flightEnabled: false,
     avatarPreviewAngle: 0,
     chunkRadius: INITIAL_CHUNK_RADIUS,
     chunkTick: 0,
@@ -900,6 +934,26 @@ const uiState = {
     lastCoordsText: "",
     lastChunkInfoText: ""
 };
+
+const mapState = {
+    pin: null,
+    refreshTick: 0,
+    sampleCanvas: null,
+    sampleCtx: null,
+    sampleImageData: null
+};
+
+if (typeof document !== "undefined" && worldMapCtx) {
+    const sampleCanvas = document.createElement("canvas");
+    sampleCanvas.width = MAP_RENDER_RESOLUTION;
+    sampleCanvas.height = MAP_RENDER_RESOLUTION;
+    const sampleCtx = sampleCanvas.getContext("2d", { alpha: false });
+    if (sampleCtx) {
+        mapState.sampleCanvas = sampleCanvas;
+        mapState.sampleCtx = sampleCtx;
+        mapState.sampleImageData = sampleCtx.createImageData(MAP_RENDER_RESOLUTION, MAP_RENDER_RESOLUTION);
+    }
+}
 
 const warnedUnknownBlockIds = new Set();
 const warnedUnknownPropTypes = new Set();
@@ -1302,6 +1356,13 @@ function updateGameplaySettingsUi() {
     if (qualityPresetSelectEl) {
         qualityPresetSelectEl.value = perfState.qualityPreset;
     }
+
+    if (flightModeToggleEl) {
+        flightModeToggleEl.checked = state.flightEnabled;
+    }
+    if (flightModeValueEl) {
+        flightModeValueEl.textContent = state.flightEnabled ? "Activado" : "Desactivado";
+    }
 }
 
 function normalizeQualityPreset(value) {
@@ -1374,6 +1435,56 @@ function setPointerSensitivity(value, persist = true, showFeedback = false) {
     updateGameplaySettingsUi();
 }
 
+function ensureSafePlayerPositionAfterFlight() {
+    if (!collidesAt(state.playerPosition.x, state.playerPosition.y, state.playerPosition.z)) {
+        return;
+    }
+
+    for (let step = 1; step <= 30; step += 1) {
+        const candidateY = state.playerPosition.y + step * 0.2;
+        if (candidateY > WORLD_MAX_Y - PLAYER_HEIGHT - 0.02) {
+            break;
+        }
+        if (!collidesAt(state.playerPosition.x, candidateY, state.playerPosition.z)) {
+            state.playerPosition.y = candidateY;
+            return;
+        }
+    }
+
+    const spawn = findSpawnPoint();
+    state.playerPosition.copy(spawn);
+}
+
+function setFlightMode(enabled, persist = true, showFeedback = false) {
+    const next = Boolean(enabled);
+    if (next === state.flightEnabled) {
+        updateGameplaySettingsUi();
+        return;
+    }
+
+    state.flightEnabled = next;
+    state.velocityY = 0;
+    if (!state.flightEnabled) {
+        ensureSafePlayerPositionAfterFlight();
+        updateOnGroundFlag();
+    } else {
+        state.onGround = false;
+    }
+
+    if (persist) {
+        writeStorageValue(FLIGHT_MODE_STORAGE_KEY, state.flightEnabled ? "1" : "0");
+    }
+    updateGameplaySettingsUi();
+
+    if (showFeedback) {
+        showToast(
+            state.flightEnabled ? "Modo vuelo activado" : "Modo vuelo desactivado",
+            "info",
+            1100
+        );
+    }
+}
+
 function loadGameplayPreferences() {
     const storedChunkRadius = clampInt(readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius), 2, 8);
     state.chunkRadius = storedChunkRadius;
@@ -1383,6 +1494,8 @@ function loadGameplayPreferences() {
 
     const storedQualityPreset = readStorageString(QUALITY_PRESET_STORAGE_KEY, "auto");
     setQualityPreset(storedQualityPreset, false, false);
+    const storedFlightMode = readStorageBoolean(FLIGHT_MODE_STORAGE_KEY, false);
+    setFlightMode(storedFlightMode, false, false);
 
     loadHotbarConfiguration();
     loadSunflowerCurrency();
@@ -1393,6 +1506,368 @@ function setPauseSettingsOpen(open) {
     state.pauseSettingsOpen = Boolean(open);
     if (pauseSettingsSection) {
         pauseSettingsSection.classList.toggle("hidden", !state.pauseSettingsOpen);
+    }
+}
+
+function sanitizeMapPin(rawPin) {
+    if (!rawPin || typeof rawPin !== "object") {
+        return null;
+    }
+    const x = Number(rawPin.x);
+    const z = Number(rawPin.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return null;
+    }
+    return {
+        x: Number(x.toFixed(2)),
+        z: Number(z.toFixed(2)),
+        createdAt: Number(rawPin.createdAt) || Date.now()
+    };
+}
+
+function loadMapPinFromStorage() {
+    try {
+        const raw = window.localStorage.getItem(MAP_PIN_STORAGE_KEY);
+        if (!raw) {
+            mapState.pin = null;
+            return;
+        }
+        mapState.pin = sanitizeMapPin(JSON.parse(raw));
+    } catch (error) {
+        mapState.pin = null;
+    }
+}
+
+function persistMapPinToStorage() {
+    try {
+        if (!mapState.pin) {
+            window.localStorage.removeItem(MAP_PIN_STORAGE_KEY);
+            return;
+        }
+        window.localStorage.setItem(MAP_PIN_STORAGE_KEY, JSON.stringify(mapState.pin));
+    } catch (error) {
+    }
+}
+
+function projectWorldToMap(x, z, centerX, centerZ, rangeBlocks, width, height) {
+    const safeRange = Math.max(1, Number(rangeBlocks) || MAP_VIEW_RADIUS_BLOCKS);
+    const relX = (Number(x) - centerX) / safeRange;
+    const relZ = (Number(z) - centerZ) / safeRange;
+    const drawX = ((relX + 1) * 0.5) * width;
+    const drawY = ((relZ + 1) * 0.5) * height;
+    return {
+        x: THREE.MathUtils.clamp(drawX, 0, width),
+        y: THREE.MathUtils.clamp(drawY, 0, height),
+        inside: relX >= -1 && relX <= 1 && relZ >= -1 && relZ <= 1
+    };
+}
+
+function getCompassDirectionFromDelta(dx, dz) {
+    if (!Number.isFinite(dx) || !Number.isFinite(dz) || (Math.abs(dx) + Math.abs(dz)) < 1e-5) {
+        return "aqui";
+    }
+    const angle = Math.atan2(dx, dz);
+    const sectors = ["N", "NE", "E", "SE", "S", "SO", "O", "NO"];
+    const normalized = (angle + Math.PI * 2) % (Math.PI * 2);
+    const index = Math.round(normalized / (Math.PI / 4)) % sectors.length;
+    return sectors[index];
+}
+
+function getMapTerrainColor(column) {
+    const height = Number(column?.height) || SEA_LEVEL;
+    const biome = String(column?.biome || BIOME.PLAINS);
+    const mountainMask = THREE.MathUtils.clamp(Number(column?.mountainMask) || 0, 0, 1);
+    const riverMask = THREE.MathUtils.clamp(Number(column?.riverMask) || 0, 0, 1);
+    const lakeMask = THREE.MathUtils.clamp(Number(column?.lakeMask) || 0, 0, 1);
+    const snowMask = THREE.MathUtils.clamp(Number(column?.snowMask) || 0, 0, 1);
+    const rockiness = THREE.MathUtils.clamp(Number(column?.rockiness) || 0, 0, 1);
+    const moisture = THREE.MathUtils.clamp((Number(column?.moisture) || 0) * 0.5 + 0.5, 0, 1);
+    const temperature = THREE.MathUtils.clamp((Number(column?.temperature) || 0) * 0.5 + 0.5, 0, 1);
+
+    if (height <= SEA_LEVEL || riverMask > 0.27 || lakeMask > 0.24 || biome === BIOME.MARITIME || biome === BIOME.LAKE) {
+        const depth = clamp01((SEA_LEVEL - height + 6) / 64);
+        return {
+            r: clampByte(34 + depth * 22),
+            g: clampByte(88 + depth * 32),
+            b: clampByte(150 + depth * 54)
+        };
+    }
+
+    let color;
+    if ((snowMask > 0.52 && height >= SEA_LEVEL + 16) || biome === BIOME.CORDILLERA) {
+        const coldShade = clamp01((height - SEA_LEVEL - 16) / 220);
+        color = {
+            r: clampByte(228 - coldShade * 28),
+            g: clampByte(235 - coldShade * 24),
+            b: clampByte(244 - coldShade * 16)
+        };
+    } else if (biome === BIOME.DESERT) {
+        const warmShade = clamp01((height - SEA_LEVEL + 8) / 120);
+        color = {
+            r: clampByte(202 + warmShade * 10),
+            g: clampByte(177 - warmShade * 18),
+            b: clampByte(120 - warmShade * 24)
+        };
+    } else if (biome === BIOME.COAST) {
+        color = {
+            r: clampByte(184 + moisture * 12),
+            g: clampByte(170 + moisture * 24),
+            b: clampByte(119 + moisture * 12)
+        };
+    } else if (biome === BIOME.FOREST) {
+        const canopy = moisture * 0.38 + (1 - temperature) * 0.12;
+        color = {
+            r: clampByte(46 + canopy * 18),
+            g: clampByte(106 + canopy * 44),
+            b: clampByte(44 + canopy * 13)
+        };
+    } else {
+        const grassy = moisture * 0.3 + temperature * 0.16;
+        color = {
+            r: clampByte(66 + grassy * 20),
+            g: clampByte(128 + grassy * 36),
+            b: clampByte(62 + grassy * 14)
+        };
+    }
+
+    if (rockiness > 0.62 && biome !== BIOME.DESERT && biome !== BIOME.FOREST) {
+        const rockyMix = clamp01((rockiness - 0.62) / 0.38);
+        color = {
+            r: clampByte(lerp(color.r, 124, rockyMix)),
+            g: clampByte(lerp(color.g, 128, rockyMix)),
+            b: clampByte(lerp(color.b, 134, rockyMix))
+        };
+    }
+
+    const altitude = clamp01((height - SEA_LEVEL) / Math.max(1, WORLD_MAX_Y - SEA_LEVEL));
+    const mountainShade = mountainMask * 0.3 + altitude * 0.26;
+    return {
+        r: clampByte(color.r - mountainShade * 22),
+        g: clampByte(color.g - mountainShade * 26),
+        b: clampByte(color.b - mountainShade * 20)
+    };
+}
+
+function renderMapPanelNow() {
+    if (!worldMapCtx || !worldMapCanvasEl || !state.worldReady) {
+        return;
+    }
+
+    const centerX = Number(state.playerPosition.x) || 0;
+    const centerZ = Number(state.playerPosition.z) || 0;
+    const canvasWidth = worldMapCanvasEl.width || 320;
+    const canvasHeight = worldMapCanvasEl.height || 320;
+
+    if (mapState.sampleCtx && mapState.sampleCanvas && mapState.sampleImageData) {
+        const imageData = mapState.sampleImageData;
+        const data = imageData.data;
+        const resolution = MAP_RENDER_RESOLUTION;
+        const pixelToWorld = (MAP_VIEW_RADIUS_BLOCKS * 2) / resolution;
+        let ptr = 0;
+        for (let py = 0; py < resolution; py += 1) {
+            const worldZ = centerZ + (py - resolution * 0.5 + 0.5) * pixelToWorld;
+            for (let px = 0; px < resolution; px += 1) {
+                const worldX = centerX + (px - resolution * 0.5 + 0.5) * pixelToWorld;
+                const column = getColumnInfo(Math.floor(worldX), Math.floor(worldZ));
+                const color = getMapTerrainColor(column);
+                data[ptr] = color.r;
+                data[ptr + 1] = color.g;
+                data[ptr + 2] = color.b;
+                data[ptr + 3] = 255;
+                ptr += 4;
+            }
+        }
+        mapState.sampleCtx.putImageData(imageData, 0, 0);
+        worldMapCtx.imageSmoothingEnabled = false;
+        worldMapCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+        worldMapCtx.drawImage(mapState.sampleCanvas, 0, 0, canvasWidth, canvasHeight);
+    } else {
+        worldMapCtx.clearRect(0, 0, canvasWidth, canvasHeight);
+        worldMapCtx.fillStyle = "#2f5841";
+        worldMapCtx.fillRect(0, 0, canvasWidth, canvasHeight);
+    }
+
+    worldMapCtx.strokeStyle = "rgba(255,255,255,0.18)";
+    worldMapCtx.lineWidth = 1;
+    worldMapCtx.beginPath();
+    worldMapCtx.moveTo(canvasWidth * 0.5, 0);
+    worldMapCtx.lineTo(canvasWidth * 0.5, canvasHeight);
+    worldMapCtx.moveTo(0, canvasHeight * 0.5);
+    worldMapCtx.lineTo(canvasWidth, canvasHeight * 0.5);
+    worldMapCtx.stroke();
+
+    if (mapState.pin) {
+        const pinProjection = projectWorldToMap(
+            mapState.pin.x,
+            mapState.pin.z,
+            centerX,
+            centerZ,
+            MAP_VIEW_RADIUS_BLOCKS,
+            canvasWidth,
+            canvasHeight
+        );
+        worldMapCtx.beginPath();
+        worldMapCtx.fillStyle = "rgba(255, 76, 122, 0.95)";
+        worldMapCtx.strokeStyle = "rgba(255, 233, 233, 0.92)";
+        worldMapCtx.lineWidth = 1.4;
+        worldMapCtx.arc(pinProjection.x, pinProjection.y, 5, 0, Math.PI * 2);
+        worldMapCtx.fill();
+        worldMapCtx.stroke();
+    }
+
+    for (const remoteNode of multiplayer.remotePlayers.values()) {
+        const projection = projectWorldToMap(
+            remoteNode?.targetPosition?.x ?? remoteNode?.group?.position?.x ?? 0,
+            remoteNode?.targetPosition?.z ?? remoteNode?.group?.position?.z ?? 0,
+            centerX,
+            centerZ,
+            MAP_VIEW_RADIUS_BLOCKS,
+            canvasWidth,
+            canvasHeight
+        );
+        worldMapCtx.beginPath();
+        worldMapCtx.fillStyle = "rgba(90, 186, 255, 0.96)";
+        worldMapCtx.strokeStyle = "rgba(222, 242, 255, 0.9)";
+        worldMapCtx.lineWidth = 1;
+        worldMapCtx.arc(projection.x, projection.y, 3.5, 0, Math.PI * 2);
+        worldMapCtx.fill();
+        worldMapCtx.stroke();
+    }
+
+    const localProjection = projectWorldToMap(
+        centerX,
+        centerZ,
+        centerX,
+        centerZ,
+        MAP_VIEW_RADIUS_BLOCKS,
+        canvasWidth,
+        canvasHeight
+    );
+    worldMapCtx.beginPath();
+    worldMapCtx.fillStyle = "rgba(255, 219, 114, 0.98)";
+    worldMapCtx.strokeStyle = "rgba(255, 248, 222, 0.98)";
+    worldMapCtx.lineWidth = 1.4;
+    worldMapCtx.arc(localProjection.x, localProjection.y, 4.4, 0, Math.PI * 2);
+    worldMapCtx.fill();
+    worldMapCtx.stroke();
+
+    const remoteCount = multiplayer.remotePlayers.size;
+    let infoText = `X: ${centerX.toFixed(1)} | Z: ${centerZ.toFixed(1)} | Avatares: ${remoteCount + 1}`;
+    if (mapState.pin) {
+        const dx = mapState.pin.x - centerX;
+        const dz = mapState.pin.z - centerZ;
+        const distance = Math.hypot(dx, dz);
+        const direction = getCompassDirectionFromDelta(dx, dz);
+        infoText += ` | Pin: ${distance.toFixed(1)}m ${direction}`;
+    } else {
+        infoText += " | Pin: no definido";
+    }
+    if (mapInfoEl) {
+        mapInfoEl.textContent = infoText;
+    }
+}
+
+function updateMapPanel(deltaSeconds) {
+    if (!state.mapOpen) {
+        return;
+    }
+    mapState.refreshTick -= Math.max(0, Number(deltaSeconds) || 0);
+    if (mapState.refreshTick <= 0) {
+        mapState.refreshTick = MAP_REFRESH_INTERVAL;
+        renderMapPanelNow();
+    }
+}
+
+function setMapOpen(open, showFeedback = false) {
+    const next = Boolean(open);
+    if (next === state.mapOpen) {
+        if (next) {
+            renderMapPanelNow();
+        }
+        return;
+    }
+
+    state.mapOpen = next;
+    state.keyDown.clear();
+    if (mapPanelEl) {
+        mapPanelEl.classList.toggle("hidden", !state.mapOpen);
+    }
+    if (mapToggleButtonEl) {
+        mapToggleButtonEl.setAttribute("aria-expanded", state.mapOpen ? "true" : "false");
+    }
+
+    if (state.mapOpen) {
+        if (state.avatarPreviewOpen) {
+            setAvatarPreviewOpen(false);
+        }
+        if (state.inventoryOpen) {
+            setInventoryOpen(false);
+        }
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
+        if (crosshairEl) {
+            crosshairEl.classList.add("hidden");
+        }
+        targetHighlight.visible = false;
+        if (targetBlockLabelEl) {
+            targetBlockLabelEl.classList.add("hidden");
+        }
+        if (controls.isLocked) {
+            try {
+                controls.unlock();
+            } catch (error) {
+            }
+        }
+        mapState.refreshTick = 0;
+        renderMapPanelNow();
+        if (showFeedback) {
+            showToast("Mapa abierto", "info", 900);
+        }
+        return;
+    }
+
+    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.inventoryOpen && !state.interactionPanelOpen) {
+        if (crosshairEl) {
+            crosshairEl.classList.remove("hidden");
+        }
+    }
+    if (canRelockGameplayControls() && !controls.isLocked) {
+        try {
+            controls.lock();
+        } catch (error) {
+        }
+    }
+    if (showFeedback) {
+        showToast("Mapa cerrado", "info", 800);
+    }
+}
+
+function setMapPinAtCurrentPosition(showFeedback = true) {
+    mapState.pin = {
+        x: Number(state.playerPosition.x.toFixed(2)),
+        z: Number(state.playerPosition.z.toFixed(2)),
+        createdAt: Date.now()
+    };
+    persistMapPinToStorage();
+    mapState.refreshTick = 0;
+    if (state.mapOpen) {
+        renderMapPanelNow();
+    }
+    if (showFeedback) {
+        showToast("Pin guardado en tu posicion", "success", 1000);
+    }
+}
+
+function clearMapPin(showFeedback = true) {
+    mapState.pin = null;
+    persistMapPinToStorage();
+    mapState.refreshTick = 0;
+    if (state.mapOpen) {
+        renderMapPanelNow();
+    }
+    if (showFeedback) {
+        showToast("Pin eliminado", "info", 900);
     }
 }
 
@@ -1410,6 +1885,9 @@ function setAvatarPreviewOpen(open, showFeedback = false) {
         }
         if (state.inventoryOpen) {
             setInventoryOpen(false);
+        }
+        if (state.mapOpen) {
+            setMapOpen(false);
         }
         state.keyDown.clear();
         state.avatarPreviewAngle = controls.getObject().rotation.y || 0;
@@ -1435,7 +1913,7 @@ function setAvatarPreviewOpen(open, showFeedback = false) {
 
     localAvatarPreviewRoot.visible = false;
 
-    if (crosshairEl && !state.inventoryOpen) {
+    if (crosshairEl && !state.inventoryOpen && !state.mapOpen) {
         crosshairEl.classList.remove("hidden");
     }
 
@@ -1443,7 +1921,7 @@ function setAvatarPreviewOpen(open, showFeedback = false) {
         showToast("Vista de avatar cerrada", "info", 900);
     }
 
-    if (state.worldStarted && !state.paused && !state.tutorialVisible && !state.inventoryOpen && !controls.isLocked) {
+    if (state.worldStarted && !state.paused && !state.tutorialVisible && !state.inventoryOpen && !state.mapOpen && !controls.isLocked) {
         try {
             controls.lock();
         } catch (error) {
@@ -1498,6 +1976,9 @@ function setPauseMenuOpen(open) {
         if (state.inventoryOpen) {
             setInventoryOpen(false);
         }
+        if (state.mapOpen) {
+            setMapOpen(false);
+        }
         if (state.avatarPreviewOpen) {
             setAvatarPreviewOpen(false);
         }
@@ -1512,6 +1993,9 @@ function setPauseMenuOpen(open) {
     }
     if (open && state.inventoryOpen) {
         setInventoryOpen(false);
+    }
+    if (open && state.mapOpen) {
+        setMapOpen(false);
     }
     if (open && state.interactionPanelOpen) {
         closeInteractionPanel(false, true);
@@ -1587,7 +2071,7 @@ function getBlockLabel(blockId) {
 }
 
 function updateTargetedBlockUi(deltaSeconds = 0) {
-    if (!state.worldStarted || !state.worldReady || state.paused || state.avatarPreviewOpen || state.inventoryOpen || !controls.isLocked) {
+    if (!state.worldStarted || !state.worldReady || state.paused || state.avatarPreviewOpen || state.inventoryOpen || state.mapOpen || state.interactionPanelOpen || !controls.isLocked) {
         state.targetUiTick = 0;
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
@@ -1757,7 +2241,7 @@ function createSkyDecor() {
         const cloud = createCloudCluster(i);
         cloud.position.set(
             (Math.random() * 2 - 1) * cloudRange,
-            31 + Math.random() * 12,
+            CLOUD_BASE_HEIGHT + Math.random() * CLOUD_HEIGHT_VARIANCE,
             (Math.random() * 2 - 1) * cloudRange
         );
         cloud.rotation.y = Math.random() * Math.PI * 2;
@@ -1944,7 +2428,7 @@ function updateSky(deltaSeconds) {
         if (cloud.node.position.x > maxX) {
             cloud.node.position.x = minX;
             cloud.node.position.z = state.playerPosition.z + (Math.random() * 2 - 1) * cloud.driftRange;
-            cloud.node.position.y = 31 + Math.random() * 12;
+            cloud.node.position.y = CLOUD_BASE_HEIGHT + Math.random() * CLOUD_HEIGHT_VARIANCE;
         }
     }
 }
@@ -2032,8 +2516,10 @@ function isRabbitGroundBlock(id) {
 function sampleSurfaceForRabbit(worldX, worldZ) {
     const x = Math.floor(worldX);
     const z = Math.floor(worldZ);
+    const column = getColumnInfo(x, z);
+    const topY = Math.min(WORLD_MAX_Y - 2, column.height + 8);
 
-    for (let y = WORLD_MAX_Y - 2; y >= 1; y -= 1) {
+    for (let y = topY; y >= 1; y -= 1) {
         const groundId = getBlock(x, y, z);
         if (groundId === BLOCK.AIR || groundId === BLOCK.WATER || groundId === BLOCK.LEAVES) {
             continue;
@@ -4192,8 +4678,10 @@ function isSunflowerGroundBlock(id) {
 function sampleSurfaceForSunflower(worldX, worldZ) {
     const x = Math.floor(worldX);
     const z = Math.floor(worldZ);
+    const column = getColumnInfo(x, z);
+    const topY = Math.min(WORLD_MAX_Y - 2, column.height + 8);
 
-    for (let y = WORLD_MAX_Y - 2; y >= 1; y -= 1) {
+    for (let y = topY; y >= 1; y -= 1) {
         const groundId = getBlock(x, y, z);
         if (groundId === BLOCK.AIR || groundId === BLOCK.WATER || groundId === BLOCK.LEAVES) {
             continue;
@@ -4513,7 +5001,18 @@ function parseBlockKey(key) {
 
 function getTerrainFingerprint() {
     const samples = TERRAIN_SYNC_SAMPLE_POINTS.map(([x, z]) => `${x},${z}:${getColumnInfo(x, z).height}`);
-    return `${WORLD_SEED}|${samples.join(";")}`;
+    return `${WORLD_SEED}|terrain-v${TERRAIN_GENERATION_VERSION}|${samples.join(";")}`;
+}
+
+function readStorageBoolean(key, fallback = false) {
+    const raw = readStorageString(key, fallback ? "1" : "0").toLowerCase();
+    if (raw === "1" || raw === "true" || raw === "yes" || raw === "on") {
+        return true;
+    }
+    if (raw === "0" || raw === "false" || raw === "no" || raw === "off") {
+        return false;
+    }
+    return Boolean(fallback);
 }
 
 function getMedian(values) {
@@ -4591,15 +5090,19 @@ function computeTerrainReacomodoShift(edits, props = []) {
 
     if (deltas.length < TERRAIN_REACOMODO_MIN_COLUMNS) {
         for (const prop of props) {
-            const x = Math.floor(Number(prop?.x));
-            const y = Math.floor(Number(prop?.y));
-            const z = Math.floor(Number(prop?.z));
-            if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+            const xRaw = Number(prop?.x);
+            const yRaw = Number(prop?.y);
+            const zRaw = Number(prop?.z);
+            const x = Math.floor(xRaw);
+            const z = Math.floor(zRaw);
+            const propType = String(prop?.type || prop?.propType || "");
+            if (!Number.isFinite(xRaw) || !Number.isFinite(yRaw) || !Number.isFinite(zRaw)) {
                 continue;
             }
 
-            const surfaceY = getColumnInfo(x, z).height;
-            deltas.push(y - (surfaceY + 1));
+            const supportY = yRaw + getPropProfile(propType).supportY;
+            const surfaceY = getColumnInfo(x, z).height + 1;
+            deltas.push(supportY - surfaceY);
         }
     }
 
@@ -4675,10 +5178,19 @@ function remapPropsWithVerticalShift(props, shiftY) {
     const next = [];
     for (const rawProp of Array.isArray(props) ? props : []) {
         const x = Number(rawProp?.x);
-        const y = Number(rawProp?.y) + shiftY;
+        let y = Number(rawProp?.y) + shiftY;
         const z = Number(rawProp?.z);
         if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
             continue;
+        }
+
+        const xCell = Math.floor(x);
+        const zCell = Math.floor(z);
+        const propType = String(rawProp?.type || rawProp?.propType || "");
+        const supportY = y + getPropProfile(propType).supportY;
+        const minSupportY = getColumnInfo(xCell, zCell).height + 1;
+        if (supportY < minSupportY - 0.001) {
+            y += (minSupportY - supportY);
         }
 
         if (!inWorldBounds(Math.floor(x), Math.floor(y), Math.floor(z))) {
@@ -4944,6 +5456,7 @@ function loadWorldFromStorage() {
         const props = reacomodo.props;
 
         editedBlocks.clear();
+        editedColumnYIndex.clear();
         clearPlacedProps();
         propState.nextId = 1;
         let loaded = 0;
@@ -4966,6 +5479,7 @@ function loadWorldFromStorage() {
             }
 
             editedBlocks.set(key, id);
+            addEditedBlockToColumnIndex(parsed.x, parsed.y, parsed.z);
             loaded += 1;
         }
 
@@ -6518,6 +7032,52 @@ function blockKey(x, y, z) {
     return `${x}|${y}|${z}`;
 }
 
+function blockColumnKey(x, z) {
+    return `${x}|${z}`;
+}
+
+function addEditedBlockToColumnIndex(x, y, z) {
+    const key = blockColumnKey(x, z);
+    let ySet = editedColumnYIndex.get(key);
+    if (!ySet) {
+        ySet = new Set();
+        editedColumnYIndex.set(key, ySet);
+    }
+    ySet.add(y);
+}
+
+function removeEditedBlockFromColumnIndex(x, y, z) {
+    const key = blockColumnKey(x, z);
+    const ySet = editedColumnYIndex.get(key);
+    if (!ySet) {
+        return;
+    }
+    ySet.delete(y);
+    if (ySet.size === 0) {
+        editedColumnYIndex.delete(key);
+    }
+}
+
+function getEditedColumnRange(x, z) {
+    const ySet = editedColumnYIndex.get(blockColumnKey(x, z));
+    if (!ySet || ySet.size === 0) {
+        return null;
+    }
+
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    for (const y of ySet) {
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+    }
+
+    if (!Number.isFinite(minY) || !Number.isFinite(maxY)) {
+        return null;
+    }
+
+    return { minY, maxY };
+}
+
 function chunkKey(cx, cz) {
     return `${cx}|${cz}`;
 }
@@ -6615,31 +7175,144 @@ function getColumnInfo(x, z) {
         return cached;
     }
 
-    const macro = fractalNoise2D(x, z, 0.0022, 4, 0.52, 31);
-    const ridge = 1 - Math.abs(fractalNoise2D(x, z, 0.0038, 3, 0.55, 67));
-    const detail = fractalNoise2D(x, z, 0.021, 2, 0.5, 11);
+    const warpLargeX = valueNoise2D(x, z, 0.0018, 501) * 54;
+    const warpLargeZ = valueNoise2D(x, z, 0.0018, 503) * 54;
+    const warpFineX = valueNoise2D(x, z, 0.0064, 502) * 16;
+    const warpFineZ = valueNoise2D(x, z, 0.0064, 504) * 16;
+    const wx = x + warpLargeX + warpFineX;
+    const wz = z + warpLargeZ + warpFineZ;
 
-    const mountainMask = smoothstep(0.1, 0.62, macro);
-    const plainsMask = smoothstep(0.24, 0.88, -macro);
-    const plainsHeight = SEA_LEVEL + 2 + detail * 2.4;
-    const mountainsHeight = SEA_LEVEL + 6 + mountainMask * 14 + ridge * 12 + detail * 3;
+    const continental = fractalNoise2D(wx, wz, 0.00045, 5, 0.56, 31);
+    const erosion = fractalNoise2D(wx + 420, wz - 260, 0.0015, 4, 0.58, 53);
+    const ridges = Math.pow(clamp01(1 - Math.abs(fractalNoise2D(wx, wz, 0.0019, 5, 0.5, 67))), 1.12);
+    const lowDetail = fractalNoise2D(wx, wz, 0.0058, 4, 0.54, 11);
+    const highDetail = fractalNoise2D(wx, wz, 0.0185, 3, 0.5, 12);
+    const moisture = fractalNoise2D(wx - 180, wz + 240, 0.0017, 4, 0.6, 109);
+    const temperature = fractalNoise2D(wx + 780, wz - 310, 0.00135, 4, 0.58, 205);
 
-    let rawHeight = lerp(plainsHeight, mountainsHeight, mountainMask);
-    rawHeight -= plainsMask * 2.2;
+    const continental01 = clamp01((continental + 1) * 0.5);
+    const mountainMask = smoothstep(0.18, 0.9, continental * 0.7 + ridges * 0.72 - erosion * 0.23);
+    const valleyMask = smoothstep(0.22, 0.94, -continental + erosion * 0.38);
+    const ridgePeaks = Math.pow(clamp01(ridges * 0.94 + mountainMask * 0.24), 1.48);
+    const dryness = smoothstep(0.18, 0.92, (1 - moisture) * 0.64 + temperature * 0.46 - valleyMask * 0.2);
+
+    let rawHeight = SEA_LEVEL
+        + (continental01 - 0.5) * 86
+        + lowDetail * 22
+        + highDetail * 9
+        - erosion * 14;
+    rawHeight += mountainMask * (60 + ridgePeaks * 170);
+
+    if (temperature < -0.08 && mountainMask > 0.45) {
+        rawHeight += (mountainMask - 0.45) * 118;
+    }
+
+    const oceanDepthSignal = clamp01((fractalNoise2D(wx - 400, wz + 600, 0.0011, 3, 0.57, 280) + 1) * 0.5);
+    if (continental < -0.24) {
+        rawHeight = SEA_LEVEL - (12 + oceanDepthSignal * 54 + clamp01(-continental - 0.24) * 96);
+    } else if (continental < -0.08) {
+        rawHeight -= smoothstep(-0.24, -0.08, continental) * (8 + oceanDepthSignal * 26);
+    }
+
+    const riverSignal = Math.abs(valueNoise2D(wx + 1330, wz - 870, 0.00125, 191));
+    const riverMaskRaw = (1 - smoothstep(0.02, 0.11, riverSignal)) * (1 - mountainMask * 0.58);
+    const lakeSignal = fractalNoise2D(wx - 760, wz + 540, 0.0022, 3, 0.57, 145)
+        - Math.abs(valueNoise2D(wx, wz, 0.0061, 146)) * 0.34
+        + moisture * 0.15;
+    const lakeMaskRaw = smoothstep(0.56, 0.9, lakeSignal) * (1 - mountainMask * 0.72);
+    const deepLakeMaskRaw = smoothstep(0.68, 0.95, lakeSignal + moisture * 0.2 - continental * 0.08) * (1 - mountainMask * 0.67);
+
+    rawHeight -= valleyMask * 8.4;
+    rawHeight -= riverMaskRaw * (8 + valleyMask * 18 + (1 - mountainMask) * 6);
+    rawHeight -= lakeMaskRaw * (12 + deepLakeMaskRaw * 30 + (1 - mountainMask) * 10);
+
+    const centerDistance = Math.hypot(x, z);
+    const spawnBlend = smoothstep(84, 190, centerDistance);
+    const legacyBase = SEA_LEVEL + 4 + fractalNoise2D(x, z, 0.018, 2, 0.5, 11) * 6;
+    rawHeight = lerp(legacyBase, rawHeight, spawnBlend);
     const height = clampInt(rawHeight, 4, WORLD_MAX_Y - 6);
 
-    const moisture = fractalNoise2D(x, z, 0.0032, 2, 0.6, 109);
-    const treeChance = 0.004 + smoothstep(-0.28, 0.42, moisture) * 0.018;
-    const steepPenalty = mountainMask * 0.8;
+    const altitude01 = clamp01((height - (SEA_LEVEL + 10)) / Math.max(1, WORLD_MAX_Y - SEA_LEVEL - 14));
+    const coldness = clamp01(0.35 + mountainMask * 0.42 + altitude01 * 0.78 - moisture * 0.18 - temperature * 0.18);
+    const snowMask = smoothstep(0.5, 0.86, coldness);
+    const rockiness = clamp01(mountainMask * 0.52 + ridgePeaks * 0.54 + (1 - moisture) * 0.2 + Math.max(0, altitude01 - 0.4) * 0.24);
+    const riverMask = riverMaskRaw * spawnBlend;
+    const lakeMask = lakeMaskRaw * spawnBlend;
+    const deepLakeMask = deepLakeMaskRaw * spawnBlend;
+
+    const isOceanic = continental < -0.24 || height <= SEA_LEVEL - 9;
+    const isCoast = !isOceanic && (continental < -0.08 || (height <= SEA_LEVEL + 3 && moisture > -0.02));
+    const isDeepLake = deepLakeMask > 0.44 && height <= SEA_LEVEL + 2;
+
+    let biome = BIOME.PLAINS;
+    if (spawnBlend < 0.22) {
+        biome = BIOME.SPAWN_VALLEY;
+    } else if (isOceanic) {
+        biome = BIOME.MARITIME;
+    } else if (isDeepLake || (lakeMask > 0.42 && height <= SEA_LEVEL + 2)) {
+        biome = BIOME.LAKE;
+    } else if (isCoast) {
+        biome = BIOME.COAST;
+    } else if ((snowMask > 0.56 && mountainMask > 0.35) || (height > SEA_LEVEL + 122 && mountainMask > 0.4)) {
+        biome = BIOME.CORDILLERA;
+    } else if (dryness > 0.58 && moisture < 0.1 && temperature > 0.04) {
+        biome = BIOME.DESERT;
+    } else if (moisture > 0.04 && mountainMask < 0.66) {
+        biome = BIOME.FOREST;
+    }
+
+    let treeChanceBase = 0.003 + clamp01((moisture + 1) * 0.5) * 0.018 + valleyMask * 0.007;
+    if (biome === BIOME.FOREST) treeChanceBase += 0.013;
+    if (biome === BIOME.SPAWN_VALLEY) treeChanceBase += 0.008;
+    if (biome === BIOME.COAST) treeChanceBase *= 0.55;
+    if (biome === BIOME.DESERT) treeChanceBase *= 0.12;
+    if (biome === BIOME.CORDILLERA) treeChanceBase *= 0.15;
+    if (biome === BIOME.MARITIME || biome === BIOME.LAKE) treeChanceBase = 0;
+
+    const treePenalty = mountainMask * 0.66 + snowMask * 0.92 + lakeMask * 1.12 + riverMask * 0.32;
     const roll = hashUnit(x, z, 91);
-    const hasTree = height > SEA_LEVEL + 1 && roll < Math.max(0, treeChance - steepPenalty);
-    const treeHeight = 4 + (hash2D(x, z, 103) % 2);
+    const hasTree = height > SEA_LEVEL + 1
+        && lakeMask < 0.5
+        && riverMask < 0.72
+        && roll < Math.max(0, treeChanceBase * (1 - treePenalty) + 0.0015);
+
+    let treeHeight = 4 + (hash2D(x, z, 103) % 3) + (moisture > 0.36 ? 1 : 0);
+    if (biome === BIOME.FOREST) treeHeight += 1;
+    if (biome === BIOME.CORDILLERA) treeHeight -= 1;
+    treeHeight = clampInt(treeHeight, 3, 8);
+
+    let treeWoodBlock = BLOCK.WOOD;
+    let treeLeafBlock = BLOCK.LEAVES;
+    if (biome === BIOME.DESERT) {
+        treeWoodBlock = BLOCK.REDDISH_WOOD;
+        treeLeafBlock = BLOCK.PINK_LEAVES;
+    } else if (biome === BIOME.COAST) {
+        treeWoodBlock = BLOCK.LIGHT_WOOD;
+        treeLeafBlock = BLOCK.LEAVES;
+    } else if (biome === BIOME.CORDILLERA) {
+        treeWoodBlock = BLOCK.DARK_PLANKS;
+        treeLeafBlock = BLOCK.LEAVES;
+    } else if (biome === BIOME.FOREST && (hash2D(x, z, 777) % 27) === 0) {
+        treeWoodBlock = BLOCK.REDDISH_WOOD;
+        treeLeafBlock = BLOCK.PINK_LEAVES;
+    }
 
     const info = {
         height,
         mountainMask,
+        valleyMask,
+        riverMask,
+        lakeMask,
+        deepLakeMask,
+        snowMask,
+        moisture,
+        temperature,
+        rockiness,
+        biome,
         hasTree,
-        treeHeight
+        treeHeight,
+        treeWoodBlock,
+        treeLeafBlock
     };
 
     columnCache.set(key, info);
@@ -6670,9 +7343,11 @@ function getTreeBlockAt(x, y, z) {
 
             const trunkStart = surfaceY + 1;
             const trunkTop = trunkStart + column.treeHeight;
+            const trunkBlock = isValidBlockId(column.treeWoodBlock) ? column.treeWoodBlock : BLOCK.WOOD;
+            const leafBlock = isValidBlockId(column.treeLeafBlock) ? column.treeLeafBlock : BLOCK.LEAVES;
 
             if (x === tx && z === tz && y >= trunkStart && y < trunkTop) {
-                return BLOCK.WOOD;
+                return trunkBlock;
             }
 
             const topY = trunkTop;
@@ -6687,19 +7362,19 @@ function getTreeBlockAt(x, y, z) {
             }
 
             if (dy === 2 && ax + az <= 1) {
-                return BLOCK.LEAVES;
+                return leafBlock;
             }
 
             if (dy === 1 && ax <= 1 && az <= 1) {
-                return BLOCK.LEAVES;
+                return leafBlock;
             }
 
             if (dy === 0 && ax <= 2 && az <= 2 && !(ax === 2 && az === 2)) {
-                return BLOCK.LEAVES;
+                return leafBlock;
             }
 
             if (dy === -1 && ax + az <= 1) {
-                return BLOCK.LEAVES;
+                return leafBlock;
             }
         }
     }
@@ -6718,16 +7393,20 @@ function getProceduralBlock(x, y, z) {
 
     const column = getColumnInfo(x, z);
     const h = column.height;
+    const biome = String(column.biome || BIOME.PLAINS);
     if (y === 0) {
         return BLOCK.BEDROCK;
     }
 
     if (y > h) {
         if (y <= SEA_LEVEL) {
+            if (column.snowMask > 0.72 && y >= SEA_LEVEL - 2 && (column.lakeMask > 0.2 || biome === BIOME.CORDILLERA)) {
+                return BLOCK.ICE;
+            }
             return BLOCK.WATER;
         }
 
-        if (h > SEA_LEVEL + 1) {
+        if (h > SEA_LEVEL + 1 && biome !== BIOME.MARITIME && biome !== BIOME.LAKE) {
             return getTreeBlockAt(x, y, z);
         }
 
@@ -6735,23 +7414,150 @@ function getProceduralBlock(x, y, z) {
     }
 
     if (y === h) {
-        if (h <= SEA_LEVEL + 1) {
+        if (biome === BIOME.MARITIME) {
+            if (h <= SEA_LEVEL - 16) {
+                return column.rockiness > 0.56 ? BLOCK.SLATE : BLOCK.BASALT;
+            }
+            if (column.deepLakeMask > 0.42) {
+                return BLOCK.GRAVEL;
+            }
             return BLOCK.SAND;
         }
 
-        if (column.mountainMask > 0.62 && h >= SEA_LEVEL + 12) {
+        if (biome === BIOME.LAKE) {
+            if (column.snowMask > 0.72 && h >= SEA_LEVEL - 2) {
+                return BLOCK.ICE;
+            }
+            return column.deepLakeMask > 0.44 ? BLOCK.MUD : BLOCK.GRAVEL;
+        }
+
+        if (biome === BIOME.COAST) {
+            if (column.riverMask > 0.28) {
+                return BLOCK.MUD;
+            }
+            return BLOCK.SAND;
+        }
+
+        if (biome === BIOME.DESERT) {
+            if (column.rockiness > 0.64 && h >= SEA_LEVEL + 10) {
+                const desertRock = hash2D(x, z, 713) % 8;
+                if (desertRock === 0) return BLOCK.VOLCANIC_STONE;
+                if (desertRock === 1) return BLOCK.SLATE;
+                if (desertRock === 2) return BLOCK.DARK_BRICK;
+            }
+            return (hash2D(x, z, 714) % 5 === 0) ? BLOCK.TERRACOTTA : BLOCK.SAND;
+        }
+
+        if (biome === BIOME.CORDILLERA) {
+            if (column.snowMask > 0.52 || h >= SEA_LEVEL + 82) {
+                return BLOCK.SNOW;
+            }
+            if (column.rockiness > 0.66) {
+                const mountainRock = hash2D(x, z, 715) % 7;
+                if (mountainRock === 0) return BLOCK.VOLCANIC_STONE;
+                if (mountainRock <= 2) return BLOCK.SLATE;
+                if (mountainRock === 3) return BLOCK.BASALT;
+                return BLOCK.STONE;
+            }
+            return BLOCK.GRAVEL;
+        }
+
+        if (column.snowMask > 0.64 && h >= SEA_LEVEL + 28) {
+            return BLOCK.SNOW;
+        }
+
+        if (column.rockiness > 0.76 && h >= SEA_LEVEL + 24) {
+            const rockPick = hash2D(x, z, 716) % 7;
+            if (rockPick === 0) return BLOCK.SLATE;
+            if (rockPick === 1) return BLOCK.BASALT;
             return BLOCK.STONE;
+        }
+
+        if (column.riverMask > 0.28) {
+            return column.moisture > 0 ? BLOCK.GRASS : BLOCK.GRAVEL;
         }
 
         return BLOCK.GRASS;
     }
 
-    if (h <= SEA_LEVEL + 1 && y >= h - 3) {
+    if (biome === BIOME.MARITIME || biome === BIOME.COAST || biome === BIOME.LAKE) {
+        if (y >= h - 4) {
+            if (column.lakeMask > 0.22 || column.riverMask > 0.22) {
+                return BLOCK.MUD;
+            }
+            return column.deepLakeMask > 0.4 ? BLOCK.GRAVEL : BLOCK.SAND;
+        }
+
+        if (column.rockiness > 0.64) {
+            const marineRock = hash2D(x, z, 717) % 6;
+            if (marineRock <= 1) return BLOCK.BASALT;
+            if (marineRock === 2) return BLOCK.SLATE;
+        }
+        return BLOCK.STONE;
+    }
+
+    if (biome === BIOME.DESERT) {
+        if (y >= h - 4) {
+            const surfacePick = hash2D(x, z, 718) % 5;
+            if (surfacePick === 0) return BLOCK.TERRACOTTA;
+            return BLOCK.SAND;
+        }
+
+        if (y >= h - 9) {
+            return BLOCK.TERRACOTTA;
+        }
+
+        if (column.rockiness > 0.58 && y >= SEA_LEVEL - 6) {
+            return BLOCK.VOLCANIC_STONE;
+        }
+        return BLOCK.STONE;
+    }
+
+    if (biome === BIOME.CORDILLERA) {
+        if (y >= h - 3) {
+            if (column.snowMask > 0.5 || h >= SEA_LEVEL + 72) {
+                return BLOCK.SNOW;
+            }
+            return BLOCK.GRAVEL;
+        }
+
+        if (column.rockiness > 0.58 && y >= SEA_LEVEL - 4) {
+            const coldRock = hash2D(x, z, 719) % 6;
+            if (coldRock === 0) return BLOCK.VOLCANIC_STONE;
+            if (coldRock <= 2) return BLOCK.SLATE;
+            if (coldRock === 3) return BLOCK.BASALT;
+        }
+        return BLOCK.STONE;
+    }
+
+    if (h <= SEA_LEVEL + 2 && y >= h - 3) {
+        if (column.lakeMask > 0.22 || column.riverMask > 0.2) {
+            return BLOCK.MUD;
+        }
         return BLOCK.SAND;
     }
 
     if (y >= h - 2) {
+        if (column.rockiness > 0.72 && h >= SEA_LEVEL + 26) {
+            return BLOCK.GRAVEL;
+        }
+        if (biome === BIOME.FOREST && column.moisture > 0.24 && column.riverMask > 0.18) {
+            return BLOCK.MUD;
+        }
         return BLOCK.DIRT;
+    }
+
+    if (column.rockiness > 0.78 && y >= SEA_LEVEL + 12) {
+        const deepRock = hash2D(x, z, 720) % 6;
+        if (deepRock === 0) {
+            return BLOCK.SLATE;
+        }
+        if (deepRock === 1) {
+            return BLOCK.BASALT;
+        }
+        if (deepRock === 2) {
+            return BLOCK.VOLCANIC_STONE;
+        }
     }
 
     return BLOCK.STONE;
@@ -6802,8 +7608,10 @@ function setBlock(x, y, z, id) {
 
     if (id === proceduralId) {
         editedBlocks.delete(key);
+        removeEditedBlockFromColumnIndex(x, y, z);
     } else {
         editedBlocks.set(key, id);
+        addEditedBlockToColumnIndex(x, y, z);
     }
 
     markChunksDirtyAroundBlock(x, z);
@@ -6959,6 +7767,49 @@ function buildLiquidChunkMesh(liquidBlockId, positions) {
     return mesh;
 }
 
+function getColumnMeshYRange(x, z, column = null) {
+    const centerColumn = column || getColumnInfo(x, z);
+    let minTerrain = centerColumn.height;
+    let maxTerrain = centerColumn.height;
+
+    for (let nx = x - 1; nx <= x + 1; nx += 1) {
+        for (let nz = z - 1; nz <= z + 1; nz += 1) {
+            const neighborHeight = getColumnInfo(nx, nz).height;
+            if (neighborHeight < minTerrain) minTerrain = neighborHeight;
+            if (neighborHeight > maxTerrain) maxTerrain = neighborHeight;
+        }
+    }
+
+    let minY = Math.max(0, minTerrain - 4);
+    let maxY = Math.min(
+        WORLD_MAX_Y - 1,
+        Math.max(
+            maxTerrain + 6,
+            SEA_LEVEL + 2,
+            centerColumn.height + (centerColumn.hasTree ? centerColumn.treeHeight + 4 : 3)
+        )
+    );
+
+    for (let nx = x - 1; nx <= x + 1; nx += 1) {
+        for (let nz = z - 1; nz <= z + 1; nz += 1) {
+            const editedRange = getEditedColumnRange(nx, nz);
+            if (!editedRange) {
+                continue;
+            }
+            minY = Math.min(minY, editedRange.minY - 2);
+            maxY = Math.max(maxY, editedRange.maxY + 2);
+        }
+    }
+
+    minY = clampInt(minY, 0, WORLD_MAX_Y - 1);
+    maxY = clampInt(maxY, 0, WORLD_MAX_Y - 1);
+    if (maxY < minY) {
+        maxY = minY;
+    }
+
+    return { minY, maxY };
+}
+
 function rebuildChunkMesh(chunk) {
     if (!chunk) {
         return;
@@ -6977,8 +7828,10 @@ function rebuildChunkMesh(chunk) {
         for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
             const x = baseX + lx;
             const z = baseZ + lz;
+            const column = getColumnInfo(x, z);
+            const { minY, maxY } = getColumnMeshYRange(x, z, column);
 
-            for (let y = 0; y < WORLD_MAX_Y; y += 1) {
+            for (let y = minY; y <= maxY; y += 1) {
                 const id = getBlock(x, y, z);
                 if (id === BLOCK.AIR) {
                     continue;
@@ -7446,6 +8299,56 @@ function updatePlayer(deltaSeconds) {
         }
     }
 
+    if (state.flightEnabled) {
+        const flightForward = cameraForwardScratch;
+        camera.getWorldDirection(flightForward);
+        if (flightForward.lengthSq() < 1e-8) {
+            flightForward.set(0, 0, -1);
+        } else {
+            flightForward.normalize();
+        }
+
+        const flightRight = cameraRightScratch;
+        flightRight.crossVectors(flightForward, worldUpVector);
+        if (flightRight.lengthSq() < 1e-8) {
+            flightRight.set(1, 0, 0);
+        } else {
+            flightRight.normalize();
+        }
+
+        let moveForward = 0;
+        let moveRight = 0;
+        if (state.keyDown.has("KeyW")) moveForward += 1;
+        if (state.keyDown.has("KeyS")) moveForward -= 1;
+        if (state.keyDown.has("KeyD")) moveRight += 1;
+        if (state.keyDown.has("KeyA")) moveRight -= 1;
+
+        const flightMoveVector = moveVectorScratch;
+        flightMoveVector.set(0, 0, 0);
+        if (moveForward !== 0) flightMoveVector.addScaledVector(flightForward, moveForward);
+        if (moveRight !== 0) flightMoveVector.addScaledVector(flightRight, moveRight);
+
+        if (flightMoveVector.lengthSq() > 0) {
+            const speedBoost = state.keyDown.has("ShiftLeft") ? 1.35 : 1;
+            flightMoveVector.normalize().multiplyScalar(FLIGHT_SPEED * speedBoost * deltaSeconds);
+            state.playerPosition.add(flightMoveVector);
+        }
+
+        state.playerPosition.y = THREE.MathUtils.clamp(
+            state.playerPosition.y,
+            0.12,
+            WORLD_MAX_Y - PLAYER_HEIGHT - 0.04
+        );
+        state.velocityY = 0;
+        state.onGround = false;
+        controls.getObject().position.set(
+            state.playerPosition.x,
+            state.playerPosition.y + EYE_HEIGHT,
+            state.playerPosition.z
+        );
+        return;
+    }
+
     const speed = isSprinting ? SPRINT_SPEED : BASE_SPEED;
     const { forward, right } = getForwardRightVectors();
 
@@ -7576,6 +8479,9 @@ function setInventoryOpen(open, showFeedback = false) {
 
     state.inventoryOpen = next;
     state.keyDown.clear();
+    if (state.inventoryOpen && state.mapOpen) {
+        setMapOpen(false);
+    }
     if (inventoryPanelEl) {
         inventoryPanelEl.classList.toggle("hidden", !state.inventoryOpen);
     }
@@ -7599,7 +8505,7 @@ function setInventoryOpen(open, showFeedback = false) {
         return;
     }
 
-    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.interactionPanelOpen) {
+    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.interactionPanelOpen && !state.mapOpen) {
         if (crosshairEl) {
             crosshairEl.classList.remove("hidden");
         }
@@ -7625,6 +8531,7 @@ function canRelockGameplayControls() {
         && !state.inventoryOpen
         && !state.avatarPreviewOpen
         && !state.interactionPanelOpen
+        && !state.mapOpen
     );
 }
 
@@ -7666,7 +8573,7 @@ function closeInteractionPanel(showFeedback = false, preservePose = false) {
         clearLocalPoseActivity(true);
     }
 
-    if (!state.inventoryOpen && !state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && crosshairEl) {
+    if (!state.inventoryOpen && !state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.mapOpen && crosshairEl) {
         crosshairEl.classList.remove("hidden");
     }
 
@@ -7691,6 +8598,9 @@ function openInteractionPanel(propHit, panelMode, usageKind = "") {
 
     if (state.avatarPreviewOpen) {
         setAvatarPreviewOpen(false);
+    }
+    if (state.mapOpen) {
+        setMapOpen(false);
     }
     if (interactionState.pose) {
         clearLocalPoseActivity(true);
@@ -8726,7 +9636,16 @@ function tryRemovePlacedPropAtCrosshair() {
 }
 
 function onMouseWheel(event) {
-    if (!state.worldStarted || !state.worldReady || state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen || !controls.isLocked) {
+    if (
+        !state.worldStarted
+        || !state.worldReady
+        || state.paused
+        || state.tutorialVisible
+        || state.inventoryOpen
+        || state.interactionPanelOpen
+        || state.mapOpen
+        || !controls.isLocked
+    ) {
         return;
     }
 
@@ -8802,6 +9721,31 @@ function onKeyDown(event) {
         return;
     }
 
+    if (event.code === "KeyM") {
+        event.preventDefault();
+        if (state.paused) {
+            setPauseSettingsOpen(!state.pauseSettingsOpen);
+            return;
+        }
+        if (!state.worldStarted || !state.worldReady) {
+            return;
+        }
+        if (state.tutorialVisible) {
+            closeTutorial(true);
+        }
+        if (state.avatarPreviewOpen) {
+            setAvatarPreviewOpen(false);
+        }
+        if (state.inventoryOpen) {
+            setInventoryOpen(false);
+        }
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
+        setMapOpen(!state.mapOpen, true);
+        return;
+    }
+
     if (event.code === "Escape") {
         event.preventDefault();
 
@@ -8816,6 +9760,11 @@ function onKeyDown(event) {
 
         if (state.interactionPanelOpen) {
             closeInteractionPanel(true, true);
+            return;
+        }
+
+        if (state.mapOpen) {
+            setMapOpen(false, true);
             return;
         }
 
@@ -8844,18 +9793,13 @@ function onKeyDown(event) {
         return;
     }
 
-    if (event.code === "KeyM" && state.paused) {
-        setPauseSettingsOpen(!state.pauseSettingsOpen);
-        return;
-    }
-
     if (event.code === INTERACTION_EXIT_KEY && interactionState.pose) {
         event.preventDefault();
         exitLocalPose(true);
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen) {
+    if (state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen || state.mapOpen) {
         return;
     }
 
@@ -8923,7 +9867,7 @@ function onMouseDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen || state.interactionPanelOpen) {
+    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen || state.interactionPanelOpen || state.mapOpen) {
         return;
     }
 
@@ -8972,6 +9916,9 @@ function setupEvents() {
         if (state.inventoryOpen) {
             setInventoryOpen(false);
         }
+        if (state.mapOpen) {
+            setMapOpen(false);
+        }
         if (state.interactionPanelOpen) {
             closeInteractionPanel(false, true);
         }
@@ -9019,6 +9966,36 @@ function setupEvents() {
     if (inventoryCloseButtonEl) {
         inventoryCloseButtonEl.addEventListener("click", () => {
             setInventoryOpen(false, true);
+        });
+    }
+
+    if (mapToggleButtonEl) {
+        mapToggleButtonEl.addEventListener("click", () => {
+            if (!state.worldStarted || !state.worldReady) {
+                return;
+            }
+            if (state.tutorialVisible) {
+                closeTutorial(true);
+            }
+            setMapOpen(!state.mapOpen, true);
+        });
+    }
+
+    if (mapCloseButtonEl) {
+        mapCloseButtonEl.addEventListener("click", () => {
+            setMapOpen(false, true);
+        });
+    }
+
+    if (mapSetPinButtonEl) {
+        mapSetPinButtonEl.addEventListener("click", () => {
+            setMapPinAtCurrentPosition(true);
+        });
+    }
+
+    if (mapClearPinButtonEl) {
+        mapClearPinButtonEl.addEventListener("click", () => {
+            clearMapPin(true);
         });
     }
 
@@ -9092,6 +10069,13 @@ function setupEvents() {
         });
     }
 
+    if (flightModeToggleEl) {
+        flightModeToggleEl.addEventListener("change", (event) => {
+            const enabled = Boolean(event.target?.checked);
+            setFlightMode(enabled, true, true);
+        });
+    }
+
     if (tutorialCloseButton) {
         tutorialCloseButton.addEventListener("click", () => {
             closeTutorial(true);
@@ -9125,7 +10109,7 @@ function animate() {
     }
     updateAdaptiveQuality(delta);
 
-    if (state.worldStarted && !state.paused && !state.avatarPreviewOpen && !state.inventoryOpen) {
+    if (state.worldStarted && !state.paused && !state.avatarPreviewOpen && !state.inventoryOpen && !state.mapOpen && !state.interactionPanelOpen) {
         updatePlayer(delta);
     }
 
@@ -9160,6 +10144,7 @@ function animate() {
 
     updateAvatarPreviewCamera(delta);
     updateInteractionPanel(delta);
+    updateMapPanel(delta);
     updateTargetedBlockUi(delta);
     state.hudTick -= delta;
     if (state.hudTick <= 0) {
@@ -9172,15 +10157,17 @@ function animate() {
 function findSpawnPoint() {
     const sx = 0;
     const sz = 0;
+    const column = getColumnInfo(sx, sz);
+    const spawnY = clampInt(column.height + 1, 2, WORLD_MAX_Y - 2);
 
-    for (let y = WORLD_MAX_Y - 1; y >= 1; y -= 1) {
+    for (let y = spawnY; y >= 1; y -= 1) {
         const id = getBlock(sx, y, sz);
         if (isSolidBlock(id)) {
             return new THREE.Vector3(sx + 0.5, y + 1.01, sz + 0.5);
         }
     }
 
-    return new THREE.Vector3(0.5, 18, 0.5);
+    return new THREE.Vector3(0.5, SEA_LEVEL + 6, 0.5);
 }
 
 function init() {
@@ -9192,6 +10179,7 @@ function init() {
     setPauseSettingsOpen(false);
     setDebugVisible(loadDebugVisibility(), false);
     loadGameplayPreferences();
+    loadMapPinFromStorage();
     if (pauseButton) {
         pauseButton.classList.add("hidden");
     }
@@ -9225,7 +10213,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-8 material - I inventario - F3 debug - V ver avatar - ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-8 material - I inventario - M mapa - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;
