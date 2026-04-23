@@ -69,11 +69,13 @@
             <button id="mapModeGlobalButton" type="button" aria-pressed="false">Global</button>
         </div>
         <p id="mapInfo" class="map-note">X: 0 Z: 0</p>
-        <p class="map-note map-tip">Global: rueda = zoom, click = marcar destino/pin.</p>
+        <p class="map-note map-tip">Global: rueda = zoom, click = destino temporal (no casa).</p>
         <canvas id="worldMapCanvas" width="320" height="320" aria-label="Mapa superior del mundo"></canvas>
         <div class="map-actions">
             <button id="mapSetPinButton" type="button">Pin aqui</button>
+            <button id="mapSetHomePinButton" type="button">Casa aqui</button>
             <button id="mapGoPinButton" type="button">Ir al pin</button>
+            <button id="mapGoHomePinButton" type="button">Ir casa</button>
             <button id="mapClearPinButton" type="button">Quitar pin</button>
         </div>
     </aside>
@@ -94,7 +96,7 @@
 
                 <label class="settings-control" for="chunkRadiusSlider">
                     <span>Radio de chunks</span>
-                    <input id="chunkRadiusSlider" type="range" min="2" max="8" step="1" value="4">
+                    <input id="chunkRadiusSlider" type="range" min="2" max="16" step="1" value="4">
                     <span id="chunkRadiusValue">4</span>
                 </label>
 

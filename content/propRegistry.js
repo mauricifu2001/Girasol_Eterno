@@ -198,7 +198,7 @@ const RAW_PROP_DEFINITIONS = [
         interaction: "cycle-variant",
         stateDefaults: { variant: 0 },
         visual: { tint: "rgba(206, 155, 176, 0.34)" },
-        profile: { halfExtents: { x: 0.46, z: 0.08 }, minY: 0, maxY: 1.04, supportY: 1.02 }
+        profile: { halfExtents: { x: 0.46, z: 0.03 }, minY: 0, maxY: 1.04, supportY: 1.02 }
     },
     {
         id: PROP_TYPE.WALL_LANTERN,

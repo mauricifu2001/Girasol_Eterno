@@ -54,13 +54,16 @@ const RABBIT_SPAWN_ATTEMPTS = 6;
 const RABBIT_DESPAWN_DISTANCE = 155;
 const RABBIT_MIN_PLAYER_DISTANCE = 10;
 const RABBIT_MIN_RABBIT_DISTANCE = 2.4;
-const FISH_MAX_COUNT = 22;
-const FISH_SPAWN_INTERVAL_MIN = 4.8;
-const FISH_SPAWN_INTERVAL_MAX = 10.8;
-const FISH_SPAWN_ATTEMPTS = 8;
-const FISH_DESPAWN_DISTANCE = 220;
-const FISH_MIN_PLAYER_DISTANCE = 9;
-const FISH_MIN_FISH_DISTANCE = 2.2;
+const FISH_MAX_COUNT = 48;
+const FISH_SPAWN_INTERVAL_MIN = 2.6;
+const FISH_SPAWN_INTERVAL_MAX = 6.2;
+const FISH_SPAWN_ATTEMPTS = 14;
+const FISH_DESPAWN_DISTANCE = 250;
+const FISH_MIN_PLAYER_DISTANCE = 8;
+const FISH_MIN_FISH_DISTANCE = 1.6;
+const WILDLIFE_SYNC_INTERVAL_MS = 620;
+const WILDLIFE_SYNC_RETRY_MS = 1100;
+const WILDLIFE_REMOTE_BLEND_SPEED = 7.5;
 const DEBUG_VISIBILITY_STORAGE_KEY = "girasolDebugHudVisible";
 const TUTORIAL_SEEN_STORAGE_KEY = "girasolTutorialSeenV1";
 const BLOCK_HIGHLIGHT_SIZE = 1.02;
@@ -104,6 +107,7 @@ const FLIGHT_MODE_STORAGE_KEY = "girasolFlightModeV1";
 const HOTBAR_STORAGE_KEY = "girasolHotbarSlotsV1";
 const SUNFLOWER_CURRENCY_STORAGE_KEY = "girasolSunflowerCurrencyV1";
 const MAP_PIN_STORAGE_KEY_PREFIX = "girasolMapPinV1";
+const MAP_HOME_PIN_STORAGE_KEY_PREFIX = "girasolMapHomePinV1";
 
 const PROFILE_COLORS = {
     Mauricio: "#f4cf85",
@@ -158,7 +162,8 @@ const FISH_VARIANTS = [
         scale: 0.85,
         speedMin: 0.8,
         speedMax: 1.4,
-        depthBias: 0.4
+        depthBias: 0.4,
+        spawnWeight: 0.28
     },
     {
         id: "puffer",
@@ -168,17 +173,19 @@ const FISH_VARIANTS = [
         scale: 0.75,
         speedMin: 0.45,
         speedMax: 0.9,
-        depthBias: 0.32
+        depthBias: 0.32,
+        spawnWeight: 0.14
     },
     {
         id: "shark",
         label: "Tiburon",
         body: 0x6f7f90,
         accent: 0x2b3a47,
-        scale: 1.35,
+        scale: 1.62,
         speedMin: 1.3,
         speedMax: 2.15,
-        depthBias: 0.72
+        depthBias: 0.76,
+        spawnWeight: 0.34
     },
     {
         id: "manta",
@@ -188,7 +195,8 @@ const FISH_VARIANTS = [
         scale: 1.18,
         speedMin: 0.9,
         speedMax: 1.5,
-        depthBias: 0.62
+        depthBias: 0.62,
+        spawnWeight: 0.13
     },
     {
         id: "jelly",
@@ -198,7 +206,8 @@ const FISH_VARIANTS = [
         scale: 0.95,
         speedMin: 0.32,
         speedMax: 0.72,
-        depthBias: 0.55
+        depthBias: 0.55,
+        spawnWeight: 0.11
     }
 ];
 
@@ -212,6 +221,7 @@ const WORLD_SAVE_KEY = `girasolWorldEdits:${ACTIVE_ROOM_ID}`;
 const PLAYER_STATE_STORAGE_KEY = `girasolPlayerStateV1:${ACTIVE_ROOM_ID}`;
 const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${ACTIVE_ROOM_ID}`;
 const MAP_PIN_STORAGE_KEY = `${MAP_PIN_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
+const MAP_HOME_PIN_STORAGE_KEY = `${MAP_HOME_PIN_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const WORLD_SAVE_VERSION = 2;
 const AUTO_SAVE_SECONDS = 12;
 const PLAYER_STATE_SAVE_INTERVAL_SECONDS = 1.8;
@@ -287,7 +297,7 @@ const WORLD_SEED = Number(gameConfig.worldSeed) || 42173;
 const INITIAL_CHUNK_RADIUS = clampInt(
     Number(urlParams.get("chunks") || gameConfig.renderChunkRadius || 4),
     2,
-    8
+    16
 );
 
 const canvas = document.getElementById("gameCanvas");
@@ -315,6 +325,8 @@ const mapModeGlobalButtonEl = document.getElementById("mapModeGlobalButton");
 const mapSetPinButtonEl = document.getElementById("mapSetPinButton");
 const mapGoPinButtonEl = document.getElementById("mapGoPinButton");
 const mapClearPinButtonEl = document.getElementById("mapClearPinButton");
+const mapSetHomePinButtonEl = document.getElementById("mapSetHomePinButton");
+const mapGoHomePinButtonEl = document.getElementById("mapGoHomePinButton");
 const targetBlockLabelEl = document.getElementById("targetBlockLabel");
 const crosshairEl = document.getElementById("crosshair");
 const toastContainerEl = document.getElementById("toastContainer");
@@ -997,11 +1009,13 @@ const multiplayer = {
         chunksRootRef: null,
         propsRootRef: null,
         metaRef: null,
-        dayNightRef: null
+        dayNightRef: null,
+        wildlifeRef: null
     },
     remotePlayers: new Map(),
     chunkEditSubscriptions: new Map(),
     propSnapshotUnsubscribe: null,
+    wildlifeSnapshotUnsubscribe: null,
     sendIntervalMs: 120,
     lastBroadcastMs: 0,
     unsubscribers: [],
@@ -1009,8 +1023,12 @@ const multiplayer = {
     pendingPropWrites: new Map(),
     writeTimerId: null,
     propWriteTimerId: null,
+    wildlifeWriteTimerId: null,
+    wildlifeLastPublishMs: 0,
     idleHeartbeatMs: 1200,
-    lastSentState: null
+    lastSentState: null,
+    isWildlifeAuthority: false,
+    wildlifeSnapshotReady: false
 };
 
 const saveState = {
@@ -1052,6 +1070,7 @@ const uiState = {
 
 const mapState = {
     pin: null,
+    homePin: null,
     mode: MAP_MODE.LOCAL,
     globalZoom: 1,
     refreshTick: 0,
@@ -1623,7 +1642,7 @@ function setFlightMode(enabled, persist = true, showFeedback = false) {
 }
 
 function loadGameplayPreferences() {
-    const storedChunkRadius = clampInt(readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius), 2, 8);
+    const storedChunkRadius = clampInt(readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius), 2, 16);
     state.chunkRadius = storedChunkRadius;
 
     const storedPointerSensitivity = readStorageNumber(POINTER_SENSITIVITY_STORAGE_KEY, DEFAULT_POINTER_SPEED);
@@ -1662,28 +1681,40 @@ function sanitizeMapPin(rawPin) {
     };
 }
 
-function loadMapPinFromStorage() {
+function loadStoredMapPin(storageKey) {
     try {
-        const raw = window.localStorage.getItem(MAP_PIN_STORAGE_KEY);
+        const raw = window.localStorage.getItem(storageKey);
         if (!raw) {
-            mapState.pin = null;
-            return;
+            return null;
         }
-        mapState.pin = sanitizeMapPin(JSON.parse(raw));
+        return sanitizeMapPin(JSON.parse(raw));
     } catch (error) {
-        mapState.pin = null;
+        return null;
     }
 }
 
-function persistMapPinToStorage() {
+function persistStoredMapPin(storageKey, pinValue) {
     try {
-        if (!mapState.pin) {
-            window.localStorage.removeItem(MAP_PIN_STORAGE_KEY);
+        if (!pinValue) {
+            window.localStorage.removeItem(storageKey);
             return;
         }
-        window.localStorage.setItem(MAP_PIN_STORAGE_KEY, JSON.stringify(mapState.pin));
+        window.localStorage.setItem(storageKey, JSON.stringify(pinValue));
     } catch (error) {
     }
+}
+
+function loadMapPinFromStorage() {
+    mapState.pin = loadStoredMapPin(MAP_PIN_STORAGE_KEY);
+    mapState.homePin = loadStoredMapPin(MAP_HOME_PIN_STORAGE_KEY);
+}
+
+function persistMapPinToStorage() {
+    persistStoredMapPin(MAP_PIN_STORAGE_KEY, mapState.pin);
+}
+
+function persistMapHomePinToStorage() {
+    persistStoredMapPin(MAP_HOME_PIN_STORAGE_KEY, mapState.homePin);
 }
 
 function projectWorldToMap(x, z, centerX, centerZ, rangeBlocks, width, height) {
@@ -1758,7 +1789,11 @@ function getMapTerrainColor(column) {
             b: clampByte(120 - warmShade * 24)
         };
     } else if (biome === BIOME.VOLCANIC) {
-        const lavaHint = clamp01((Number(column?.volcanicMask) || 0) * 0.8 + (Number(column?.craterMask) || 0) * 0.6);
+        const lavaHint = clamp01(
+            (Number(column?.volcanicMask) || 0) * 0.62
+            + (Number(column?.craterMask) || 0) * 0.92
+            + (Number(column?.lavaChannelMask) || 0) * 0.74
+        );
         color = {
             r: clampByte(82 + lavaHint * 90),
             g: clampByte(62 + lavaHint * 34),
@@ -1811,6 +1846,10 @@ function getBiomeLabel(biomeId) {
 
 function normalizeMapMode(mode) {
     return String(mode || "").toLowerCase() === MAP_MODE.GLOBAL ? MAP_MODE.GLOBAL : MAP_MODE.LOCAL;
+}
+
+function isMapBlockingGameplay() {
+    return state.mapOpen && normalizeMapMode(mapState.mode) === MAP_MODE.GLOBAL;
 }
 
 function getMapCenterForMode(mode) {
@@ -1997,6 +2036,29 @@ function drawMapMarkersAndInfo(mode, centerX, centerZ, range, canvasWidth, canva
         canvasHeight
     );
 
+    if (mapState.homePin) {
+        const homeProjection = projectWorldToMap(
+            mapState.homePin.x,
+            mapState.homePin.z,
+            centerX,
+            centerZ,
+            range,
+            canvasWidth,
+            canvasHeight
+        );
+        worldMapCtx.beginPath();
+        worldMapCtx.fillStyle = "rgba(114, 212, 255, 0.98)";
+        worldMapCtx.strokeStyle = "rgba(226, 246, 255, 0.98)";
+        worldMapCtx.lineWidth = 1.3;
+        worldMapCtx.moveTo(homeProjection.x, homeProjection.y - 6);
+        worldMapCtx.lineTo(homeProjection.x + 6, homeProjection.y);
+        worldMapCtx.lineTo(homeProjection.x, homeProjection.y + 6);
+        worldMapCtx.lineTo(homeProjection.x - 6, homeProjection.y);
+        worldMapCtx.closePath();
+        worldMapCtx.fill();
+        worldMapCtx.stroke();
+    }
+
     if (mapState.pin) {
         const pinProjection = projectWorldToMap(
             mapState.pin.x,
@@ -2008,7 +2070,7 @@ function drawMapMarkersAndInfo(mode, centerX, centerZ, range, canvasWidth, canva
             canvasHeight
         );
         worldMapCtx.beginPath();
-        worldMapCtx.fillStyle = "rgba(255, 76, 122, 0.95)";
+        worldMapCtx.fillStyle = "rgba(255, 112, 122, 0.95)";
         worldMapCtx.strokeStyle = "rgba(255, 233, 233, 0.92)";
         worldMapCtx.lineWidth = 1.4;
         worldMapCtx.arc(pinProjection.x, pinProjection.y, 5, 0, Math.PI * 2);
@@ -2099,9 +2161,18 @@ function drawMapMarkersAndInfo(mode, centerX, centerZ, range, canvasWidth, canva
         const dz = mapState.pin.z - localZ;
         const distance = Math.hypot(dx, dz);
         const direction = getCompassDirectionFromDelta(dx, dz);
-        infoText += ` | Pin: ${distance.toFixed(1)}m ${direction}`;
+        infoText += ` | Destino: ${distance.toFixed(1)}m ${direction}`;
     } else {
-        infoText += " | Pin: no definido";
+        infoText += " | Destino: no definido";
+    }
+    if (mapState.homePin) {
+        const homeDx = mapState.homePin.x - localX;
+        const homeDz = mapState.homePin.z - localZ;
+        const homeDistance = Math.hypot(homeDx, homeDz);
+        const homeDirection = getCompassDirectionFromDelta(homeDx, homeDz);
+        infoText += ` | Casa: ${homeDistance.toFixed(1)}m ${homeDirection}`;
+    } else {
+        infoText += " | Casa: no definida";
     }
     if (mapInfoEl) {
         mapInfoEl.textContent = infoText;
@@ -2163,6 +2234,33 @@ function setMapMode(mode, showFeedback = false) {
     updateMapModeButtons();
     updateMapPanelLayout();
     if (state.mapOpen) {
+        const blocksGameplay = isMapBlockingGameplay();
+        if (blocksGameplay) {
+            if (crosshairEl) {
+                crosshairEl.classList.add("hidden");
+            }
+            if (targetBlockLabelEl) {
+                targetBlockLabelEl.classList.add("hidden");
+            }
+            if (controls.isLocked) {
+                try {
+                    controls.unlock();
+                } catch (error) {
+                }
+            }
+        } else {
+            if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.inventoryOpen && !state.interactionPanelOpen) {
+                if (crosshairEl) {
+                    crosshairEl.classList.remove("hidden");
+                }
+            }
+            if (canRelockGameplayControls() && !controls.isLocked) {
+                try {
+                    controls.lock();
+                } catch (error) {
+                }
+            }
+        }
         renderMapPanelNow();
     }
 
@@ -2185,7 +2283,9 @@ function setMapOpen(open, showFeedback = false) {
     }
 
     state.mapOpen = next;
-    state.keyDown.clear();
+    if (!state.mapOpen || normalizeMapMode(mapState.mode) === MAP_MODE.GLOBAL) {
+        state.keyDown.clear();
+    }
     if (mapPanelEl) {
         mapPanelEl.classList.toggle("hidden", !state.mapOpen);
     }
@@ -2204,23 +2304,36 @@ function setMapOpen(open, showFeedback = false) {
         if (state.interactionPanelOpen) {
             closeInteractionPanel(false, true);
         }
-        if (crosshairEl) {
-            crosshairEl.classList.add("hidden");
-        }
-        targetHighlight.visible = false;
-        if (targetBlockLabelEl) {
-            targetBlockLabelEl.classList.add("hidden");
-        }
-        if (controls.isLocked) {
+        if (isMapBlockingGameplay()) {
+            if (crosshairEl) {
+                crosshairEl.classList.add("hidden");
+            }
+            targetHighlight.visible = false;
+            if (targetBlockLabelEl) {
+                targetBlockLabelEl.classList.add("hidden");
+            }
+            if (controls.isLocked) {
+                try {
+                    controls.unlock();
+                } catch (error) {
+                }
+            }
+        } else if (canRelockGameplayControls() && !controls.isLocked) {
             try {
-                controls.unlock();
+                controls.lock();
             } catch (error) {
             }
         }
         mapState.refreshTick = 0;
         renderMapPanelNow();
         if (showFeedback) {
-            showToast("Mapa abierto", "info", 900);
+            showToast(
+                isMapBlockingGameplay()
+                    ? "Mapa abierto"
+                    : "Mapa local abierto (puedes moverte)",
+                "info",
+                980
+            );
         }
         return;
     }
@@ -2242,10 +2355,24 @@ function setMapOpen(open, showFeedback = false) {
 }
 
 function setMapPinAtCurrentPosition(showFeedback = true) {
-    setMapPinAtWorldCoordinates(state.playerPosition.x, state.playerPosition.z, showFeedback, "Pin guardado en tu posicion");
+    setMapPinAtWorldCoordinates(
+        state.playerPosition.x,
+        state.playerPosition.z,
+        showFeedback,
+        "Destino temporal guardado en tu posicion"
+    );
 }
 
-function setMapPinAtWorldCoordinates(x, z, showFeedback = true, successMessage = "Pin guardado") {
+function setMapHomePinAtCurrentPosition(showFeedback = true) {
+    setMapHomePinAtWorldCoordinates(
+        state.playerPosition.x,
+        state.playerPosition.z,
+        showFeedback,
+        "Casa guardada en tu posicion"
+    );
+}
+
+function setMapPinAtWorldCoordinates(x, z, showFeedback = true, successMessage = "Destino temporal guardado") {
     const nx = Number(x);
     const nz = Number(z);
     if (!Number.isFinite(nx) || !Number.isFinite(nz)) {
@@ -2257,6 +2384,28 @@ function setMapPinAtWorldCoordinates(x, z, showFeedback = true, successMessage =
         createdAt: Date.now()
     };
     persistMapPinToStorage();
+    mapState.refreshTick = 0;
+    if (state.mapOpen) {
+        renderMapPanelNow();
+    }
+    if (showFeedback) {
+        showToast(successMessage, "success", 1000);
+    }
+    return true;
+}
+
+function setMapHomePinAtWorldCoordinates(x, z, showFeedback = true, successMessage = "Casa guardada") {
+    const nx = Number(x);
+    const nz = Number(z);
+    if (!Number.isFinite(nx) || !Number.isFinite(nz)) {
+        return false;
+    }
+    mapState.homePin = {
+        x: Number(nx.toFixed(2)),
+        z: Number(nz.toFixed(2)),
+        createdAt: Date.now()
+    };
+    persistMapHomePinToStorage();
     mapState.refreshTick = 0;
     if (state.mapOpen) {
         renderMapPanelNow();
@@ -2284,22 +2433,22 @@ function onMapCanvasClick(event) {
     const center = getMapCenterForMode(MAP_MODE.GLOBAL);
     const range = getMapEffectiveRange(MAP_MODE.GLOBAL);
     const world = unprojectMapToWorld(canvasX, canvasY, center.x, center.z, range, rect.width, rect.height);
-    setMapPinAtWorldCoordinates(world.x, world.z, true, "Destino marcado en el mapa global");
+    setMapPinAtWorldCoordinates(world.x, world.z, true, "Destino temporal marcado en el mapa global");
 }
 
-function goToMapPin(showFeedback = true) {
-    if (!mapState.pin || !state.worldReady) {
+function goToStoredMapPoint(pinValue, missingMessage, invalidMessage, successMessage, showFeedback = true) {
+    if (!pinValue || !state.worldReady) {
         if (showFeedback) {
-            showToast("No hay pin para regresar", "warning", 1000);
+            showToast(missingMessage, "warning", 1000);
         }
         return false;
     }
 
-    const targetX = Number(mapState.pin.x);
-    const targetZ = Number(mapState.pin.z);
+    const targetX = Number(pinValue.x);
+    const targetZ = Number(pinValue.z);
     if (!Number.isFinite(targetX) || !Number.isFinite(targetZ)) {
         if (showFeedback) {
-            showToast("Pin invalido", "warning", 1000);
+            showToast(invalidMessage, "warning", 1000);
         }
         return false;
     }
@@ -2327,9 +2476,29 @@ function goToMapPin(showFeedback = true) {
     }
 
     if (showFeedback) {
-        showToast("Regresaste al pin", "success", 1100);
+        showToast(successMessage, "success", 1100);
     }
     return true;
+}
+
+function goToMapPin(showFeedback = true) {
+    return goToStoredMapPoint(
+        mapState.pin,
+        "No hay destino temporal marcado",
+        "Destino temporal invalido",
+        "Fuiste al destino temporal",
+        showFeedback
+    );
+}
+
+function goToMapHomePin(showFeedback = true) {
+    return goToStoredMapPoint(
+        mapState.homePin,
+        "No hay casa guardada",
+        "Pin de casa invalido",
+        "Regresaste a casa",
+        showFeedback
+    );
 }
 
 function clearMapPin(showFeedback = true) {
@@ -2340,7 +2509,7 @@ function clearMapPin(showFeedback = true) {
         renderMapPanelNow();
     }
     if (showFeedback) {
-        showToast("Pin eliminado", "info", 900);
+        showToast("Destino temporal eliminado", "info", 900);
     }
 }
 
@@ -2386,7 +2555,7 @@ function setAvatarPreviewOpen(open, showFeedback = false) {
 
     localAvatarPreviewRoot.visible = false;
 
-    if (crosshairEl && !state.inventoryOpen && !state.mapOpen) {
+    if (crosshairEl && !state.inventoryOpen && !isMapBlockingGameplay()) {
         crosshairEl.classList.remove("hidden");
     }
 
@@ -2394,7 +2563,7 @@ function setAvatarPreviewOpen(open, showFeedback = false) {
         showToast("Vista de avatar cerrada", "info", 900);
     }
 
-    if (state.worldStarted && !state.paused && !state.tutorialVisible && !state.inventoryOpen && !state.mapOpen && !controls.isLocked) {
+    if (state.worldStarted && !state.paused && !state.tutorialVisible && !state.inventoryOpen && !isMapBlockingGameplay() && !controls.isLocked) {
         try {
             controls.lock();
         } catch (error) {
@@ -2533,6 +2702,7 @@ function saveWorldNow(showFeedback = false) {
     flushWorldSave(true);
     flushCloudEditWrites();
     flushCloudPropWrites();
+    publishWildlifeSnapshot(true);
     if (showFeedback) {
         showToast("Mundo guardado", "success");
     }
@@ -2544,7 +2714,7 @@ function getBlockLabel(blockId) {
 }
 
 function updateTargetedBlockUi(deltaSeconds = 0) {
-    if (!state.worldStarted || !state.worldReady || state.paused || state.avatarPreviewOpen || state.inventoryOpen || state.mapOpen || state.interactionPanelOpen || !controls.isLocked) {
+    if (!state.worldStarted || !state.worldReady || state.paused || state.avatarPreviewOpen || state.inventoryOpen || isMapBlockingGameplay() || state.interactionPanelOpen || !controls.isLocked) {
         state.targetUiTick = 0;
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
@@ -2982,6 +3152,18 @@ function pickRabbitVariant() {
     return RABBIT_VARIANTS[Math.floor(Math.random() * RABBIT_VARIANTS.length)];
 }
 
+function getRabbitVariantById(variantId) {
+    const safeId = String(variantId || "");
+    return RABBIT_VARIANTS.find((variant) => variant.id === safeId) || RABBIT_VARIANTS[0];
+}
+
+function bumpNextRabbitIdFromValue(rabbitId) {
+    const numericPart = Number(String(rabbitId || "").replace(/^rabbit-/, ""));
+    if (Number.isFinite(numericPart) && numericPart >= wildlifeState.nextId) {
+        wildlifeState.nextId = numericPart + 1;
+    }
+}
+
 function isRabbitGroundBlock(id) {
     return id === BLOCK.GRASS || id === BLOCK.DIRT || id === BLOCK.SAND;
 }
@@ -3197,8 +3379,49 @@ function updateSingleRabbit(rabbitId, rabbit, deltaSeconds) {
     rabbit.node.position.set(rabbit.x, rabbit.baseY + hop, rabbit.z);
 }
 
+function updateRemoteSyncedRabbit(rabbit, deltaSeconds) {
+    const blend = 1 - Math.exp(-WILDLIFE_REMOTE_BLEND_SPEED * Math.max(0, deltaSeconds));
+    const targetX = Number.isFinite(rabbit.syncTargetX) ? rabbit.syncTargetX : rabbit.x;
+    const targetZ = Number.isFinite(rabbit.syncTargetZ) ? rabbit.syncTargetZ : rabbit.z;
+    const targetY = Number.isFinite(rabbit.syncTargetY) ? rabbit.syncTargetY : rabbit.baseY;
+    const prevX = rabbit.x;
+    const prevZ = rabbit.z;
+    rabbit.x = lerp(rabbit.x, targetX, blend);
+    rabbit.z = lerp(rabbit.z, targetZ, blend);
+    rabbit.baseY = lerp(rabbit.baseY, targetY, blend);
+
+    const moveDx = rabbit.x - prevX;
+    const moveDz = rabbit.z - prevZ;
+    const moving = moveDx * moveDx + moveDz * moveDz > 0.00006;
+    const yawTarget = Number.isFinite(rabbit.syncYaw)
+        ? rabbit.syncYaw
+        : Math.atan2(moveDx, moveDz);
+    rabbit.node.rotation.y = approachAngle(rabbit.node.rotation.y, yawTarget, Math.min(1, deltaSeconds * 9));
+    rabbit.hopPhase += deltaSeconds * (moving ? 9.2 : 3.4);
+    const hop = moving ? Math.max(0, Math.sin(rabbit.hopPhase)) * rabbit.hopStrength : 0;
+    rabbit.node.position.set(rabbit.x, rabbit.baseY + hop, rabbit.z);
+}
+
 function updateWildlife(deltaSeconds) {
     if (!state.worldReady) {
+        return;
+    }
+
+    if (multiplayer.ready && !multiplayer.isWildlifeAuthority) {
+        if (!multiplayer.wildlifeSnapshotReady) {
+            if (wildlifeState.rabbits.size > 0) {
+                clearWildlife();
+            }
+            return;
+        }
+        for (const rabbit of wildlifeState.rabbits.values()) {
+            const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(rabbit.x, rabbit.z);
+            rabbit.node.visible = isVisibleInLoadedChunk;
+            if (!isVisibleInLoadedChunk) {
+                continue;
+            }
+            updateRemoteSyncedRabbit(rabbit, deltaSeconds);
+        }
         return;
     }
 
@@ -3251,72 +3474,87 @@ function initWildlife() {
 
 function createFishNode(variant) {
     const root = new THREE.Group();
-    const bodyMat = new THREE.MeshLambertMaterial({ color: variant.body });
-    const accentMat = new THREE.MeshLambertMaterial({ color: variant.accent });
+    const bodyMat = new THREE.MeshLambertMaterial({ color: variant.body, flatShading: true });
+    const accentMat = new THREE.MeshLambertMaterial({ color: variant.accent, flatShading: true });
+    const eyeMat = new THREE.MeshLambertMaterial({ color: 0x121820, flatShading: true });
+    const bellyMat = new THREE.MeshLambertMaterial({
+        color: new THREE.Color(variant.body).lerp(new THREE.Color(0xffffff), 0.24).getHex(),
+        flatShading: true
+    });
 
-    if (variant.id === "jelly") {
-        const bell = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.42, 0.62), bodyMat);
-        bell.position.set(0, 0.24, 0);
-        bell.castShadow = false;
-        bell.receiveShadow = false;
-        root.add(bell);
-        for (let i = 0; i < 5; i += 1) {
-            const strand = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.42 + Math.random() * 0.2, 0.06), accentMat);
-            strand.position.set((i - 2) * 0.11, -0.05 - Math.random() * 0.08, (Math.random() - 0.5) * 0.2);
-            strand.castShadow = false;
-            strand.receiveShadow = false;
-            root.add(strand);
+    const addPart = (w, h, d, material, x, y, z, rx = 0, ry = 0, rz = 0) => {
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+        mesh.position.set(x, y, z);
+        mesh.rotation.set(rx, ry, rz);
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        root.add(mesh);
+        return mesh;
+    };
+
+    const addEyes = (xOffset, y, z) => {
+        addPart(0.07, 0.07, 0.07, eyeMat, -Math.abs(xOffset), y, z);
+        addPart(0.07, 0.07, 0.07, eyeMat, Math.abs(xOffset), y, z);
+    };
+
+    if (variant.id === "tilapia") {
+        addPart(0.56, 0.36, 1.18, bodyMat, 0, 0.02, 0.04);
+        addPart(0.42, 0.2, 1.02, bellyMat, 0, -0.1, 0.12);
+        addPart(0.28, 0.22, 0.34, accentMat, 0, 0.02, -0.78);
+        addPart(0.22, 0.18, 0.36, accentMat, 0, 0.22, -0.02);
+        addPart(0.1, 0.1, 0.34, accentMat, -0.33, -0.02, 0.16, 0, 0, 0.3);
+        addPart(0.1, 0.1, 0.34, accentMat, 0.33, -0.02, 0.16, 0, 0, -0.3);
+        addPart(0.16, 0.11, 0.24, accentMat, 0, -0.16, -0.22);
+        addEyes(0.19, 0.08, 0.48);
+    } else if (variant.id === "puffer") {
+        addPart(0.66, 0.66, 0.66, bodyMat, 0, 0.02, 0.03);
+        addPart(0.5, 0.48, 0.44, bellyMat, 0, -0.08, 0.14);
+        addPart(0.22, 0.18, 0.24, accentMat, 0, 0.02, -0.48);
+        addPart(0.18, 0.12, 0.16, accentMat, 0, -0.2, 0.28);
+        const spikes = [
+            [-0.28, 0.22, 0.1], [0.28, 0.22, 0.1], [-0.24, -0.22, 0.08], [0.24, -0.22, 0.08],
+            [-0.08, 0.3, -0.08], [0.08, 0.3, -0.08], [-0.31, 0.02, -0.04], [0.31, 0.02, -0.04]
+        ];
+        for (const spike of spikes) {
+            addPart(0.08, 0.08, 0.08, accentMat, spike[0], spike[1], spike[2]);
         }
-        root.scale.setScalar(variant.scale);
-        return root;
-    }
-
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.34, 1.16), bodyMat);
-    body.castShadow = false;
-    body.receiveShadow = false;
-    root.add(body);
-
-    if (variant.id === "puffer") {
-        body.scale.set(0.88, 1.16, 0.84);
-    }
-
-    const tail = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.22, 0.24), accentMat);
-    tail.position.set(0, 0, -0.7);
-    tail.castShadow = false;
-    tail.receiveShadow = false;
-    root.add(tail);
-
-    const finTop = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.16, 0.32), accentMat);
-    finTop.position.set(0, 0.2, 0.1);
-    finTop.castShadow = false;
-    finTop.receiveShadow = false;
-    root.add(finTop);
-
-    const finL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.12, 0.26), accentMat);
-    finL.position.set(-0.38, 0, 0.02);
-    finL.castShadow = false;
-    finL.receiveShadow = false;
-    root.add(finL);
-
-    const finR = finL.clone();
-    finR.position.x = 0.38;
-    root.add(finR);
-
-    if (variant.id === "manta") {
-        body.scale.set(1.42, 0.48, 1.08);
-        tail.scale.set(0.8, 0.6, 1.3);
-        tail.position.z = -0.84;
-        finTop.visible = false;
-        finL.scale.set(2.8, 0.46, 1.2);
-        finL.position.set(-0.6, -0.02, 0.08);
-        finR.scale.copy(finL.scale);
-        finR.position.set(0.6, -0.02, 0.08);
+        addEyes(0.23, 0.11, 0.25);
     } else if (variant.id === "shark") {
-        body.scale.set(1.5, 0.68, 1.6);
-        tail.scale.set(1.2, 0.75, 0.92);
-        tail.position.z = -1.02;
-        finTop.scale.set(0.28, 0.42, 0.4);
-        finTop.position.set(0, 0.28, -0.08);
+        addPart(0.54, 0.42, 1.72, bodyMat, 0, 0.01, 0.1);
+        addPart(0.42, 0.24, 1.28, bellyMat, 0, -0.12, 0.24);
+        addPart(0.24, 0.2, 0.46, bodyMat, 0, 0.07, 0.94);
+        addPart(0.24, 0.52, 0.24, accentMat, 0, 0.28, -0.02);
+        addPart(0.34, 0.18, 0.16, accentMat, 0, 0.02, -0.98);
+        addPart(0.12, 0.34, 0.44, accentMat, -0.34, -0.05, 0.1, 0, 0, 0.42);
+        addPart(0.12, 0.34, 0.44, accentMat, 0.34, -0.05, 0.1, 0, 0, -0.42);
+        addPart(0.08, 0.22, 0.28, accentMat, -0.12, -0.16, -0.28, 0, 0, 0.2);
+        addPart(0.08, 0.22, 0.28, accentMat, 0.12, -0.16, -0.28, 0, 0, -0.2);
+        addEyes(0.18, 0.08, 0.62);
+    } else if (variant.id === "manta") {
+        addPart(0.56, 0.2, 0.92, bodyMat, 0, 0, 0.12);
+        addPart(1.54, 0.1, 0.82, bodyMat, 0, -0.02, -0.06, 0, 0, 0.08);
+        addPart(0.98, 0.08, 0.54, bellyMat, 0, -0.08, 0.12);
+        addPart(0.06, 0.08, 1.04, accentMat, 0, -0.03, -0.8);
+        addPart(0.14, 0.12, 0.28, accentMat, -0.18, -0.06, 0.32, 0.22, 0, 0);
+        addPart(0.14, 0.12, 0.28, accentMat, 0.18, -0.06, 0.32, 0.22, 0, 0);
+        addEyes(0.22, 0.06, 0.28);
+    } else if (variant.id === "jelly") {
+        addPart(0.62, 0.32, 0.62, bodyMat, 0, 0.34, 0);
+        addPart(0.76, 0.12, 0.76, accentMat, 0, 0.16, 0);
+        addPart(0.34, 0.1, 0.34, bellyMat, 0, 0.44, 0);
+        for (let i = 0; i < 6; i += 1) {
+            const strandLength = 0.34 + (i % 2 === 0 ? 0.08 : 0.16);
+            const strandX = (i - 2.5) * 0.11;
+            const strandZ = (i % 2 === 0 ? -0.08 : 0.06);
+            addPart(0.06, strandLength, 0.06, accentMat, strandX, -0.06 - strandLength * 0.4, strandZ);
+        }
+        addEyes(0.12, 0.22, 0.2);
+    } else {
+        addPart(0.56, 0.36, 1.12, bodyMat, 0, 0.02, 0.06);
+        addPart(0.24, 0.2, 0.34, accentMat, 0, 0.02, -0.74);
+        addPart(0.1, 0.1, 0.28, accentMat, -0.33, -0.04, 0.1, 0, 0, 0.34);
+        addPart(0.1, 0.1, 0.28, accentMat, 0.33, -0.04, 0.1, 0, 0, -0.34);
+        addEyes(0.18, 0.08, 0.44);
     }
 
     root.scale.setScalar(variant.scale);
@@ -3324,7 +3562,33 @@ function createFishNode(variant) {
 }
 
 function pickFishVariant() {
-    return FISH_VARIANTS[Math.floor(Math.random() * FISH_VARIANTS.length)] || FISH_VARIANTS[0];
+    let totalWeight = 0;
+    for (const variant of FISH_VARIANTS) {
+        totalWeight += Math.max(0.001, Number(variant?.spawnWeight) || 0);
+    }
+    if (totalWeight <= 0) {
+        return FISH_VARIANTS[Math.floor(Math.random() * FISH_VARIANTS.length)] || FISH_VARIANTS[0];
+    }
+    let roll = Math.random() * totalWeight;
+    for (const variant of FISH_VARIANTS) {
+        roll -= Math.max(0.001, Number(variant?.spawnWeight) || 0);
+        if (roll <= 0) {
+            return variant;
+        }
+    }
+    return FISH_VARIANTS[FISH_VARIANTS.length - 1] || FISH_VARIANTS[0];
+}
+
+function getFishVariantById(variantId) {
+    const safeId = String(variantId || "");
+    return FISH_VARIANTS.find((variant) => variant.id === safeId) || FISH_VARIANTS[0];
+}
+
+function bumpNextFishIdFromValue(fishId) {
+    const numericPart = Number(String(fishId || "").replace(/^fish-/, ""));
+    if (Number.isFinite(numericPart) && numericPart >= fishState.nextId) {
+        fishState.nextId = numericPart + 1;
+    }
 }
 
 function isSwimmableWaterBlock(id) {
@@ -3343,6 +3607,12 @@ function sampleSurfaceForFish(worldX, worldZ, variant = null) {
     const waterTop = SEA_LEVEL;
     if (waterTop - waterBottom < 2) {
         return null;
+    }
+    if (variant?.id === "shark") {
+        const isOpenWater = column.biome === BIOME.MARITIME || column.biome === BIOME.COAST;
+        if (!isOpenWater || waterTop - waterBottom < 6) {
+            return null;
+        }
     }
 
     const candidates = [];
@@ -3405,7 +3675,7 @@ function trySpawnFishNearPlayer(force = false) {
         return false;
     }
 
-    const searchRadius = Math.max(40, state.chunkRadius * CHUNK_SIZE * 2.9);
+    const searchRadius = Math.max(52, state.chunkRadius * CHUNK_SIZE * 3.8);
     for (let attempt = 0; attempt < FISH_SPAWN_ATTEMPTS; attempt += 1) {
         const angle = Math.random() * Math.PI * 2;
         const distance = randomInRange(FISH_MIN_PLAYER_DISTANCE + 7, searchRadius);
@@ -3530,8 +3800,52 @@ function updateSingleFish(fishId, fish, deltaSeconds) {
     }
 }
 
+function updateRemoteSyncedFish(fish, deltaSeconds) {
+    const blend = 1 - Math.exp(-WILDLIFE_REMOTE_BLEND_SPEED * Math.max(0, deltaSeconds));
+    const targetX = Number.isFinite(fish.syncTargetX) ? fish.syncTargetX : fish.x;
+    const targetY = Number.isFinite(fish.syncTargetY) ? fish.syncTargetY : fish.y;
+    const targetZ = Number.isFinite(fish.syncTargetZ) ? fish.syncTargetZ : fish.z;
+    const prevX = fish.x;
+    const prevZ = fish.z;
+    fish.x = lerp(fish.x, targetX, blend);
+    fish.y = lerp(fish.y, targetY, blend);
+    fish.z = lerp(fish.z, targetZ, blend);
+    fish.y = THREE.MathUtils.clamp(fish.y, fish.bottomY + 0.06, fish.topY - 0.06);
+    const moveDx = fish.x - prevX;
+    const moveDz = fish.z - prevZ;
+    const yawTarget = Number.isFinite(fish.syncYaw)
+        ? fish.syncYaw
+        : Math.atan2(moveDx, moveDz);
+    fish.node.rotation.y = approachAngle(fish.node.rotation.y, yawTarget, Math.min(1, deltaSeconds * fish.turnRate));
+    fish.bobPhase += deltaSeconds * (fish.variant.id === "jelly" ? 2.8 : 5.2);
+    const bob = Math.sin(fish.bobPhase) * (fish.variant.id === "jelly" ? 0.16 : 0.06);
+    fish.node.position.set(fish.x, fish.y + bob, fish.z);
+    if (fish.variant.id === "jelly") {
+        const pulse = 1 + Math.sin(fish.bobPhase * 1.8) * 0.06;
+        fish.node.scale.setScalar(fish.variant.scale * pulse);
+    }
+}
+
 function updateFish(deltaSeconds) {
     if (!state.worldReady) {
+        return;
+    }
+
+    if (multiplayer.ready && !multiplayer.isWildlifeAuthority) {
+        if (!multiplayer.wildlifeSnapshotReady) {
+            if (fishState.fishes.size > 0) {
+                clearFish();
+            }
+            return;
+        }
+        for (const fish of fishState.fishes.values()) {
+            const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(fish.x, fish.z);
+            fish.node.visible = isVisibleInLoadedChunk;
+            if (!isVisibleInLoadedChunk) {
+                continue;
+            }
+            updateRemoteSyncedFish(fish, deltaSeconds);
+        }
         return;
     }
 
@@ -3539,9 +3853,9 @@ function updateFish(deltaSeconds) {
     if (fishState.spawnTimer <= 0) {
         resetFishSpawnTimer();
         const occupancy = fishState.fishes.size / FISH_MAX_COUNT;
-        const spawnChance = Math.max(0.1, 0.44 - occupancy * 0.3);
+        const spawnChance = Math.max(0.18, 0.74 - occupancy * 0.58);
         if (Math.random() < spawnChance) {
-            const bursts = fishState.fishes.size < 6 ? 2 : 1;
+            const bursts = fishState.fishes.size < 12 ? 4 : (fishState.fishes.size < 30 ? 2 : 1);
             for (let i = 0; i < bursts; i += 1) {
                 if (!trySpawnFishNearPlayer(false)) {
                     break;
@@ -3565,7 +3879,7 @@ function initFish() {
     fishState.nextId = 1;
     resetFishSpawnTimer();
 
-    const initialCount = randomIntInclusive(4, 7);
+    const initialCount = randomIntInclusive(10, 15);
     for (let i = 0; i < initialCount; i += 1) {
         if (!trySpawnFishNearPlayer(true)) {
             break;
@@ -7334,6 +7648,280 @@ function subscribePropSnapshot() {
     });
 }
 
+function clearWildlifeSnapshotSubscription() {
+    if (typeof multiplayer.wildlifeSnapshotUnsubscribe === "function") {
+        multiplayer.wildlifeSnapshotUnsubscribe();
+    }
+    multiplayer.wildlifeSnapshotUnsubscribe = null;
+}
+
+function serializeRabbitForWildlifeSync(rabbit) {
+    return {
+        variantId: String(rabbit?.variantId || "nube"),
+        x: Number((Number(rabbit?.x) || 0).toFixed(3)),
+        y: Number((Number(rabbit?.baseY) || 0).toFixed(3)),
+        z: Number((Number(rabbit?.z) || 0).toFixed(3)),
+        targetX: Number((Number(rabbit?.targetX) || 0).toFixed(3)),
+        targetZ: Number((Number(rabbit?.targetZ) || 0).toFixed(3)),
+        speed: Number((Number(rabbit?.speed) || 1).toFixed(3)),
+        roamTimer: Number((Number(rabbit?.roamTimer) || 0).toFixed(3)),
+        idleTimer: Number((Number(rabbit?.idleTimer) || 0).toFixed(3)),
+        hopPhase: Number((Number(rabbit?.hopPhase) || 0).toFixed(4)),
+        hopStrength: Number((Number(rabbit?.hopStrength) || 0.08).toFixed(4)),
+        yaw: Number((Number(rabbit?.node?.rotation?.y) || 0).toFixed(4))
+    };
+}
+
+function serializeFishForWildlifeSync(fish) {
+    return {
+        variantId: String(fish?.variant?.id || ""),
+        x: Number((Number(fish?.x) || 0).toFixed(3)),
+        y: Number((Number(fish?.y) || 0).toFixed(3)),
+        z: Number((Number(fish?.z) || 0).toFixed(3)),
+        targetX: Number((Number(fish?.targetX) || 0).toFixed(3)),
+        targetY: Number((Number(fish?.targetY) || 0).toFixed(3)),
+        targetZ: Number((Number(fish?.targetZ) || 0).toFixed(3)),
+        speed: Number((Number(fish?.speed) || 1).toFixed(3)),
+        turnRate: Number((Number(fish?.turnRate) || 6).toFixed(3)),
+        bobPhase: Number((Number(fish?.bobPhase) || 0).toFixed(4)),
+        bottomY: Number((Number(fish?.bottomY) || 0).toFixed(3)),
+        topY: Number((Number(fish?.topY) || 0).toFixed(3)),
+        yaw: Number((Number(fish?.node?.rotation?.y) || 0).toFixed(4))
+    };
+}
+
+function upsertRabbitFromWildlifeSnapshot(rabbitId, rawEntry) {
+    const id = String(rabbitId || "");
+    if (!id) {
+        return false;
+    }
+    const raw = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+    const x = Number(raw.x);
+    const z = Number(raw.z);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return false;
+    }
+    const y = Number.isFinite(Number(raw.y))
+        ? Number(raw.y)
+        : (sampleSurfaceForRabbit(x, z)?.y ?? (SEA_LEVEL + 1.02));
+    const variant = getRabbitVariantById(raw.variantId);
+    const targetX = Number.isFinite(Number(raw.targetX)) ? Number(raw.targetX) : x;
+    const targetZ = Number.isFinite(Number(raw.targetZ)) ? Number(raw.targetZ) : z;
+    const speed = THREE.MathUtils.clamp(Number(raw.speed) || 1.2, 0.3, 3.4);
+    const roamTimer = THREE.MathUtils.clamp(Number(raw.roamTimer) || randomInRange(1.1, 2.4), 0, 10);
+    const idleTimer = THREE.MathUtils.clamp(Number(raw.idleTimer) || randomInRange(0.6, 1.7), 0, 10);
+    const hopPhase = Number.isFinite(Number(raw.hopPhase)) ? Number(raw.hopPhase) : Math.random() * Math.PI * 2;
+    const hopStrength = THREE.MathUtils.clamp(Number(raw.hopStrength) || 0.09, 0.04, 0.22);
+    const yaw = Number(raw.yaw);
+
+    const existing = wildlifeState.rabbits.get(id);
+    if (existing) {
+        existing.variantId = variant.id;
+        existing.speed = speed;
+        existing.roamTimer = roamTimer;
+        existing.idleTimer = idleTimer;
+        existing.hopStrength = hopStrength;
+        existing.syncTargetX = x;
+        existing.syncTargetY = y;
+        existing.syncTargetZ = z;
+        existing.targetX = targetX;
+        existing.targetZ = targetZ;
+        if (Number.isFinite(yaw)) {
+            existing.syncYaw = yaw;
+        }
+        existing.remoteSync = true;
+        return true;
+    }
+
+    const node = createRabbitNode(variant);
+    node.position.set(x, y, z);
+    node.rotation.y = Number.isFinite(yaw) ? yaw : 0;
+    wildlifeRoot.add(node);
+
+    wildlifeState.rabbits.set(id, {
+        id,
+        variantId: variant.id,
+        node,
+        x,
+        z,
+        baseY: y,
+        targetX,
+        targetZ,
+        speed,
+        roamTimer,
+        idleTimer,
+        hopPhase,
+        hopStrength,
+        remoteSync: true,
+        syncTargetX: x,
+        syncTargetY: y,
+        syncTargetZ: z,
+        syncYaw: Number.isFinite(yaw) ? yaw : 0
+    });
+    bumpNextRabbitIdFromValue(id);
+    return true;
+}
+
+function upsertFishFromWildlifeSnapshot(fishId, rawEntry) {
+    const id = String(fishId || "");
+    if (!id) {
+        return false;
+    }
+    const raw = rawEntry && typeof rawEntry === "object" ? rawEntry : {};
+    const x = Number(raw.x);
+    const y = Number(raw.y);
+    const z = Number(raw.z);
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) {
+        return false;
+    }
+    const variant = getFishVariantById(raw.variantId);
+    const bottomCandidate = Number(raw.bottomY);
+    const topCandidate = Number(raw.topY);
+    const bottomY = Number.isFinite(bottomCandidate) ? bottomCandidate : y - 1.4;
+    const topY = Number.isFinite(topCandidate) ? topCandidate : y + 1.4;
+    const safeTopY = Math.max(bottomY + 0.24, topY);
+    const targetX = Number.isFinite(Number(raw.targetX)) ? Number(raw.targetX) : x;
+    const targetY = Number.isFinite(Number(raw.targetY)) ? Number(raw.targetY) : y;
+    const targetZ = Number.isFinite(Number(raw.targetZ)) ? Number(raw.targetZ) : z;
+    const speed = THREE.MathUtils.clamp(Number(raw.speed) || randomInRange(variant.speedMin, variant.speedMax), 0.2, 4.2);
+    const turnRate = THREE.MathUtils.clamp(Number(raw.turnRate) || 6.2, 1.5, 14);
+    const bobPhase = Number.isFinite(Number(raw.bobPhase)) ? Number(raw.bobPhase) : Math.random() * Math.PI * 2;
+    const yaw = Number(raw.yaw);
+
+    const existing = fishState.fishes.get(id);
+    if (existing) {
+        existing.variant = variant;
+        existing.speed = speed;
+        existing.turnRate = turnRate;
+        existing.bottomY = bottomY;
+        existing.topY = safeTopY;
+        existing.syncTargetX = x;
+        existing.syncTargetY = y;
+        existing.syncTargetZ = z;
+        existing.targetX = targetX;
+        existing.targetY = targetY;
+        existing.targetZ = targetZ;
+        if (Number.isFinite(yaw)) {
+            existing.syncYaw = yaw;
+        }
+        existing.remoteSync = true;
+        return true;
+    }
+
+    const node = createFishNode(variant);
+    node.position.set(x, y, z);
+    node.rotation.y = Number.isFinite(yaw) ? yaw : 0;
+    fishRoot.add(node);
+    fishState.fishes.set(id, {
+        id,
+        variant,
+        node,
+        x,
+        y,
+        z,
+        targetX,
+        targetY,
+        targetZ,
+        speed,
+        targetTimer: randomInRange(0.9, 2.2),
+        bobPhase,
+        turnRate,
+        bottomY,
+        topY: safeTopY,
+        remoteSync: true,
+        syncTargetX: x,
+        syncTargetY: y,
+        syncTargetZ: z,
+        syncYaw: Number.isFinite(yaw) ? yaw : 0
+    });
+    bumpNextFishIdFromValue(id);
+    return true;
+}
+
+function applyRemoteWildlifeSnapshot(rawPayload) {
+    const payload = rawPayload && typeof rawPayload === "object" ? rawPayload : {};
+    const rabbitsPayload = payload.rabbits && typeof payload.rabbits === "object" ? payload.rabbits : {};
+    const fishesPayload = payload.fishes && typeof payload.fishes === "object" ? payload.fishes : {};
+    const seenRabbits = new Set();
+    const seenFishes = new Set();
+
+    for (const [rabbitId, rabbitRaw] of Object.entries(rabbitsPayload)) {
+        if (upsertRabbitFromWildlifeSnapshot(rabbitId, rabbitRaw)) {
+            seenRabbits.add(String(rabbitId));
+        }
+    }
+    for (const [fishId, fishRaw] of Object.entries(fishesPayload)) {
+        if (upsertFishFromWildlifeSnapshot(fishId, fishRaw)) {
+            seenFishes.add(String(fishId));
+        }
+    }
+
+    for (const rabbitId of Array.from(wildlifeState.rabbits.keys())) {
+        if (!seenRabbits.has(rabbitId)) {
+            removeRabbitEntity(rabbitId);
+        }
+    }
+    for (const fishId of Array.from(fishState.fishes.keys())) {
+        if (!seenFishes.has(fishId)) {
+            removeFishEntity(fishId);
+        }
+    }
+}
+
+function publishWildlifeSnapshot(force = false) {
+    if (!multiplayer.ready || !multiplayer.isWildlifeAuthority || !multiplayer.firebase?.dbModule || !multiplayer.refs.wildlifeRef) {
+        return;
+    }
+    const now = performance.now();
+    if (!force && now - multiplayer.wildlifeLastPublishMs < WILDLIFE_SYNC_INTERVAL_MS) {
+        return;
+    }
+    multiplayer.wildlifeLastPublishMs = now;
+    const rabbitsPayload = {};
+    const fishesPayload = {};
+    for (const [rabbitId, rabbit] of wildlifeState.rabbits.entries()) {
+        rabbitsPayload[rabbitId] = serializeRabbitForWildlifeSync(rabbit);
+    }
+    for (const [fishId, fish] of fishState.fishes.entries()) {
+        fishesPayload[fishId] = serializeFishForWildlifeSync(fish);
+    }
+    const payload = {
+        updatedAt: Date.now(),
+        authorityId: String(multiplayer.profile?.id || ""),
+        rabbits: rabbitsPayload,
+        fishes: fishesPayload
+    };
+    multiplayer.firebase.dbModule.set(multiplayer.refs.wildlifeRef, payload).catch((error) => {
+        console.warn("No pude sincronizar fauna en nube", error);
+        if (multiplayer.wildlifeWriteTimerId === null) {
+            multiplayer.wildlifeWriteTimerId = window.setTimeout(() => {
+                multiplayer.wildlifeWriteTimerId = null;
+                publishWildlifeSnapshot(true);
+            }, WILDLIFE_SYNC_RETRY_MS);
+        }
+    });
+}
+
+function subscribeWildlifeSnapshot() {
+    if (!multiplayer.ready || multiplayer.wildlifeSnapshotUnsubscribe) {
+        return;
+    }
+    const dbModule = multiplayer.firebase?.dbModule;
+    const db = multiplayer.firebase?.db;
+    if (!dbModule || !db) {
+        return;
+    }
+    const wildlifeRef = multiplayer.refs.wildlifeRef || dbModule.ref(db, `${multiplayer.worldPath}/wildlife`);
+    multiplayer.refs.wildlifeRef = wildlifeRef;
+    multiplayer.wildlifeSnapshotUnsubscribe = dbModule.onValue(wildlifeRef, (snapshot) => {
+        if (multiplayer.isWildlifeAuthority) {
+            return;
+        }
+        multiplayer.wildlifeSnapshotReady = true;
+        applyRemoteWildlifeSnapshot(snapshot.val() || {});
+    });
+}
+
 function subscribeChunkEditStream(chunkId) {
     if (!multiplayer.ready || multiplayer.chunkEditSubscriptions.has(chunkId)) {
         return;
@@ -7763,6 +8351,7 @@ async function setupRealtimeMultiplayer() {
         multiplayer.refs.myPlayerRef = dbModule.ref(db, `${worldPath}/players/${multiplayer.profile.id}`);
         multiplayer.refs.chunksRootRef = dbModule.ref(db, `${worldPath}/chunks`);
         multiplayer.refs.propsRootRef = dbModule.ref(db, `${worldPath}/props`);
+        multiplayer.refs.wildlifeRef = dbModule.ref(db, `${worldPath}/wildlife`);
         multiplayer.refs.metaRef = dbModule.ref(db, `${worldPath}/meta`);
         await ensureSharedDayNightClock(dbModule, db, worldPath);
 
@@ -7794,6 +8383,27 @@ async function setupRealtimeMultiplayer() {
 
             rebuildRemoteUsingByProp();
 
+            const sortedIds = Object.keys(payload).sort();
+            const wasAuthority = multiplayer.isWildlifeAuthority;
+            multiplayer.isWildlifeAuthority = sortedIds.length === 0 || sortedIds[0] === multiplayer.profile.id;
+            if (multiplayer.isWildlifeAuthority && !wasAuthority) {
+                multiplayer.wildlifeSnapshotReady = true;
+                publishWildlifeSnapshot(true);
+            } else if (!multiplayer.isWildlifeAuthority && wasAuthority) {
+                multiplayer.wildlifeSnapshotReady = false;
+                const wildlifeRef = multiplayer.refs.wildlifeRef;
+                if (wildlifeRef) {
+                    dbModule.get(wildlifeRef).then((wildlifeSnapshot) => {
+                        if (multiplayer.isWildlifeAuthority) {
+                            return;
+                        }
+                        multiplayer.wildlifeSnapshotReady = true;
+                        applyRemoteWildlifeSnapshot(wildlifeSnapshot.val() || {});
+                    }).catch(() => {
+                    });
+                }
+            }
+
             const totalOnline = Object.keys(payload).length;
             setOnlineStatus(`Sala ${multiplayer.roomId}: ${totalOnline} conectado(s)`);
         });
@@ -7804,6 +8414,11 @@ async function setupRealtimeMultiplayer() {
         multiplayer.lastSentState = null;
         syncChunkEditSubscriptions();
         subscribePropSnapshot();
+        subscribeWildlifeSnapshot();
+        multiplayer.wildlifeSnapshotReady = multiplayer.isWildlifeAuthority;
+        if (multiplayer.isWildlifeAuthority) {
+            publishWildlifeSnapshot(true);
+        }
         setOnlineStatus(`Sala ${multiplayer.roomId}: multijugador activo`);
         if (terrainMigration.migrated) {
             const prefix = terrainMigration.shiftY > 0 ? "+" : "";
@@ -8033,6 +8648,55 @@ function fractalNoise2D(x, z, baseFrequency, octaves, persistence, salt = 0) {
     return sum / amplitudeTotal;
 }
 
+function wrapCoordinateToWorldMap(value) {
+    const half = GLOBAL_MAP_VIEW_RADIUS_BLOCKS;
+    const span = half * 2;
+    const numeric = Number(value) || 0;
+    return ((numeric + half) % span + span) % span - half;
+}
+
+function ellipseMask(nx, nz, cx, cz, rx, rz, angleDegrees = 0, softness = 1.8) {
+    const radians = angleDegrees * (Math.PI / 180);
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const dx = nx - cx;
+    const dz = nz - cz;
+    const localX = dx * cos - dz * sin;
+    const localZ = dx * sin + dz * cos;
+    const px = localX / Math.max(0.001, rx);
+    const pz = localZ / Math.max(0.001, rz);
+    const distance = Math.hypot(px, pz);
+    const inside = clamp01(1 - distance);
+    return Math.pow(inside, Math.max(0.4, Number(softness) || 1));
+}
+
+function getEarthLikeContinentMask(worldX, worldZ) {
+    const wrappedX = wrapCoordinateToWorldMap(worldX);
+    const wrappedZ = wrapCoordinateToWorldMap(worldZ);
+    const nx = wrappedX / GLOBAL_MAP_VIEW_RADIUS_BLOCKS;
+    const nz = wrappedZ / GLOBAL_MAP_VIEW_RADIUS_BLOCKS;
+
+    let continents = 0;
+    continents = Math.max(continents, ellipseMask(nx, nz, -0.66, -0.14, 0.19, 0.28, -16, 1.45));
+    continents = Math.max(continents, ellipseMask(nx, nz, -0.56, 0.31, 0.12, 0.24, 12, 1.6));
+    continents = Math.max(continents, ellipseMask(nx, nz, -0.05, -0.08, 0.11, 0.12, -8, 1.5));
+    continents = Math.max(continents, ellipseMask(nx, nz, 0.01, 0.17, 0.14, 0.24, 2, 1.6));
+    continents = Math.max(continents, ellipseMask(nx, nz, 0.41, -0.07, 0.37, 0.28, 11, 1.5));
+    continents = Math.max(continents, ellipseMask(nx, nz, 0.58, 0.42, 0.13, 0.09, 8, 1.55));
+    continents = Math.max(continents, ellipseMask(nx, nz, -0.42, -0.48, 0.07, 0.06, 5, 1.3));
+
+    const coastalNoise = fractalNoise2D(wrappedX + 1400, wrappedZ - 1100, 0.0014, 3, 0.56, 420);
+    const gulfNoise = Math.abs(valueNoise2D(wrappedX - 920, wrappedZ + 760, 0.0029, 421));
+    const archipelagoNoise = fractalNoise2D(wrappedX + 2600, wrappedZ + 1800, 0.0022, 2, 0.54, 422);
+    let landMask = continents;
+    landMask += coastalNoise * 0.065;
+    landMask -= smoothstep(0.38, 0.78, gulfNoise) * 0.12;
+    if (archipelagoNoise > 0.44 && continents < 0.42) {
+        landMask += (archipelagoNoise - 0.44) * 0.12;
+    }
+    return clamp01(landMask);
+}
+
 function getColumnInfo(x, z) {
     const key = `${x}|${z}`;
     const cached = columnCache.get(key);
@@ -8047,21 +8711,63 @@ function getColumnInfo(x, z) {
     const wx = x + warpLargeX + warpFineX;
     const wz = z + warpLargeZ + warpFineZ;
 
-    const continental = fractalNoise2D(wx, wz, 0.00045, 5, 0.56, 31);
+    const continentalNoise = fractalNoise2D(wx, wz, 0.00045, 5, 0.56, 31);
+    const continentalShapeNoise = fractalNoise2D(wx + 3100, wz - 2700, 0.00072, 3, 0.56, 32);
+    const earthLandMask = getEarthLikeContinentMask(x, z);
+    const continentalBase = (earthLandMask - 0.5) * 2;
+    const continental = THREE.MathUtils.clamp(
+        continentalBase * 0.92
+        + continentalNoise * 0.18
+        + continentalShapeNoise * 0.1,
+        -1,
+        1
+    );
     const erosion = fractalNoise2D(wx + 420, wz - 260, 0.0015, 4, 0.58, 53);
     const ridges = Math.pow(clamp01(1 - Math.abs(fractalNoise2D(wx, wz, 0.0019, 5, 0.5, 67))), 1.12);
     const lowDetail = fractalNoise2D(wx, wz, 0.0058, 4, 0.54, 11);
     const highDetail = fractalNoise2D(wx, wz, 0.0185, 3, 0.5, 12);
-    const moisture = fractalNoise2D(wx - 180, wz + 240, 0.0017, 4, 0.6, 109);
-    const temperature = fractalNoise2D(wx + 780, wz - 310, 0.00135, 4, 0.58, 205);
-    const volcanicNoise = fractalNoise2D(wx - 1380, wz + 870, 0.0011, 4, 0.58, 333);
-    const volcanicRidged = Math.pow(clamp01(1 - Math.abs(valueNoise2D(wx + 940, wz - 420, 0.0038, 338))), 1.26);
+    const moistureNoise = fractalNoise2D(wx - 180, wz + 240, 0.0017, 4, 0.6, 109);
+    const temperatureNoise = fractalNoise2D(wx + 780, wz - 310, 0.00135, 4, 0.58, 205);
+    const macroMoistureNoise = fractalNoise2D(wx - 4200, wz + 3200, 0.00033, 3, 0.6, 406);
+    const macroHeatNoise = fractalNoise2D(wx + 6200, wz - 2800, 0.00031, 3, 0.58, 407);
+    const macroReliefNoise = fractalNoise2D(wx - 2600, wz - 4700, 0.00036, 3, 0.62, 408);
+    const regionalMoisture = clamp01(
+        clamp01((macroMoistureNoise + 1) * 0.5) * 0.72
+        + clamp01((moistureNoise + 1) * 0.5) * 0.28
+    );
+    const regionalHeat = clamp01(
+        clamp01((macroHeatNoise + 1) * 0.5) * 0.68
+        + clamp01((temperatureNoise + 1) * 0.5) * 0.32
+    );
+    const regionalRelief = clamp01(
+        clamp01((macroReliefNoise + 1) * 0.5) * 0.62
+        + ridges * 0.38
+    );
+    const volcanicNoise = fractalNoise2D(wx - 1380, wz + 870, 0.00105, 4, 0.58, 333);
+    const volcanicRidged = Math.pow(clamp01(1 - Math.abs(valueNoise2D(wx + 940, wz - 420, 0.0038, 338))), 1.34);
+    const volcanicClusterNoise = fractalNoise2D(wx - 3260, wz + 2490, 0.00042, 3, 0.62, 339);
 
+    const microMoisture01 = clamp01((moistureNoise + 1) * 0.5);
+    const microHeat01 = clamp01((temperatureNoise + 1) * 0.5);
+    const biomePatchNoise = fractalNoise2D(wx + 1600, wz - 2100, 0.00052, 3, 0.58, 409);
+    const biomePatch01 = clamp01((biomePatchNoise + 1) * 0.5);
+    let climateMoisture01 = clamp01(
+        regionalMoisture * 0.74
+        + microMoisture01 * 0.18
+        + biomePatch01 * 0.08
+    );
+    let climateHeat01 = clamp01(
+        regionalHeat * 0.76
+        + microHeat01 * 0.17
+        + (1 - biomePatch01) * 0.07
+    );
+    let moisture = climateMoisture01 * 2 - 1;
+    let temperature = climateHeat01 * 2 - 1;
     const continental01 = clamp01((continental + 1) * 0.5);
-    const mountainMask = smoothstep(0.18, 0.9, continental * 0.7 + ridges * 0.72 - erosion * 0.23);
+    const mountainMask = smoothstep(0.18, 0.9, continental * 0.7 + ridges * 0.64 + regionalRelief * 0.26 - erosion * 0.23);
     const valleyMask = smoothstep(0.22, 0.94, -continental + erosion * 0.38);
-    const ridgePeaks = Math.pow(clamp01(ridges * 0.94 + mountainMask * 0.24), 1.48);
-    const dryness = smoothstep(0.18, 0.92, (1 - moisture) * 0.64 + temperature * 0.46 - valleyMask * 0.2);
+    const ridgePeaks = Math.pow(clamp01(ridges * 0.9 + mountainMask * 0.24 + regionalRelief * 0.18), 1.48);
+    let dryness = clamp01((1 - climateMoisture01) * 0.66 + climateHeat01 * 0.44 - valleyMask * 0.18);
 
     let rawHeight = SEA_LEVEL
         + (continental01 - 0.5) * 86
@@ -8093,14 +8799,22 @@ function getColumnInfo(x, z) {
     rawHeight -= riverMaskRaw * (8 + valleyMask * 18 + (1 - mountainMask) * 6);
     rawHeight -= lakeMaskRaw * (12 + deepLakeMaskRaw * 30 + (1 - mountainMask) * 10);
 
-    const volcanicMaskRaw = smoothstep(
+    const volcanicClusterMask = smoothstep(
         0.58,
-        0.9,
-        volcanicNoise * 0.72 + volcanicRidged * 0.52 + ridgePeaks * 0.2 + (1 - moisture) * 0.24 - valleyMask * 0.34
+        0.86,
+        volcanicClusterNoise * 0.84 + mountainMask * 0.3 + regionalRelief * 0.16 - valleyMask * 0.24
     );
-    const craterMaskRaw = smoothstep(0.72, 0.95, volcanicRidged + volcanicMaskRaw * 0.35) * volcanicMaskRaw;
-    rawHeight += volcanicMaskRaw * (18 + ridgePeaks * 88);
-    rawHeight -= craterMaskRaw * (12 + volcanicMaskRaw * 34);
+    const volcanicMaskRaw = smoothstep(
+        0.56,
+        0.84,
+        volcanicNoise * 0.76 + volcanicRidged * 0.56 + ridgePeaks * 0.24 + (1 - climateMoisture01) * 0.3 - valleyMask * 0.28
+    ) * volcanicClusterMask;
+    const craterMaskRaw = smoothstep(0.78, 0.97, volcanicRidged + volcanicMaskRaw * 0.38) * volcanicMaskRaw;
+    const lavaChannelMaskRaw = smoothstep(0.44, 0.84, volcanicMaskRaw)
+        * (1 - craterMaskRaw * 0.68)
+        * (1 - smoothstep(0.05, 0.18, Math.abs(valueNoise2D(wx + 1280, wz - 960, 0.012, 352))));
+    rawHeight += volcanicMaskRaw * (24 + ridgePeaks * 86);
+    rawHeight -= craterMaskRaw * (18 + volcanicMaskRaw * 38);
 
     const centerDistance = Math.hypot(x, z);
     const spawnBlend = smoothstep(84, 190, centerDistance);
@@ -8109,18 +8823,36 @@ function getColumnInfo(x, z) {
     const height = clampInt(rawHeight, 4, WORLD_MAX_Y - 6);
 
     const altitude01 = clamp01((height - (SEA_LEVEL + 10)) / Math.max(1, WORLD_MAX_Y - SEA_LEVEL - 14));
+    const mountainClimateBlend = smoothstep(0.42, 0.82, mountainMask);
+    climateMoisture01 = clamp01(
+        lerp(climateMoisture01, regionalMoisture, mountainClimateBlend * 0.72)
+        - ridgePeaks * 0.06
+        + valleyMask * 0.05
+    );
+    climateHeat01 = clamp01(
+        lerp(climateHeat01, regionalHeat, mountainClimateBlend * 0.68)
+        - altitude01 * 0.24
+        + continental01 * 0.05
+    );
+    moisture = climateMoisture01 * 2 - 1;
+    temperature = climateHeat01 * 2 - 1;
+    dryness = clamp01((1 - climateMoisture01) * 0.72 + climateHeat01 * 0.5 + regionalRelief * 0.08 - valleyMask * 0.18);
     const coldness = clamp01(0.35 + mountainMask * 0.42 + altitude01 * 0.78 - moisture * 0.18 - temperature * 0.18);
     const snowMask = smoothstep(0.5, 0.86, coldness);
-    const rockiness = clamp01(mountainMask * 0.52 + ridgePeaks * 0.54 + (1 - moisture) * 0.2 + Math.max(0, altitude01 - 0.4) * 0.24);
+    const rockiness = clamp01(mountainMask * 0.52 + ridgePeaks * 0.54 + (1 - climateMoisture01) * 0.22 + Math.max(0, altitude01 - 0.4) * 0.24);
     const riverMask = riverMaskRaw * spawnBlend;
     const lakeMask = lakeMaskRaw * spawnBlend;
     const deepLakeMask = deepLakeMaskRaw * spawnBlend;
     const volcanicMask = volcanicMaskRaw * spawnBlend;
     const craterMask = craterMaskRaw * spawnBlend;
+    const lavaChannelMask = lavaChannelMaskRaw * spawnBlend;
 
     const isOceanic = continental < -0.24 || height <= SEA_LEVEL - 9;
-    const isCoast = !isOceanic && (continental < -0.08 || (height <= SEA_LEVEL + 3 && moisture > -0.02));
+    const isCoast = !isOceanic && (continental < -0.06 || (height <= SEA_LEVEL + 3 && moisture > -0.08));
     const isDeepLake = deepLakeMask > 0.44 && height <= SEA_LEVEL + 2;
+    const mountainDominance = smoothstep(0.42, 0.84, mountainMask + regionalRelief * 0.22);
+    const desertScore = clamp01((1 - climateMoisture01) * 0.78 + climateHeat01 * 0.54 + mountainDominance * 0.08 - valleyMask * 0.16);
+    const forestScore = clamp01(climateMoisture01 * 0.82 + (1 - climateHeat01) * 0.12 + valleyMask * 0.22 - ridgePeaks * 0.14);
 
     let biome = BIOME.PLAINS;
     if (spawnBlend < 0.22) {
@@ -8129,21 +8861,29 @@ function getColumnInfo(x, z) {
         biome = BIOME.MARITIME;
     } else if (isDeepLake || (lakeMask > 0.42 && height <= SEA_LEVEL + 2)) {
         biome = BIOME.LAKE;
-    } else if (volcanicMask > 0.54 && mountainMask > 0.16 && lakeMask < 0.25) {
+    } else if (
+        volcanicMask > 0.54
+        && mountainMask > 0.3
+        && ridgePeaks > 0.16
+        && lakeMask < 0.22
+        && height >= SEA_LEVEL + 10
+        && continental > 0.02
+        && regionalRelief > 0.34
+    ) {
         biome = BIOME.VOLCANIC;
     } else if (isCoast) {
         biome = BIOME.COAST;
-    } else if ((snowMask > 0.56 && mountainMask > 0.35) || (height > SEA_LEVEL + 122 && mountainMask > 0.4)) {
+    } else if ((snowMask > 0.54 && mountainMask > 0.34) || (height > SEA_LEVEL + 122 && mountainMask > 0.38) || (mountainMask > 0.62 && climateHeat01 < 0.42)) {
         biome = BIOME.CORDILLERA;
-    } else if (dryness > 0.58 && moisture < 0.1 && temperature > 0.04) {
+    } else if (desertScore > 0.69 && dryness > 0.62 && climateHeat01 > 0.46) {
         biome = BIOME.DESERT;
-    } else if (moisture > 0.04 && mountainMask < 0.66) {
+    } else if (forestScore > 0.53 && mountainMask < 0.72) {
         biome = BIOME.FOREST;
     }
 
     const openFieldSignal = clamp01((fractalNoise2D(wx + 1320, wz - 1460, 0.0009, 3, 0.57, 351) + 1) * 0.5);
     const openFieldMask = smoothstep(0.46, 0.88, openFieldSignal);
-    let treeChanceBase = 0.0012 + clamp01((moisture + 1) * 0.5) * 0.0075 + valleyMask * 0.0028;
+    let treeChanceBase = 0.0012 + climateMoisture01 * 0.0075 + valleyMask * 0.0028;
     if (biome === BIOME.FOREST) treeChanceBase += 0.007;
     if (biome === BIOME.SPAWN_VALLEY) treeChanceBase += 0.003;
     if (biome === BIOME.COAST) treeChanceBase *= 0.34;
@@ -8192,7 +8932,7 @@ function getColumnInfo(x, z) {
         else treeVariant = "oak";
     }
 
-    let treeHeight = 4 + (hash2D(x, z, 103) % 3) + (moisture > 0.36 ? 1 : 0);
+    let treeHeight = 4 + (hash2D(x, z, 103) % 3) + (climateMoisture01 > 0.66 ? 1 : 0);
     if (biome === BIOME.FOREST) treeHeight += 1;
     if (treeVariant === "pine") treeHeight += 2;
     if (treeVariant === "cedar") treeHeight += 3;
@@ -8255,6 +8995,7 @@ function getColumnInfo(x, z) {
         deepLakeMask,
         volcanicMask,
         craterMask,
+        lavaChannelMask,
         snowMask,
         moisture,
         temperature,
@@ -8551,7 +9292,10 @@ function getProceduralBlock(x, y, z) {
         }
 
         if (biome === BIOME.VOLCANIC) {
-            if (column.craterMask > 0.56 && h >= SEA_LEVEL + 10) {
+            if (column.craterMask > 0.84 && h >= SEA_LEVEL + 10) {
+                return BLOCK.LAVA;
+            }
+            if (column.lavaChannelMask > 0.72 && h >= SEA_LEVEL + 12 && (hash2D(x, z, 1704) % 5 === 0)) {
                 return BLOCK.LAVA;
             }
             const volcanicTopPick = hash2D(x, z, 1705) % 9;
@@ -8645,7 +9389,7 @@ function getProceduralBlock(x, y, z) {
 
     if (biome === BIOME.VOLCANIC) {
         if (y >= h - 2) {
-            if (column.craterMask > 0.58 && h >= SEA_LEVEL + 8 && (hash2D(x, z, 1710) % 4 === 0)) {
+            if ((column.craterMask > 0.78 || column.lavaChannelMask > 0.74) && h >= SEA_LEVEL + 8 && (hash2D(x, z, 1710) % 6 === 0)) {
                 return BLOCK.LAVA;
             }
             const volcanicSurface = hash2D(x, z, 1711) % 8;
@@ -9165,7 +9909,7 @@ function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
 }
 
 function setChunkRadius(nextRadius) {
-    const clamped = clampInt(nextRadius, 2, 8);
+    const clamped = clampInt(nextRadius, 2, 16);
     const changed = clamped !== state.chunkRadius;
 
     state.chunkRadius = clamped;
@@ -9703,7 +10447,7 @@ function setInventoryOpen(open, showFeedback = false) {
         return;
     }
 
-    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.interactionPanelOpen && !state.mapOpen) {
+    if (!state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.interactionPanelOpen && !isMapBlockingGameplay()) {
         if (crosshairEl) {
             crosshairEl.classList.remove("hidden");
         }
@@ -9729,7 +10473,7 @@ function canRelockGameplayControls() {
         && !state.inventoryOpen
         && !state.avatarPreviewOpen
         && !state.interactionPanelOpen
-        && !state.mapOpen
+        && !isMapBlockingGameplay()
     );
 }
 
@@ -9771,7 +10515,7 @@ function closeInteractionPanel(showFeedback = false, preservePose = false) {
         clearLocalPoseActivity(true);
     }
 
-    if (!state.inventoryOpen && !state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !state.mapOpen && crosshairEl) {
+    if (!state.inventoryOpen && !state.avatarPreviewOpen && !state.paused && !state.tutorialVisible && !isMapBlockingGameplay() && crosshairEl) {
         crosshairEl.classList.remove("hidden");
     }
 
@@ -10220,6 +10964,10 @@ function selectedPropType() {
     return selected.propType || "";
 }
 
+function isWallMountedPropType(propType) {
+    return propType === PROP_TYPE.CURTAINS;
+}
+
 function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
     if (!hit?.point) {
         return null;
@@ -10422,6 +11170,8 @@ function attemptMineOrPlace(isPlacing) {
         let propY = 0;
         let propZ = 0;
         let hasAnchor = false;
+        let forcedPropYaw = null;
+        const wantsWallPlacement = isWallMountedPropType(propType);
 
         if (targetedProp && targetedProp.distance <= blockDistance + 0.001) {
             const worldNormal = getWorldNormalFromRayHit(targetedProp.hit);
@@ -10436,19 +11186,35 @@ function attemptMineOrPlace(isPlacing) {
             hasAnchor = true;
         } else if (targetedBlock) {
             const { hit, lookup } = targetedBlock;
-            const normal = hit.face?.normal?.clone();
+            const normal = getWorldNormalFromRayHit(hit) || hit.face?.normal?.clone();
             if (!normal) {
                 return;
             }
 
-            if (normal.y < 0.4) {
-                showToast("Los objetos se colocan sobre una superficie", "warning", 900);
-                return;
+            let placeX = 0;
+            let placeY = 0;
+            let placeZ = 0;
+            if (wantsWallPlacement) {
+                const horizontalStrength = Math.hypot(normal.x, normal.z);
+                if (horizontalStrength < 0.55 || Math.abs(normal.y) > 0.4) {
+                    showToast("Las cortinas se colocan sobre paredes", "warning", 1000);
+                    return;
+                }
+                const wallX = Math.sign(normal.x);
+                const wallZ = Math.sign(normal.z);
+                placeX = lookup.x + wallX;
+                placeY = lookup.y;
+                placeZ = lookup.z + wallZ;
+                forcedPropYaw = snapYawToStep(Math.atan2(wallX, wallZ));
+            } else {
+                if (normal.y < 0.4) {
+                    showToast("Los objetos se colocan sobre una superficie", "warning", 900);
+                    return;
+                }
+                placeX = lookup.x + Math.round(normal.x);
+                placeY = lookup.y + Math.round(normal.y);
+                placeZ = lookup.z + Math.round(normal.z);
             }
-
-            const placeX = lookup.x + Math.round(normal.x);
-            const placeY = lookup.y + Math.round(normal.y);
-            const placeZ = lookup.z + Math.round(normal.z);
 
             if (!inWorldBounds(placeX, placeY, placeZ)) {
                 return;
@@ -10464,9 +11230,18 @@ function attemptMineOrPlace(isPlacing) {
                 return;
             }
 
-            propX = placeX + 0.5;
+            if (wantsWallPlacement) {
+                const wallX = Math.sign(normal.x);
+                const wallZ = Math.sign(normal.z);
+                propX = placeX + 0.5 - wallX * 0.44;
+                propY = placeY;
+                propZ = placeZ + 0.5 - wallZ * 0.44;
+            } else {
+                propX = placeX + 0.5;
+                propY = placeY;
+                propZ = placeZ + 0.5;
+            }
             propY = placeY;
-            propZ = placeZ + 0.5;
             hasAnchor = true;
         }
 
@@ -10479,7 +11254,9 @@ function attemptMineOrPlace(isPlacing) {
             return;
         }
 
-        const propYaw = resolvePropPlacementYaw(propType, propX, propZ);
+        const propYaw = Number.isFinite(forcedPropYaw)
+            ? snapYawToStep(forcedPropYaw)
+            : resolvePropPlacementYaw(propType, propX, propZ);
         const playerBounds = {
             minX: state.playerPosition.x - PLAYER_RADIUS,
             maxX: state.playerPosition.x + PLAYER_RADIUS,
@@ -10834,20 +11611,18 @@ function tryRemovePlacedPropAtCrosshair() {
 }
 
 function onMouseWheel(event) {
-    if (state.mapOpen) {
-        if (mapState.mode === MAP_MODE.GLOBAL) {
-            event.preventDefault();
-            const factor = event.deltaY > 0 ? 0.88 : 1.12;
-            const nextZoom = THREE.MathUtils.clamp(
-                mapState.globalZoom * factor,
-                GLOBAL_MAP_MIN_ZOOM,
-                GLOBAL_MAP_MAX_ZOOM
-            );
-            if (Math.abs(nextZoom - mapState.globalZoom) > 1e-4) {
-                mapState.globalZoom = nextZoom;
-                mapState.refreshTick = 0;
-                renderMapPanelNow();
-            }
+    if (state.mapOpen && mapState.mode === MAP_MODE.GLOBAL) {
+        event.preventDefault();
+        const factor = event.deltaY > 0 ? 0.88 : 1.12;
+        const nextZoom = THREE.MathUtils.clamp(
+            mapState.globalZoom * factor,
+            GLOBAL_MAP_MIN_ZOOM,
+            GLOBAL_MAP_MAX_ZOOM
+        );
+        if (Math.abs(nextZoom - mapState.globalZoom) > 1e-4) {
+            mapState.globalZoom = nextZoom;
+            mapState.refreshTick = 0;
+            renderMapPanelNow();
         }
         return;
     }
@@ -11014,7 +11789,7 @@ function onKeyDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen || state.mapOpen) {
+    if (state.paused || state.tutorialVisible || state.inventoryOpen || state.interactionPanelOpen || isMapBlockingGameplay()) {
         return;
     }
 
@@ -11082,7 +11857,7 @@ function onMouseDown(event) {
         return;
     }
 
-    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen || state.interactionPanelOpen || state.mapOpen) {
+    if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen || state.interactionPanelOpen || isMapBlockingGameplay()) {
         return;
     }
 
@@ -11131,7 +11906,7 @@ function setupEvents() {
         if (state.inventoryOpen) {
             setInventoryOpen(false);
         }
-        if (state.mapOpen) {
+        if (state.mapOpen && isMapBlockingGameplay()) {
             setMapOpen(false);
         }
         if (state.interactionPanelOpen) {
@@ -11224,9 +11999,21 @@ function setupEvents() {
         });
     }
 
+    if (mapSetHomePinButtonEl) {
+        mapSetHomePinButtonEl.addEventListener("click", () => {
+            setMapHomePinAtCurrentPosition(true);
+        });
+    }
+
     if (mapGoPinButtonEl) {
         mapGoPinButtonEl.addEventListener("click", () => {
             goToMapPin(true);
+        });
+    }
+
+    if (mapGoHomePinButtonEl) {
+        mapGoHomePinButtonEl.addEventListener("click", () => {
+            goToMapHomePin(true);
         });
     }
 
@@ -11326,8 +12113,10 @@ function setupEvents() {
         flushWorldSave(true);
         flushCloudEditWrites();
         flushCloudPropWrites();
+        publishWildlifeSnapshot(true);
         clearChunkEditSubscriptions();
         clearPropSnapshotSubscription();
+        clearWildlifeSnapshotSubscription();
         clearWildlife();
         clearFish();
         clearSunflowers();
@@ -11347,7 +12136,7 @@ function animate() {
     }
     updateAdaptiveQuality(delta);
 
-    if (state.worldStarted && !state.paused && !state.avatarPreviewOpen && !state.inventoryOpen && !state.mapOpen && !state.interactionPanelOpen) {
+    if (state.worldStarted && !state.paused && !state.avatarPreviewOpen && !state.inventoryOpen && !isMapBlockingGameplay() && !state.interactionPanelOpen) {
         updatePlayer(delta);
     }
 
@@ -11356,6 +12145,9 @@ function animate() {
         updateWildlife(delta);
         updateFish(delta);
         updateSunflowers(delta);
+        if (multiplayer.ready && multiplayer.isWildlifeAuthority) {
+            publishWildlifeSnapshot(false);
+        }
     }
     if (state.worldStarted && state.worldReady) {
         updateActiveLampShadowCasters(delta);
