@@ -10079,62 +10079,115 @@ function buildLiquidChunkMesh(liquidBlockId, positions) {
     return mesh;
 }
 
-function getColumnMeshYRange(x, z, column = null) {
-    const centerColumn = column || getColumnInfo(x, z);
-    let minTerrain = centerColumn.height;
-    let maxTerrain = centerColumn.height;
-    let maxVegetationTop = centerColumn.height + 3;
+function buildChunkColumnMeshYRanges(baseX, baseZ) {
+    const padding = 3;
+    const windowSize = 7;
+    const extendedSize = CHUNK_SIZE + padding * 2;
+    const extendedTotal = extendedSize * extendedSize;
+    const hasEditedColumns = editedColumnYIndex.size > 0;
+    const terrainHeights = new Int16Array(extendedTotal);
+    const vegetationTops = new Int16Array(extendedTotal);
+    let editedMins = null;
+    let editedMaxs = null;
 
-    for (let nx = x - 3; nx <= x + 3; nx += 1) {
-        for (let nz = z - 3; nz <= z + 3; nz += 1) {
-            const neighbor = getColumnInfo(nx, nz);
-            const neighborHeight = neighbor.height;
-            if (neighborHeight < minTerrain) minTerrain = neighborHeight;
-            if (neighborHeight > maxTerrain) maxTerrain = neighborHeight;
-
-            let vegetationTop = neighborHeight + 3;
-            if (neighbor.hasTree) {
-                vegetationTop = Math.max(vegetationTop, neighborHeight + (Number(neighbor.treeHeight) || 0) + 7);
-            }
-            if (neighbor.floraType && neighbor.floraType !== "none") {
-                vegetationTop = Math.max(vegetationTop, neighborHeight + (Number(neighbor.floraHeight) || 1) + 3);
-            }
-            if (vegetationTop > maxVegetationTop) {
-                maxVegetationTop = vegetationTop;
-            }
-        }
+    if (hasEditedColumns) {
+        editedMins = new Int16Array(extendedTotal);
+        editedMaxs = new Int16Array(extendedTotal);
+        editedMins.fill(WORLD_MAX_Y);
+        editedMaxs.fill(-1);
     }
 
-    let minY = Math.max(0, minTerrain - 4);
-    let maxY = Math.min(
-        WORLD_MAX_Y - 1,
-        Math.max(
-            maxTerrain + 6,
-            SEA_LEVEL + 2,
-            maxVegetationTop
-        )
-    );
+    for (let ez = 0; ez < extendedSize; ez += 1) {
+        for (let ex = 0; ex < extendedSize; ex += 1) {
+            const x = baseX + ex - padding;
+            const z = baseZ + ez - padding;
+            const index = ez * extendedSize + ex;
+            const column = getColumnInfo(x, z);
+            const terrainHeight = clampInt(column.height, 0, WORLD_MAX_Y - 1);
+            let vegetationTop = terrainHeight + 3;
+            if (column.hasTree) {
+                vegetationTop = Math.max(vegetationTop, terrainHeight + (Number(column.treeHeight) || 0) + 7);
+            }
+            if (column.floraType && column.floraType !== "none") {
+                vegetationTop = Math.max(vegetationTop, terrainHeight + (Number(column.floraHeight) || 1) + 3);
+            }
 
-    if (editedColumnYIndex.size > 0) {
-        for (let nx = x - 3; nx <= x + 3; nx += 1) {
-            for (let nz = z - 3; nz <= z + 3; nz += 1) {
-                const editedRange = getEditedColumnRange(nx, nz);
-                if (!editedRange) {
-                    continue;
+            terrainHeights[index] = terrainHeight;
+            vegetationTops[index] = clampInt(vegetationTop, 0, WORLD_MAX_Y - 1);
+
+            if (hasEditedColumns) {
+                const editedRange = getEditedColumnRange(x, z);
+                if (editedRange) {
+                    editedMins[index] = clampInt(editedRange.minY, 0, WORLD_MAX_Y - 1);
+                    editedMaxs[index] = clampInt(editedRange.maxY, 0, WORLD_MAX_Y - 1);
                 }
-                minY = Math.min(minY, editedRange.minY - 2);
-                maxY = Math.max(maxY, editedRange.maxY + 2);
             }
         }
     }
 
-    minY = clampInt(minY, 0, WORLD_MAX_Y - 1);
-    maxY = clampInt(maxY, 0, WORLD_MAX_Y - 1);
-    if (maxY < minY) {
-        maxY = minY;
+    const columnCount = CHUNK_SIZE * CHUNK_SIZE;
+    const minYByColumn = new Int16Array(columnCount);
+    const maxYByColumn = new Int16Array(columnCount);
+
+    for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
+            const centerX = lx + padding;
+            const centerZ = lz + padding;
+            const centerIndex = centerZ * extendedSize + centerX;
+            let minTerrain = terrainHeights[centerIndex];
+            let maxTerrain = terrainHeights[centerIndex];
+            let maxVegetationTop = vegetationTops[centerIndex];
+            let minEdited = WORLD_MAX_Y;
+            let maxEdited = -1;
+
+            for (let wz = 0; wz < windowSize; wz += 1) {
+                const rowBase = (centerZ + wz - padding) * extendedSize + (centerX - padding);
+                for (let wx = 0; wx < windowSize; wx += 1) {
+                    const index = rowBase + wx;
+                    const terrainHeight = terrainHeights[index];
+                    if (terrainHeight < minTerrain) minTerrain = terrainHeight;
+                    if (terrainHeight > maxTerrain) maxTerrain = terrainHeight;
+
+                    const vegetationTop = vegetationTops[index];
+                    if (vegetationTop > maxVegetationTop) {
+                        maxVegetationTop = vegetationTop;
+                    }
+
+                    if (hasEditedColumns && editedMaxs[index] >= 0) {
+                        minEdited = Math.min(minEdited, editedMins[index] - 2);
+                        maxEdited = Math.max(maxEdited, editedMaxs[index] + 2);
+                    }
+                }
+            }
+
+            let minY = Math.max(0, minTerrain - 4);
+            let maxY = Math.min(
+                WORLD_MAX_Y - 1,
+                Math.max(
+                    maxTerrain + 6,
+                    SEA_LEVEL + 2,
+                    maxVegetationTop
+                )
+            );
+
+            if (maxEdited >= 0) {
+                minY = Math.min(minY, minEdited);
+                maxY = Math.max(maxY, maxEdited);
+            }
+
+            minY = clampInt(minY, 0, WORLD_MAX_Y - 1);
+            maxY = clampInt(maxY, 0, WORLD_MAX_Y - 1);
+            if (maxY < minY) {
+                maxY = minY;
+            }
+
+            const outIndex = lz * CHUNK_SIZE + lx;
+            minYByColumn[outIndex] = minY;
+            maxYByColumn[outIndex] = maxY;
+        }
     }
 
-    return { minY, maxY };
+    return { minYByColumn, maxYByColumn };
 }
 
 function rebuildChunkMesh(chunk) {
@@ -10150,13 +10203,17 @@ function rebuildChunkMesh(chunk) {
     const positionsByBlock = new Map();
     const baseX = chunk.cx * CHUNK_SIZE;
     const baseZ = chunk.cz * CHUNK_SIZE;
+    const columnYRanges = buildChunkColumnMeshYRanges(baseX, baseZ);
+    const minYByColumn = columnYRanges.minYByColumn;
+    const maxYByColumn = columnYRanges.maxYByColumn;
 
     for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
         for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
             const x = baseX + lx;
             const z = baseZ + lz;
-            const column = getColumnInfo(x, z);
-            const { minY, maxY } = getColumnMeshYRange(x, z, column);
+            const columnIndex = lz * CHUNK_SIZE + lx;
+            const minY = minYByColumn[columnIndex];
+            const maxY = maxYByColumn[columnIndex];
 
             for (let y = minY; y <= maxY; y += 1) {
                 const id = getBlock(x, y, z);
