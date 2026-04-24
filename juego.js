@@ -282,6 +282,7 @@ const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
 const SKY_SHADOW_REFRESH_SECONDS = 0.82;
 const PROP_ROTATION_STEP = Math.PI * 0.5;
+const ENABLE_WORLD_FOG = false;
 const FOG_SAMPLE_INTERVAL_SECONDS = 0.3;
 const FOG_BLEND_SPEED = 2.6;
 const FOG_BASE_PADDING_BLOCKS = 96;
@@ -507,7 +508,7 @@ const INITIAL_CAMERA_FAR = THREE.MathUtils.clamp(INITIAL_FOG_FAR + CAMERA_FAR_PA
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
-scene.fog = new THREE.Fog(0x9bc7ff, INITIAL_FOG_NEAR, INITIAL_FOG_FAR);
+scene.fog = ENABLE_WORLD_FOG ? new THREE.Fog(0x9bc7ff, INITIAL_FOG_NEAR, INITIAL_FOG_FAR) : null;
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, INITIAL_CAMERA_FAR);
 camera.rotation.order = "YXZ";
@@ -3495,19 +3496,21 @@ function updateSky(deltaSeconds) {
         skyColorScratch.lerp(SKY_DUSK_COLOR, twilightFactor * (1 - dayFactor * 0.6));
     }
     scene.background.copy(skyColorScratch);
-    scene.fog.color.copy(skyColorScratch);
-    skyState.fogSampleTimer -= deltaSeconds;
-    if (skyState.fogSampleTimer <= 0) {
-        const fogTargets = computeFogTargetsForPlayerEnvironment(dayFactor, twilightFactor);
-        skyState.fogTargetNear = fogTargets.near;
-        skyState.fogTargetFar = fogTargets.far;
-        skyState.fogSampleTimer = FOG_SAMPLE_INTERVAL_SECONDS;
+    if (ENABLE_WORLD_FOG && scene.fog) {
+        scene.fog.color.copy(skyColorScratch);
+        skyState.fogSampleTimer -= deltaSeconds;
+        if (skyState.fogSampleTimer <= 0) {
+            const fogTargets = computeFogTargetsForPlayerEnvironment(dayFactor, twilightFactor);
+            skyState.fogTargetNear = fogTargets.near;
+            skyState.fogTargetFar = fogTargets.far;
+            skyState.fogSampleTimer = FOG_SAMPLE_INTERVAL_SECONDS;
+        }
+        const fogBlendAlpha = 1 - Math.exp(-FOG_BLEND_SPEED * Math.max(0, deltaSeconds));
+        skyState.fogNear = lerp(skyState.fogNear, skyState.fogTargetNear, fogBlendAlpha);
+        skyState.fogFar = lerp(skyState.fogFar, skyState.fogTargetFar, fogBlendAlpha);
+        scene.fog.near = skyState.fogNear;
+        scene.fog.far = Math.max(scene.fog.near + 26, skyState.fogFar);
     }
-    const fogBlendAlpha = 1 - Math.exp(-FOG_BLEND_SPEED * Math.max(0, deltaSeconds));
-    skyState.fogNear = lerp(skyState.fogNear, skyState.fogTargetNear, fogBlendAlpha);
-    skyState.fogFar = lerp(skyState.fogFar, skyState.fogTargetFar, fogBlendAlpha);
-    scene.fog.near = skyState.fogNear;
-    scene.fog.far = Math.max(scene.fog.near + 26, skyState.fogFar);
 
     sun.intensity = 0.14 + dayFactor * 1.08;
     moon.intensity = 0.03 + nightFactor * 0.26;
