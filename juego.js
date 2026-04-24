@@ -36,11 +36,24 @@ function clampInt(value, min, max) {
     return Math.max(min, Math.min(max, Math.round(value)));
 }
 
+function formatMetricCompact(value) {
+    const safe = Math.max(0, Math.floor(Number(value) || 0));
+    if (safe >= 1000000) {
+        return `${(safe / 1000000).toFixed(2)}M`;
+    }
+    if (safe >= 1000) {
+        return `${(safe / 1000).toFixed(1)}k`;
+    }
+    return String(safe);
+}
+
 const WORLD_MAX_Y = 480;
 const CHUNK_SIZE = 16;
 const CHUNK_MANAGEMENT_INTERVAL = 0.22;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
+const COLUMN_CACHE_MAX_ENTRIES = 160000;
+const COLUMN_CACHE_TRIM_TO_ENTRIES = 130000;
 const CLOUD_EDIT_WRITE_BATCH_MS = 220;
 const CLOUD_EDIT_RETRY_MS = 1200;
 const SEA_LEVEL = 72;
@@ -87,6 +100,7 @@ const MAX_REACH = 6;
 const DEFAULT_POINTER_SPEED = 0.68;
 const TARGET_UI_SCAN_INTERVAL = 0.055;
 const HUD_UPDATE_INTERVAL = 0.12;
+const PERF_STATS_UPDATE_INTERVAL = 0.45;
 const PROP_SPATIAL_CELL_SIZE = 1.5;
 const MAP_VIEW_RADIUS_BLOCKS = 180;
 const MAP_RENDER_RESOLUTION = 128;
@@ -1120,12 +1134,22 @@ const saveState = {
 const perfState = {
     dynamicPixelRatio: basePixelRatio,
     fpsEma: 60,
+    frameMsEma: 16.7,
     adjustCooldown: 0,
     adaptiveEnabled: true,
     minPixelRatio: 0.72,
     qualityPreset: "auto",
     graphicsMode: INITIAL_GRAPHICS_MODE,
-    graphicsDeviceLabel: INITIAL_GRAPHICS_DEVICE_LABEL
+    graphicsDeviceLabel: INITIAL_GRAPHICS_DEVICE_LABEL,
+    statsTick: 0,
+    drawCalls: 0,
+    triangles: 0,
+    points: 0,
+    lines: 0,
+    geometries: 0,
+    textures: 0,
+    chunkBuildCostEmaMs: 1.2,
+    chunkLastBatchMs: 0
 };
 
 const skyState = {
@@ -1201,6 +1225,8 @@ const fishState = {
     nextId: 1,
     spawnTimer: 3.6
 };
+const fishBoxGeometryCache = new Map();
+const fishVariantMaterialCache = new Map();
 
 const economyState = {
     sunflowers: 0
@@ -3696,18 +3722,47 @@ function initWildlife() {
     }
 }
 
+function getFishBoxGeometry(width, height, depth) {
+    const w = Number(width) || 1;
+    const h = Number(height) || 1;
+    const d = Number(depth) || 1;
+    const key = `${w.toFixed(3)}|${h.toFixed(3)}|${d.toFixed(3)}`;
+    let geometry = fishBoxGeometryCache.get(key);
+    if (geometry) {
+        return geometry;
+    }
+    geometry = new THREE.BoxGeometry(w, h, d);
+    fishBoxGeometryCache.set(key, geometry);
+    return geometry;
+}
+
+function getFishVariantMaterials(variant) {
+    const safeVariant = variant || FISH_VARIANTS[0];
+    const variantId = String(safeVariant?.id || "default");
+    let cached = fishVariantMaterialCache.get(variantId);
+    if (cached) {
+        return cached;
+    }
+    cached = {
+        body: new THREE.MeshLambertMaterial({ color: safeVariant.body, flatShading: true }),
+        accent: new THREE.MeshLambertMaterial({ color: safeVariant.accent, flatShading: true }),
+        eye: new THREE.MeshLambertMaterial({ color: 0x121820, flatShading: true }),
+        belly: new THREE.MeshLambertMaterial({
+            color: new THREE.Color(safeVariant.body).lerp(new THREE.Color(0xffffff), 0.24).getHex(),
+            flatShading: true
+        })
+    };
+    fishVariantMaterialCache.set(variantId, cached);
+    return cached;
+}
+
 function createFishNode(variant) {
+    const safeVariant = variant || FISH_VARIANTS[0];
     const root = new THREE.Group();
-    const bodyMat = new THREE.MeshLambertMaterial({ color: variant.body, flatShading: true });
-    const accentMat = new THREE.MeshLambertMaterial({ color: variant.accent, flatShading: true });
-    const eyeMat = new THREE.MeshLambertMaterial({ color: 0x121820, flatShading: true });
-    const bellyMat = new THREE.MeshLambertMaterial({
-        color: new THREE.Color(variant.body).lerp(new THREE.Color(0xffffff), 0.24).getHex(),
-        flatShading: true
-    });
+    const mats = getFishVariantMaterials(safeVariant);
 
     const addPart = (w, h, d, material, x, y, z, rx = 0, ry = 0, rz = 0) => {
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+        const mesh = new THREE.Mesh(getFishBoxGeometry(w, h, d), material);
         mesh.position.set(x, y, z);
         mesh.rotation.set(rx, ry, rz);
         mesh.castShadow = false;
@@ -3717,71 +3772,71 @@ function createFishNode(variant) {
     };
 
     const addEyes = (xOffset, y, z) => {
-        addPart(0.07, 0.07, 0.07, eyeMat, -Math.abs(xOffset), y, z);
-        addPart(0.07, 0.07, 0.07, eyeMat, Math.abs(xOffset), y, z);
+        addPart(0.07, 0.07, 0.07, mats.eye, -Math.abs(xOffset), y, z);
+        addPart(0.07, 0.07, 0.07, mats.eye, Math.abs(xOffset), y, z);
     };
 
-    if (variant.id === "tilapia") {
-        addPart(0.56, 0.36, 1.18, bodyMat, 0, 0.02, 0.04);
-        addPart(0.42, 0.2, 1.02, bellyMat, 0, -0.1, 0.12);
-        addPart(0.28, 0.22, 0.34, accentMat, 0, 0.02, -0.78);
-        addPart(0.22, 0.18, 0.36, accentMat, 0, 0.22, -0.02);
-        addPart(0.1, 0.1, 0.34, accentMat, -0.33, -0.02, 0.16, 0, 0, 0.3);
-        addPart(0.1, 0.1, 0.34, accentMat, 0.33, -0.02, 0.16, 0, 0, -0.3);
-        addPart(0.16, 0.11, 0.24, accentMat, 0, -0.16, -0.22);
+    if (safeVariant.id === "tilapia") {
+        addPart(0.56, 0.36, 1.18, mats.body, 0, 0.02, 0.04);
+        addPart(0.42, 0.2, 1.02, mats.belly, 0, -0.1, 0.12);
+        addPart(0.28, 0.22, 0.34, mats.accent, 0, 0.02, -0.78);
+        addPart(0.22, 0.18, 0.36, mats.accent, 0, 0.22, -0.02);
+        addPart(0.1, 0.1, 0.34, mats.accent, -0.33, -0.02, 0.16, 0, 0, 0.3);
+        addPart(0.1, 0.1, 0.34, mats.accent, 0.33, -0.02, 0.16, 0, 0, -0.3);
+        addPart(0.16, 0.11, 0.24, mats.accent, 0, -0.16, -0.22);
         addEyes(0.19, 0.08, 0.48);
-    } else if (variant.id === "puffer") {
-        addPart(0.66, 0.66, 0.66, bodyMat, 0, 0.02, 0.03);
-        addPart(0.5, 0.48, 0.44, bellyMat, 0, -0.08, 0.14);
-        addPart(0.22, 0.18, 0.24, accentMat, 0, 0.02, -0.48);
-        addPart(0.18, 0.12, 0.16, accentMat, 0, -0.2, 0.28);
+    } else if (safeVariant.id === "puffer") {
+        addPart(0.66, 0.66, 0.66, mats.body, 0, 0.02, 0.03);
+        addPart(0.5, 0.48, 0.44, mats.belly, 0, -0.08, 0.14);
+        addPart(0.22, 0.18, 0.24, mats.accent, 0, 0.02, -0.48);
+        addPart(0.18, 0.12, 0.16, mats.accent, 0, -0.2, 0.28);
         const spikes = [
             [-0.28, 0.22, 0.1], [0.28, 0.22, 0.1], [-0.24, -0.22, 0.08], [0.24, -0.22, 0.08],
             [-0.08, 0.3, -0.08], [0.08, 0.3, -0.08], [-0.31, 0.02, -0.04], [0.31, 0.02, -0.04]
         ];
         for (const spike of spikes) {
-            addPart(0.08, 0.08, 0.08, accentMat, spike[0], spike[1], spike[2]);
+            addPart(0.08, 0.08, 0.08, mats.accent, spike[0], spike[1], spike[2]);
         }
         addEyes(0.23, 0.11, 0.25);
-    } else if (variant.id === "shark") {
-        addPart(0.54, 0.42, 1.72, bodyMat, 0, 0.01, 0.1);
-        addPart(0.42, 0.24, 1.28, bellyMat, 0, -0.12, 0.24);
-        addPart(0.24, 0.2, 0.46, bodyMat, 0, 0.07, 0.94);
-        addPart(0.24, 0.52, 0.24, accentMat, 0, 0.28, -0.02);
-        addPart(0.34, 0.18, 0.16, accentMat, 0, 0.02, -0.98);
-        addPart(0.12, 0.34, 0.44, accentMat, -0.34, -0.05, 0.1, 0, 0, 0.42);
-        addPart(0.12, 0.34, 0.44, accentMat, 0.34, -0.05, 0.1, 0, 0, -0.42);
-        addPart(0.08, 0.22, 0.28, accentMat, -0.12, -0.16, -0.28, 0, 0, 0.2);
-        addPart(0.08, 0.22, 0.28, accentMat, 0.12, -0.16, -0.28, 0, 0, -0.2);
+    } else if (safeVariant.id === "shark") {
+        addPart(0.54, 0.42, 1.72, mats.body, 0, 0.01, 0.1);
+        addPart(0.42, 0.24, 1.28, mats.belly, 0, -0.12, 0.24);
+        addPart(0.24, 0.2, 0.46, mats.body, 0, 0.07, 0.94);
+        addPart(0.24, 0.52, 0.24, mats.accent, 0, 0.28, -0.02);
+        addPart(0.34, 0.18, 0.16, mats.accent, 0, 0.02, -0.98);
+        addPart(0.12, 0.34, 0.44, mats.accent, -0.34, -0.05, 0.1, 0, 0, 0.42);
+        addPart(0.12, 0.34, 0.44, mats.accent, 0.34, -0.05, 0.1, 0, 0, -0.42);
+        addPart(0.08, 0.22, 0.28, mats.accent, -0.12, -0.16, -0.28, 0, 0, 0.2);
+        addPart(0.08, 0.22, 0.28, mats.accent, 0.12, -0.16, -0.28, 0, 0, -0.2);
         addEyes(0.18, 0.08, 0.62);
-    } else if (variant.id === "manta") {
-        addPart(0.56, 0.2, 0.92, bodyMat, 0, 0, 0.12);
-        addPart(1.54, 0.1, 0.82, bodyMat, 0, -0.02, -0.06, 0, 0, 0.08);
-        addPart(0.98, 0.08, 0.54, bellyMat, 0, -0.08, 0.12);
-        addPart(0.06, 0.08, 1.04, accentMat, 0, -0.03, -0.8);
-        addPart(0.14, 0.12, 0.28, accentMat, -0.18, -0.06, 0.32, 0.22, 0, 0);
-        addPart(0.14, 0.12, 0.28, accentMat, 0.18, -0.06, 0.32, 0.22, 0, 0);
+    } else if (safeVariant.id === "manta") {
+        addPart(0.56, 0.2, 0.92, mats.body, 0, 0, 0.12);
+        addPart(1.54, 0.1, 0.82, mats.body, 0, -0.02, -0.06, 0, 0, 0.08);
+        addPart(0.98, 0.08, 0.54, mats.belly, 0, -0.08, 0.12);
+        addPart(0.06, 0.08, 1.04, mats.accent, 0, -0.03, -0.8);
+        addPart(0.14, 0.12, 0.28, mats.accent, -0.18, -0.06, 0.32, 0.22, 0, 0);
+        addPart(0.14, 0.12, 0.28, mats.accent, 0.18, -0.06, 0.32, 0.22, 0, 0);
         addEyes(0.22, 0.06, 0.28);
-    } else if (variant.id === "jelly") {
-        addPart(0.62, 0.32, 0.62, bodyMat, 0, 0.34, 0);
-        addPart(0.76, 0.12, 0.76, accentMat, 0, 0.16, 0);
-        addPart(0.34, 0.1, 0.34, bellyMat, 0, 0.44, 0);
+    } else if (safeVariant.id === "jelly") {
+        addPart(0.62, 0.32, 0.62, mats.body, 0, 0.34, 0);
+        addPart(0.76, 0.12, 0.76, mats.accent, 0, 0.16, 0);
+        addPart(0.34, 0.1, 0.34, mats.belly, 0, 0.44, 0);
         for (let i = 0; i < 6; i += 1) {
             const strandLength = 0.34 + (i % 2 === 0 ? 0.08 : 0.16);
             const strandX = (i - 2.5) * 0.11;
             const strandZ = (i % 2 === 0 ? -0.08 : 0.06);
-            addPart(0.06, strandLength, 0.06, accentMat, strandX, -0.06 - strandLength * 0.4, strandZ);
+            addPart(0.06, strandLength, 0.06, mats.accent, strandX, -0.06 - strandLength * 0.4, strandZ);
         }
         addEyes(0.12, 0.22, 0.2);
     } else {
-        addPart(0.56, 0.36, 1.12, bodyMat, 0, 0.02, 0.06);
-        addPart(0.24, 0.2, 0.34, accentMat, 0, 0.02, -0.74);
-        addPart(0.1, 0.1, 0.28, accentMat, -0.33, -0.04, 0.1, 0, 0, 0.34);
-        addPart(0.1, 0.1, 0.28, accentMat, 0.33, -0.04, 0.1, 0, 0, -0.34);
+        addPart(0.56, 0.36, 1.12, mats.body, 0, 0.02, 0.06);
+        addPart(0.24, 0.2, 0.34, mats.accent, 0, 0.02, -0.74);
+        addPart(0.1, 0.1, 0.28, mats.accent, -0.33, -0.04, 0.1, 0, 0, 0.34);
+        addPart(0.1, 0.1, 0.28, mats.accent, 0.33, -0.04, 0.1, 0, 0, -0.34);
         addEyes(0.18, 0.08, 0.44);
     }
 
-    root.scale.setScalar(variant.scale);
+    root.scale.setScalar(safeVariant.scale);
     return root;
 }
 
@@ -3875,12 +3930,6 @@ function removeFishEntity(fishId) {
         return;
     }
 
-    fish.node.traverse((child) => {
-        if (child.isMesh) {
-            child.geometry?.dispose?.();
-            child.material?.dispose?.();
-        }
-    });
     fishRoot.remove(fish.node);
     fishState.fishes.delete(fishId);
 }
@@ -8400,10 +8449,48 @@ async function migrateTerrainLayoutIfNeeded(dbModule, db, worldPath) {
     return { migrated: true, shiftY };
 }
 
+function updateRendererPerfStats(deltaSeconds) {
+    perfState.statsTick -= Math.max(0, Number(deltaSeconds) || 0);
+    if (perfState.statsTick > 0) {
+        return;
+    }
+    perfState.statsTick = PERF_STATS_UPDATE_INTERVAL;
+
+    const info = renderer?.info;
+    const renderInfo = info?.render || {};
+    const memoryInfo = info?.memory || {};
+    perfState.drawCalls = Number(renderInfo.calls) || 0;
+    perfState.triangles = Number(renderInfo.triangles) || 0;
+    perfState.points = Number(renderInfo.points) || 0;
+    perfState.lines = Number(renderInfo.lines) || 0;
+    perfState.geometries = Number(memoryInfo.geometries) || 0;
+    perfState.textures = Number(memoryInfo.textures) || 0;
+}
+
+function updateChunkBuildMetrics(buildCount, elapsedMs) {
+    if (buildCount <= 0 || !Number.isFinite(elapsedMs) || elapsedMs < 0) {
+        return;
+    }
+    perfState.chunkLastBatchMs = elapsedMs;
+    const perChunkMs = elapsedMs / Math.max(1, buildCount);
+    if (!Number.isFinite(perChunkMs) || perChunkMs <= 0) {
+        return;
+    }
+    if (!Number.isFinite(perfState.chunkBuildCostEmaMs) || perfState.chunkBuildCostEmaMs <= 0) {
+        perfState.chunkBuildCostEmaMs = perChunkMs;
+        return;
+    }
+    perfState.chunkBuildCostEmaMs = perfState.chunkBuildCostEmaMs * 0.82 + perChunkMs * 0.18;
+}
+
 function updateAdaptiveQuality(deltaSeconds) {
-    const fpsInstant = deltaSeconds > 0 ? 1 / deltaSeconds : 60;
+    const safeDelta = Math.max(0, Number(deltaSeconds) || 0);
+    const fpsInstant = safeDelta > 0 ? 1 / safeDelta : 60;
+    const frameMs = Math.max(0.2, safeDelta * 1000);
     perfState.fpsEma = perfState.fpsEma * 0.92 + fpsInstant * 0.08;
-    perfState.adjustCooldown -= deltaSeconds;
+    perfState.frameMsEma = perfState.frameMsEma * 0.9 + frameMs * 0.1;
+    perfState.adjustCooldown -= safeDelta;
+    updateRendererPerfStats(safeDelta);
 
     if (!perfState.adaptiveEnabled) {
         return;
@@ -8437,15 +8524,25 @@ function getDynamicChunkBuildBudget() {
         return 0;
     }
 
-    if (perfState.fpsEma < 38) {
-        return 1;
+    const fps = perfState.fpsEma;
+    const frameMs = perfState.frameMsEma;
+    const avgChunkMs = Math.max(0.25, Number(perfState.chunkBuildCostEmaMs) || 1.2);
+
+    let buildTimeBudgetMs = 2.3;
+    if (fps >= 58 && frameMs <= 17) {
+        buildTimeBudgetMs = 4;
+    } else if (fps >= 52 && frameMs <= 19.5) {
+        buildTimeBudgetMs = 3.1;
+    } else if (fps <= 42 || frameMs >= 24) {
+        buildTimeBudgetMs = 1.25;
     }
 
-    if (perfState.fpsEma > 58 && state.pendingChunkBuildCount > 14) {
-        return 2;
+    let budget = Math.max(1, Math.floor(buildTimeBudgetMs / avgChunkMs));
+    if (state.pendingChunkBuildCount > 38 && fps > 50 && frameMs < 20) {
+        budget += 1;
     }
 
-    return CHUNK_REBUILD_BUDGET_PER_FRAME;
+    return clampInt(budget, 1, 4);
 }
 
 let runtimeFirebaseConfigPromise = null;
@@ -8956,10 +9053,29 @@ function getEarthLikeContinentMask(worldX, worldZ) {
     return clamp01(landMask);
 }
 
+function trimColumnCacheIfNeeded() {
+    if (columnCache.size <= COLUMN_CACHE_MAX_ENTRIES) {
+        return;
+    }
+    let toRemove = Math.max(0, columnCache.size - COLUMN_CACHE_TRIM_TO_ENTRIES);
+    if (toRemove <= 0) {
+        return;
+    }
+    for (const oldestKey of columnCache.keys()) {
+        columnCache.delete(oldestKey);
+        toRemove -= 1;
+        if (toRemove <= 0) {
+            break;
+        }
+    }
+}
+
 function getColumnInfo(x, z) {
     const key = `${x}|${z}`;
     const cached = columnCache.get(key);
     if (cached) {
+        columnCache.delete(key);
+        columnCache.set(key, cached);
         return cached;
     }
 
@@ -9297,6 +9413,7 @@ function getColumnInfo(x, z) {
     };
 
     columnCache.set(key, info);
+    trimColumnCacheIfNeeded();
     return info;
 }
 
@@ -10174,6 +10291,7 @@ function updateChunkStreaming(force = false) {
 }
 
 function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
+    const startMs = performance.now();
     let builds = 0;
     while (builds < maxBuilds && chunkRebuildQueue.size > 0) {
         const iterator = chunkRebuildQueue.values().next();
@@ -10193,6 +10311,8 @@ function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
         builds += 1;
     }
 
+    const elapsedMs = performance.now() - startMs;
+    updateChunkBuildMetrics(builds, elapsedMs);
     state.pendingChunkBuildCount = chunkRebuildQueue.size;
 }
 
@@ -10627,7 +10747,10 @@ function updateHud() {
         uiState.lastCoordsText = coordsText;
     }
 
-    const chunkInfoText = `Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Peces: ${fishState.fishes.size} | Flores activas: ${floraState.sunflowers.size} | Girasoles (moneda): ${economyState.sunflowers} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`;
+    const fpsLabel = Number.isFinite(perfState.fpsEma) ? perfState.fpsEma.toFixed(1) : "0.0";
+    const frameMsLabel = Number.isFinite(perfState.frameMsEma) ? perfState.frameMsEma.toFixed(1) : "0.0";
+    const chunkCostLabel = Number.isFinite(perfState.chunkBuildCostEmaMs) ? perfState.chunkBuildCostEmaMs.toFixed(2) : "0.00";
+    const chunkInfoText = `Chunks: ${state.chunkRadius} | Cargados: ${state.loadedChunkCount} | Pendientes: ${state.pendingChunkBuildCount} | Edits: ${editedBlocks.size}/${MAX_EDITED_BLOCKS} | Objetos: ${placedProps.size}/${MAX_PLACED_PROPS} | Conejos: ${wildlifeState.rabbits.size} | Peces: ${fishState.fishes.size} | Flores activas: ${floraState.sunflowers.size} | Girasoles (moneda): ${economyState.sunflowers} | FPS: ${fpsLabel} (${frameMsLabel}ms) | Draw: ${formatMetricCompact(perfState.drawCalls)} | Tri: ${formatMetricCompact(perfState.triangles)} | Geo/Tex: ${perfState.geometries}/${perfState.textures} | Chunk ms: ${chunkCostLabel} | ColCache: ${formatMetricCompact(columnCache.size)} | Q: ${perfState.dynamicPixelRatio.toFixed(2)}x`;
     if (chunkInfoText !== uiState.lastChunkInfoText) {
         setChunkInfo(chunkInfoText);
         uiState.lastChunkInfoText = chunkInfoText;
