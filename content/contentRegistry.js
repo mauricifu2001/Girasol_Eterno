@@ -13,7 +13,7 @@ export const ITEM_KIND = Object.freeze({
     PROP: "prop"
 });
 
-export const HOTBAR_SIZE = 8;
+export const HOTBAR_SIZE = 15;
 
 export const INVENTORY_CATEGORY = Object.freeze({
     TERRAIN: "terrain",
@@ -84,16 +84,43 @@ export const INVENTORY_ITEMS = Object.freeze([
 
 export const INVENTORY_ITEM_BY_ID = new Map(INVENTORY_ITEMS.map((item) => [item.id, item]));
 
-export const DEFAULT_HOTBAR_ITEM_IDS = Object.freeze([
+const HOTBAR_DEFAULT_CANDIDATES = Object.freeze([
     "stone",
     "dirt",
     "grass",
+    "sand",
     "wood",
     "glass",
     "water",
+    "lava",
+    "volcanic_stone",
+    "snow",
     "chair",
-    "lamp"
+    "lamp",
+    "chest",
+    "furnace",
+    "wall_lantern"
 ]);
+
+const resolvedDefaultHotbarIds = [];
+for (const itemId of HOTBAR_DEFAULT_CANDIDATES) {
+    if (INVENTORY_ITEM_BY_ID.has(itemId) && !resolvedDefaultHotbarIds.includes(itemId)) {
+        resolvedDefaultHotbarIds.push(itemId);
+    }
+    if (resolvedDefaultHotbarIds.length >= HOTBAR_SIZE) {
+        break;
+    }
+}
+for (const item of INVENTORY_ITEMS) {
+    if (resolvedDefaultHotbarIds.length >= HOTBAR_SIZE) {
+        break;
+    }
+    if (!resolvedDefaultHotbarIds.includes(item.id)) {
+        resolvedDefaultHotbarIds.push(item.id);
+    }
+}
+
+export const DEFAULT_HOTBAR_ITEM_IDS = Object.freeze(resolvedDefaultHotbarIds.slice(0, HOTBAR_SIZE));
 
 export function getInventoryItemTintByDefinition(item, blockColorLookup = null) {
     if (!item) {
