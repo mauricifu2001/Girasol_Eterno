@@ -52,6 +52,14 @@ const CHUNK_SIZE = 16;
 const CHUNK_MANAGEMENT_INTERVAL = 0.22;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
+const BLOCK_FACE_NEIGHBOR_OFFSETS = Object.freeze([
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1]
+]);
 const COLUMN_CACHE_MAX_ENTRIES = 160000;
 const COLUMN_CACHE_TRIM_TO_ENTRIES = 130000;
 const COLUMN_CACHE_TRIM_BATCH = 4096;
@@ -8546,6 +8554,30 @@ function getDynamicChunkBuildBudget() {
     return clampInt(budget, 1, 4);
 }
 
+function getDynamicChunkBuildFrameBudgetMs() {
+    if (state.pendingChunkBuildCount <= 0) {
+        return 0;
+    }
+
+    const fps = perfState.fpsEma;
+    const frameMs = perfState.frameMsEma;
+
+    let frameBudgetMs = 2.4;
+    if (fps >= 58 && frameMs <= 17) {
+        frameBudgetMs = 4.2;
+    } else if (fps >= 52 && frameMs <= 19.5) {
+        frameBudgetMs = 3.2;
+    } else if (fps <= 42 || frameMs >= 24) {
+        frameBudgetMs = 1.35;
+    }
+
+    if (state.pendingChunkBuildCount > 56 && fps >= 54 && frameMs < 19) {
+        frameBudgetMs += 0.65;
+    }
+
+    return Math.max(1, Math.min(5.4, frameBudgetMs));
+}
+
 let runtimeFirebaseConfigPromise = null;
 
 async function resolveFirebaseConfig() {
@@ -9848,6 +9880,10 @@ function getProceduralBlock(x, y, z) {
 }
 
 function getBlock(x, y, z) {
+    if (editedBlocks.size === 0) {
+        return getProceduralBlock(x, y, z);
+    }
+
     const override = editedBlocks.get(blockKey(x, y, z));
     if (override !== undefined) {
         return override;
@@ -9943,17 +9979,9 @@ function doesNeighborOccludeFace(id, neighborId) {
 }
 
 function isBlockVisible(x, y, z, id) {
-    const neighbors = [
-        [1, 0, 0],
-        [-1, 0, 0],
-        [0, 1, 0],
-        [0, -1, 0],
-        [0, 0, 1],
-        [0, 0, -1]
-    ];
-
-    for (const [dx, dy, dz] of neighbors) {
-        const neighborId = getBlock(x + dx, y + dy, z + dz);
+    for (let index = 0; index < BLOCK_FACE_NEIGHBOR_OFFSETS.length; index += 1) {
+        const offset = BLOCK_FACE_NEIGHBOR_OFFSETS[index];
+        const neighborId = getBlock(x + offset[0], y + offset[1], z + offset[2]);
         if (!doesNeighborOccludeFace(id, neighborId)) {
             return true;
         }
@@ -10087,14 +10115,16 @@ function getColumnMeshYRange(x, z, column = null) {
         )
     );
 
-    for (let nx = x - 3; nx <= x + 3; nx += 1) {
-        for (let nz = z - 3; nz <= z + 3; nz += 1) {
-            const editedRange = getEditedColumnRange(nx, nz);
-            if (!editedRange) {
-                continue;
+    if (editedColumnYIndex.size > 0) {
+        for (let nx = x - 3; nx <= x + 3; nx += 1) {
+            for (let nz = z - 3; nz <= z + 3; nz += 1) {
+                const editedRange = getEditedColumnRange(nx, nz);
+                if (!editedRange) {
+                    continue;
+                }
+                minY = Math.min(minY, editedRange.minY - 2);
+                maxY = Math.max(maxY, editedRange.maxY + 2);
             }
-            minY = Math.min(minY, editedRange.minY - 2);
-            maxY = Math.max(maxY, editedRange.maxY + 2);
         }
     }
 
@@ -10290,17 +10320,62 @@ function updateChunkStreaming(force = false) {
     }
 }
 
-function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
-    const startMs = performance.now();
-    let builds = 0;
-    while (builds < maxBuilds && chunkRebuildQueue.size > 0) {
-        const iterator = chunkRebuildQueue.values().next();
-        if (iterator.done) {
-            break;
+function popNextChunkRebuildKey(centerCx, centerCz, forwardX, forwardZ) {
+    let bestKey = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+    const staleKeys = [];
+
+    for (const key of chunkRebuildQueue) {
+        const chunk = chunkMap.get(key);
+        if (!chunk || !chunk.dirty) {
+            staleKeys.push(key);
+            continue;
         }
 
-        const key = iterator.value;
-        chunkRebuildQueue.delete(key);
+        const dx = chunk.cx - centerCx;
+        const dz = chunk.cz - centerCz;
+        const distance = Math.abs(dx) + Math.abs(dz);
+        const forwardBias = dx * forwardX + dz * forwardZ;
+        const score = distance * 8 - forwardBias;
+
+        if (score < bestScore) {
+            bestScore = score;
+            bestKey = key;
+        }
+    }
+
+    for (const staleKey of staleKeys) {
+        chunkRebuildQueue.delete(staleKey);
+    }
+
+    if (bestKey !== null) {
+        chunkRebuildQueue.delete(bestKey);
+    }
+
+    return bestKey;
+}
+
+function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME, maxFrameBudgetMs = Number.POSITIVE_INFINITY) {
+    const startMs = performance.now();
+    const centerCx = worldToChunkCoord(state.playerPosition.x);
+    const centerCz = worldToChunkCoord(state.playerPosition.z);
+    const forwardLength = Math.hypot(state.lastForward.x, state.lastForward.z);
+    const forwardX = forwardLength > 0.0001 ? state.lastForward.x / forwardLength : 0;
+    const forwardZ = forwardLength > 0.0001 ? state.lastForward.z / forwardLength : 0;
+    let builds = 0;
+
+    while (builds < maxBuilds && chunkRebuildQueue.size > 0) {
+        if (builds > 0 && Number.isFinite(maxFrameBudgetMs) && maxFrameBudgetMs > 0) {
+            const elapsed = performance.now() - startMs;
+            if (elapsed >= maxFrameBudgetMs) {
+                break;
+            }
+        }
+
+        const key = popNextChunkRebuildKey(centerCx, centerCz, forwardX, forwardZ);
+        if (key === null) {
+            break;
+        }
 
         const chunk = chunkMap.get(key);
         if (!chunk || !chunk.dirty) {
@@ -12598,7 +12673,8 @@ function animate() {
     updateChunkStreaming(false);
     const budget = getDynamicChunkBuildBudget();
     if (budget > 0) {
-        processChunkRebuildQueue(budget);
+        const frameBudgetMs = getDynamicChunkBuildFrameBudgetMs();
+        processChunkRebuildQueue(budget, frameBudgetMs);
     }
     if (propState.cullingDirty) {
         updatePlacedPropCulling();
