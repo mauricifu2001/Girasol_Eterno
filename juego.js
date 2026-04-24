@@ -10040,10 +10040,27 @@ function buildLiquidChunkMesh(liquidBlockId, positions) {
     const normalData = [];
     const indexData = [];
 
-    for (const position of positions) {
-        const x = position.x;
-        const y = position.y;
-        const z = position.z;
+    const isFlatArray = typeof positions[0] === "number";
+    const count = isFlatArray ? Math.floor(positions.length / 3) : positions.length;
+    if (count <= 0) {
+        return null;
+    }
+
+    for (let index = 0; index < count; index += 1) {
+        let x;
+        let y;
+        let z;
+        if (isFlatArray) {
+            const base = index * 3;
+            x = positions[base];
+            y = positions[base + 1];
+            z = positions[base + 2];
+        } else {
+            const position = positions[index];
+            x = position.x;
+            y = position.y;
+            z = position.z;
+        }
 
         for (const face of waterFaces) {
             const neighborId = getBlock(
@@ -10231,7 +10248,7 @@ function rebuildChunkMesh(chunk) {
                     positionsByBlock.set(id, positions);
                 }
 
-                positions.push({ x, y, z });
+                positions.push(x, y, z);
             }
         }
     }
@@ -10240,7 +10257,8 @@ function rebuildChunkMesh(chunk) {
 
     positionsByBlock.forEach((positions, id) => {
         const material = blockMaterials[id];
-        if (!material || positions.length === 0) {
+        const instanceCount = Math.floor(positions.length / 3);
+        if (!material || instanceCount <= 0) {
             return;
         }
 
@@ -10255,7 +10273,7 @@ function rebuildChunkMesh(chunk) {
             return;
         }
 
-        const mesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
+        const mesh = new THREE.InstancedMesh(blockGeometry, material, instanceCount);
         const transparentBlock = isTranslucentBlock(id);
         const definition = getBlockDefinitionById(id);
         const isFoliage = Boolean(definition?.tags?.includes("foliage"));
@@ -10266,8 +10284,11 @@ function rebuildChunkMesh(chunk) {
         mesh.userData.blockId = id;
         mesh.userData.lookupKeys = [];
 
-        for (let index = 0; index < positions.length; index += 1) {
-            const { x, y, z } = positions[index];
+        for (let index = 0; index < instanceCount; index += 1) {
+            const base = index * 3;
+            const x = positions[base];
+            const y = positions[base + 1];
+            const z = positions[base + 2];
             matrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
             mesh.setMatrixAt(index, matrix);
 
