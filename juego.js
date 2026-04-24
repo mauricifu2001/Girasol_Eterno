@@ -54,6 +54,7 @@ const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
 const COLUMN_CACHE_MAX_ENTRIES = 160000;
 const COLUMN_CACHE_TRIM_TO_ENTRIES = 130000;
+const COLUMN_CACHE_TRIM_BATCH = 4096;
 const CLOUD_EDIT_WRITE_BATCH_MS = 220;
 const CLOUD_EDIT_RETRY_MS = 1200;
 const SEA_LEVEL = 72;
@@ -9058,6 +9059,7 @@ function trimColumnCacheIfNeeded() {
         return;
     }
     let toRemove = Math.max(0, columnCache.size - COLUMN_CACHE_TRIM_TO_ENTRIES);
+    toRemove = Math.min(toRemove, COLUMN_CACHE_TRIM_BATCH);
     if (toRemove <= 0) {
         return;
     }
@@ -9074,8 +9076,6 @@ function getColumnInfo(x, z) {
     const key = `${x}|${z}`;
     const cached = columnCache.get(key);
     if (cached) {
-        columnCache.delete(key);
-        columnCache.set(key, cached);
         return cached;
     }
 
