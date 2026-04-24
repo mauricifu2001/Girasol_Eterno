@@ -282,6 +282,14 @@ const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
 const SKY_SHADOW_REFRESH_SECONDS = 0.82;
 const PROP_ROTATION_STEP = Math.PI * 0.5;
+const FOG_SAMPLE_INTERVAL_SECONDS = 0.3;
+const FOG_BLEND_SPEED = 2.6;
+const FOG_BASE_PADDING_BLOCKS = 96;
+const FOG_MIN_FAR = 220;
+const FOG_MAX_FAR = 520;
+const CAMERA_FAR_PADDING = 84;
+const CAMERA_MIN_FAR = 300;
+const CAMERA_MAX_FAR = 620;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
 const SKY_DUSK_COLOR = new THREE.Color(0xffb579);
 const SKY_NIGHT_COLOR = new THREE.Color(0x091327);
@@ -423,11 +431,85 @@ function readInitialGraphicsModeFromStorage() {
 
 const INITIAL_GRAPHICS_MODE = readInitialGraphicsModeFromStorage();
 
+function getBaseViewDistanceForChunkRadius(chunkRadius) {
+    const radiusBlocks = clampInt(chunkRadius, 2, 16) * CHUNK_SIZE;
+    return THREE.MathUtils.clamp(radiusBlocks + FOG_BASE_PADDING_BLOCKS, FOG_MIN_FAR, FOG_MAX_FAR);
+}
+
+function simplifyRendererLabel(rawLabel) {
+    const text = String(rawLabel || "").trim();
+    if (!text) {
+        return "";
+    }
+
+    const angleMatch = text.match(/^ANGLE\s*\((.+)\)$/i);
+    if (!angleMatch) {
+        return text;
+    }
+
+    const parts = angleMatch[1].split(",").map((item) => item.trim()).filter(Boolean);
+    if (parts.length < 2) {
+        return text;
+    }
+
+    const backend = parts[parts.length - 1];
+    const adapter = parts[1] || parts[0];
+    return `${adapter} [ANGLE ${backend}]`;
+}
+
+function classifyGraphicsAdapterLabel(label) {
+    const text = String(label || "").toLowerCase();
+    if (!text || text === "no disponible") {
+        return "unknown";
+    }
+
+    if (text.includes("swiftshader") || text.includes("llvmpipe") || text.includes("software")) {
+        return "software";
+    }
+
+    if (
+        text.includes("geforce")
+        || text.includes("quadro")
+        || text.includes("rtx")
+        || text.includes("radeon rx")
+        || text.includes("radeon pro")
+        || text.includes("intel arc")
+        || text.includes("arc a")
+    ) {
+        return "dedicated";
+    }
+
+    if (
+        text.includes("intel")
+        || text.includes("uhd")
+        || text.includes("iris")
+        || text.includes("vega")
+        || text.includes("radeon graphics")
+        || text.includes("apu")
+    ) {
+        return "integrated";
+    }
+
+    return "unknown";
+}
+
+function getGraphicsDeviceCategoryLabel(category) {
+    if (category === "dedicated") return "dedicada";
+    if (category === "integrated") return "integrada";
+    if (category === "software") return "software";
+    return "sin clasificar";
+}
+
+const INITIAL_BASE_VIEW_DISTANCE = getBaseViewDistanceForChunkRadius(INITIAL_CHUNK_RADIUS);
+const INITIAL_FOG_NEAR = Math.max(24, INITIAL_BASE_VIEW_DISTANCE * 0.14);
+const INITIAL_FOG_FAR = INITIAL_BASE_VIEW_DISTANCE;
+const INITIAL_CAMERA_FAR = THREE.MathUtils.clamp(INITIAL_FOG_FAR + CAMERA_FAR_PADDING, CAMERA_MIN_FAR, CAMERA_MAX_FAR);
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
-scene.fog = new THREE.Fog(0x9bc7ff, 30, 220);
+scene.fog = new THREE.Fog(0x9bc7ff, INITIAL_FOG_NEAR, INITIAL_FOG_FAR);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, INITIAL_CAMERA_FAR);
 camera.rotation.order = "YXZ";
 const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -451,7 +533,7 @@ function detectGraphicsDeviceLabelFromRenderer(targetRenderer) {
         const vendorLabel = debugExt
             ? gl.getParameter(debugExt.UNMASKED_VENDOR_WEBGL)
             : gl.getParameter(gl.VENDOR);
-        const rendererText = String(rendererLabel || "").trim();
+        const rendererText = simplifyRendererLabel(rendererLabel);
         const vendorText = String(vendorLabel || "").trim();
         if (rendererText && vendorText && !rendererText.toLowerCase().includes(vendorText.toLowerCase())) {
             return `${rendererText} (${vendorText})`;
@@ -462,7 +544,25 @@ function detectGraphicsDeviceLabelFromRenderer(targetRenderer) {
     }
 }
 
+function detectGraphicsContextPowerPreference(targetRenderer) {
+    if (!targetRenderer) {
+        return "default";
+    }
+    try {
+        const gl = targetRenderer.getContext?.();
+        const attrs = gl?.getContextAttributes?.();
+        const powerPreference = String(attrs?.powerPreference || "default");
+        if (powerPreference === "high-performance" || powerPreference === "low-power" || powerPreference === "default") {
+            return powerPreference;
+        }
+    } catch (error) {
+    }
+    return "default";
+}
+
 const INITIAL_GRAPHICS_DEVICE_LABEL = detectGraphicsDeviceLabelFromRenderer(renderer);
+const INITIAL_GRAPHICS_CONTEXT_POWER_PREFERENCE = detectGraphicsContextPowerPreference(renderer);
+const INITIAL_GRAPHICS_DEVICE_CATEGORY = classifyGraphicsAdapterLabel(INITIAL_GRAPHICS_DEVICE_LABEL);
 const basePixelRatio = Math.min(window.devicePixelRatio, 2);
 renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1150,6 +1250,8 @@ const perfState = {
     qualityPreset: "auto",
     graphicsMode: INITIAL_GRAPHICS_MODE,
     graphicsDeviceLabel: INITIAL_GRAPHICS_DEVICE_LABEL,
+    graphicsDeviceCategory: INITIAL_GRAPHICS_DEVICE_CATEGORY,
+    graphicsContextPowerPreference: INITIAL_GRAPHICS_CONTEXT_POWER_PREFERENCE,
     statsTick: 0,
     drawCalls: 0,
     triangles: 0,
@@ -1173,7 +1275,12 @@ const skyState = {
     shadowRefreshTimer: 0,
     lastShadowAnchorX: 0,
     lastShadowAnchorZ: 0,
-    lastShadowSunY: 0
+    lastShadowSunY: 0,
+    fogSampleTimer: 0,
+    fogNear: INITIAL_FOG_NEAR,
+    fogFar: INITIAL_FOG_FAR,
+    fogTargetNear: INITIAL_FOG_NEAR,
+    fogTargetFar: INITIAL_FOG_FAR
 };
 
 const uiState = {
@@ -1676,6 +1783,39 @@ function loadSunflowerCurrency() {
     updateSunflowerCurrencyHud();
 }
 
+function syncCameraViewDistanceWithChunkRadius() {
+    const baseViewDistance = getBaseViewDistanceForChunkRadius(state.chunkRadius);
+    const targetFar = THREE.MathUtils.clamp(baseViewDistance + CAMERA_FAR_PADDING, CAMERA_MIN_FAR, CAMERA_MAX_FAR);
+    if (Math.abs(camera.far - targetFar) > 0.5) {
+        camera.far = targetFar;
+        camera.updateProjectionMatrix();
+    }
+}
+
+function resolveGraphicsModeUiLabel(mode) {
+    if (mode === GRAPHICS_MODE.DEDICATED) return "preferir dedicada";
+    if (mode === GRAPHICS_MODE.INTEGRATED) return "preferir integrada";
+    if (mode === GRAPHICS_MODE.SOFTWARE) return "software";
+    return "auto";
+}
+
+function buildGraphicsModeHelpText() {
+    const modeLabel = resolveGraphicsModeUiLabel(perfState.graphicsMode);
+    const contextPowerPreference = String(perfState.graphicsContextPowerPreference || "default");
+    const category = String(perfState.graphicsDeviceCategory || "unknown");
+    const baseMessage = `Modo GPU: ${modeLabel}. Contexto WebGL: ${contextPowerPreference}. En web esto es una sugerencia al navegador/SO.`;
+
+    if (perfState.graphicsMode === GRAPHICS_MODE.DEDICATED && category !== "dedicated") {
+        return `${baseMessage} Si quieres forzar dedicada: Windows > Sistema > Pantalla > Graficos > navegador > Alto rendimiento, activar aceleracion por hardware y reiniciar el navegador.`;
+    }
+
+    if (perfState.graphicsMode === GRAPHICS_MODE.INTEGRATED && category === "dedicated") {
+        return `${baseMessage} El sistema priorizo GPU dedicada; ajusta el navegador en Graficos de Windows a "Ahorro de energia" si necesitas integrada.`;
+    }
+
+    return baseMessage;
+}
+
 function updateGameplaySettingsUi() {
     if (chunkRadiusSliderEl) {
         chunkRadiusSliderEl.value = String(state.chunkRadius);
@@ -1700,10 +1840,11 @@ function updateGameplaySettingsUi() {
         graphicsModeSelectEl.value = perfState.graphicsMode;
     }
     if (graphicsModeHelpEl) {
-        graphicsModeHelpEl.textContent = "Nota: en web esto es una preferencia. El navegador/Windows decide la GPU final.";
+        graphicsModeHelpEl.textContent = buildGraphicsModeHelpText();
     }
     if (graphicsDeviceLabelEl) {
-        graphicsDeviceLabelEl.textContent = `GPU activa: ${perfState.graphicsDeviceLabel || "No disponible"}`;
+        const categoryLabel = getGraphicsDeviceCategoryLabel(perfState.graphicsDeviceCategory);
+        graphicsDeviceLabelEl.textContent = `GPU activa: ${perfState.graphicsDeviceLabel || "No disponible"} | Tipo: ${categoryLabel} | Contexto: ${perfState.graphicsContextPowerPreference}`;
     }
 
     if (flightModeToggleEl) {
@@ -1767,6 +1908,9 @@ function setGraphicsMode(mode, persist = true, showFeedback = false) {
     const normalized = normalizeGraphicsMode(mode);
     const changed = normalized !== perfState.graphicsMode;
     perfState.graphicsMode = normalized;
+    perfState.graphicsContextPowerPreference = detectGraphicsContextPowerPreference(renderer);
+    perfState.graphicsDeviceLabel = detectGraphicsDeviceLabelFromRenderer(renderer);
+    perfState.graphicsDeviceCategory = classifyGraphicsAdapterLabel(perfState.graphicsDeviceLabel);
 
     if (persist) {
         writeStorageValue(GRAPHICS_MODE_STORAGE_KEY, normalized);
@@ -1788,7 +1932,7 @@ function setGraphicsMode(mode, persist = true, showFeedback = false) {
         : normalized === GRAPHICS_MODE.INTEGRATED
             ? "preferir GPU integrada"
             : "auto";
-    showToast(`Preferencia GPU: ${label}${changed ? " (requiere recarga)" : ""}. El navegador puede ignorarla.`, "info", 2400);
+    showToast(`Preferencia GPU: ${label}${changed ? " (requiere recarga)" : ""}. En web no se puede forzar desde JavaScript.`, "info", 2600);
     if (changed) {
         let shouldReload = false;
         try {
@@ -1876,6 +2020,7 @@ function setFlightMode(enabled, persist = true, showFeedback = false) {
 function loadGameplayPreferences() {
     const storedChunkRadius = clampInt(readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius), 2, 16);
     state.chunkRadius = storedChunkRadius;
+    syncCameraViewDistanceWithChunkRadius();
 
     const storedPointerSensitivity = readStorageNumber(POINTER_SENSITIVITY_STORAGE_KEY, DEFAULT_POINTER_SPEED);
     setPointerSensitivity(storedPointerSensitivity, false, false);
@@ -3218,6 +3363,50 @@ function resolveRemoteAvatarYaw(yawValue) {
     return (Number.isFinite(yaw) ? yaw : 0) + REMOTE_AVATAR_YAW_OFFSET;
 }
 
+function computeFogTargetsForPlayerEnvironment(dayFactor, twilightFactor) {
+    const playerX = Math.floor(state.playerPosition.x);
+    const playerZ = Math.floor(state.playerPosition.z);
+    const column = getColumnInfo(playerX, playerZ);
+    const biome = String(column?.biome || BIOME.PLAINS);
+    const moisture01 = clamp01((Number(column?.moisture) + 1) * 0.5);
+    const terrainHeight = Number(column?.height) || SEA_LEVEL;
+    const altitudeFactor = smoothstep(SEA_LEVEL + 54, SEA_LEVEL + 132, terrainHeight);
+    const driftSignal = valueNoise2D(
+        playerX + skyState.cycleSeconds * 2.1,
+        playerZ - skyState.cycleSeconds * 1.7,
+        0.012,
+        877
+    );
+    const drift01 = clamp01((driftSignal + 1) * 0.5);
+
+    let biomeHaze = 0.035;
+    if (biome === BIOME.MARITIME) biomeHaze = 0.17;
+    else if (biome === BIOME.LAKE) biomeHaze = 0.16;
+    else if (biome === BIOME.COAST) biomeHaze = 0.1;
+    else if (biome === BIOME.FOREST) biomeHaze = 0.08;
+    else if (biome === BIOME.CORDILLERA) biomeHaze = 0.1;
+    else if (biome === BIOME.VOLCANIC) biomeHaze = 0.06;
+    else if (biome === BIOME.DESERT) biomeHaze = 0.012;
+    else if (biome === BIOME.SPAWN_VALLEY) biomeHaze = 0.04;
+
+    let haze = biomeHaze
+        + moisture01 * 0.08
+        + twilightFactor * 0.06
+        + (1 - dayFactor) * 0.035;
+
+    if (biome !== BIOME.DESERT) {
+        haze += altitudeFactor * (0.03 + smoothstep(0.56, 0.9, drift01) * 0.2);
+    } else {
+        haze *= 0.25;
+    }
+
+    haze = clamp01(haze);
+    const baseFar = getBaseViewDistanceForChunkRadius(state.chunkRadius);
+    const far = THREE.MathUtils.clamp(baseFar * (1 - haze * 0.42), 200, baseFar + 6);
+    const near = THREE.MathUtils.clamp(far * (0.11 + haze * 0.15), 24, 220);
+    return { near, far };
+}
+
 function getSkyOrbitAngle(cycleSeconds) {
     const wrapped = ((cycleSeconds % DAY_NIGHT_CYCLE_SECONDS) + DAY_NIGHT_CYCLE_SECONDS) % DAY_NIGHT_CYCLE_SECONDS;
     if (wrapped < DAY_DURATION_SECONDS) {
@@ -3307,6 +3496,18 @@ function updateSky(deltaSeconds) {
     }
     scene.background.copy(skyColorScratch);
     scene.fog.color.copy(skyColorScratch);
+    skyState.fogSampleTimer -= deltaSeconds;
+    if (skyState.fogSampleTimer <= 0) {
+        const fogTargets = computeFogTargetsForPlayerEnvironment(dayFactor, twilightFactor);
+        skyState.fogTargetNear = fogTargets.near;
+        skyState.fogTargetFar = fogTargets.far;
+        skyState.fogSampleTimer = FOG_SAMPLE_INTERVAL_SECONDS;
+    }
+    const fogBlendAlpha = 1 - Math.exp(-FOG_BLEND_SPEED * Math.max(0, deltaSeconds));
+    skyState.fogNear = lerp(skyState.fogNear, skyState.fogTargetNear, fogBlendAlpha);
+    skyState.fogFar = lerp(skyState.fogFar, skyState.fogTargetFar, fogBlendAlpha);
+    scene.fog.near = skyState.fogNear;
+    scene.fog.far = Math.max(scene.fog.near + 26, skyState.fogFar);
 
     sun.intensity = 0.14 + dayFactor * 1.08;
     moon.intensity = 0.03 + nightFactor * 0.26;
@@ -10474,6 +10675,7 @@ function setChunkRadius(nextRadius) {
     const changed = clamped !== state.chunkRadius;
 
     state.chunkRadius = clamped;
+    syncCameraViewDistanceWithChunkRadius();
     updateGameplaySettingsUi();
 
     writeStorageValue(CHUNK_RADIUS_STORAGE_KEY, clamped);
