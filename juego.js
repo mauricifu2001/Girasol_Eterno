@@ -10560,38 +10560,56 @@ function rebuildChunkMeshFar(chunk, sampleStep = 2) {
 
     for (let lx = 0; lx < CHUNK_SIZE; lx += step) {
         for (let lz = 0; lz < CHUNK_SIZE; lz += step) {
-            const sampleX = baseX + Math.min(CHUNK_SIZE - 1, lx + Math.floor(step * 0.5));
-            const sampleZ = baseZ + Math.min(CHUNK_SIZE - 1, lz + Math.floor(step * 0.5));
             const x = baseX + lx;
             const z = baseZ + lz;
-            const column = getColumnInfo(sampleX, sampleZ);
-            let y = clampInt(column.height, 0, WORLD_MAX_Y - 1);
-            let id = getBlock(sampleX, y, sampleZ);
+            let bestY = -1;
+            let bestBlockId = BLOCK.AIR;
+            const cellMaxX = Math.min(CHUNK_SIZE, lx + step);
+            const cellMaxZ = Math.min(CHUNK_SIZE, lz + step);
 
-            if (y < SEA_LEVEL) {
-                const waterId = getBlock(sampleX, SEA_LEVEL, sampleZ);
-                if (LIQUID_BLOCK_IDS.has(waterId)) {
-                    y = SEA_LEVEL;
-                    id = waterId;
+            for (let ox = lx; ox < cellMaxX; ox += 1) {
+                for (let oz = lz; oz < cellMaxZ; oz += 1) {
+                    const sampleX = baseX + ox;
+                    const sampleZ = baseZ + oz;
+                    const column = getColumnInfo(sampleX, sampleZ);
+                    let sampleY = clampInt(column.height, 0, WORLD_MAX_Y - 1);
+                    let sampleId = getBlock(sampleX, sampleY, sampleZ);
+
+                    if (sampleY < SEA_LEVEL) {
+                        const waterId = getBlock(sampleX, SEA_LEVEL, sampleZ);
+                        if (LIQUID_BLOCK_IDS.has(waterId)) {
+                            sampleY = SEA_LEVEL;
+                            sampleId = waterId;
+                        }
+                    }
+
+                    if (sampleId === BLOCK.AIR) {
+                        continue;
+                    }
+
+                    if (sampleY > bestY) {
+                        bestY = sampleY;
+                        bestBlockId = sampleId;
+                    }
                 }
             }
 
-            if (id === BLOCK.AIR) {
+            if (bestBlockId === BLOCK.AIR || bestY < 0) {
                 continue;
             }
 
             let baseY = 0;
-            let columnHeight = Math.max(1, y + 1);
-            if (LIQUID_BLOCK_IDS.has(id)) {
+            let columnHeight = Math.max(1, bestY + 1);
+            if (LIQUID_BLOCK_IDS.has(bestBlockId)) {
                 // Far liquids are rendered as thin surface tiles to avoid giant water columns.
-                baseY = y;
+                baseY = bestY;
                 columnHeight = 1;
             }
 
-            let columns = columnsByBlock.get(id);
+            let columns = columnsByBlock.get(bestBlockId);
             if (!columns) {
                 columns = [];
-                columnsByBlock.set(id, columns);
+                columnsByBlock.set(bestBlockId, columns);
             }
             columns.push(x, baseY, z, columnHeight);
         }
@@ -10847,7 +10865,12 @@ function popNextChunkRebuildKey(centerCx, centerCz, forwardX, forwardZ) {
         const dz = chunk.cz - centerCz;
         const distance = Math.abs(dx) + Math.abs(dz);
         const forwardBias = dx * forwardX + dz * forwardZ;
-        const score = distance * 8 - forwardBias;
+        let score = distance * 8 - forwardBias;
+        if (chunk.desiredLod === "full" && chunk.lodLevel !== "full") {
+            score -= 1200;
+        } else if (chunk.desiredLod === "far2" && chunk.lodLevel === "far4") {
+            score -= 280;
+        }
 
         if (score < bestScore) {
             bestScore = score;
