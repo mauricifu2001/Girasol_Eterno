@@ -150,6 +150,26 @@ const PROFILE_COLORS = {
     Valentina: "#ff96c9"
 };
 
+const FLORA_DECOR_COLORS = Object.freeze({
+    stemDark: 0x3f7436,
+    stemFresh: 0x5a8e46,
+    grassDark: 0x3f7f2f,
+    grassMid: 0x5a973e,
+    grassBright: 0x7cb356,
+    leafDense: 0x4d8944,
+    leafSoft: 0x78a861,
+    leafCoastal: 0x6c9962,
+    leafCold: 0x73909a,
+    petalBlue: 0x5e82db,
+    petalPink: 0xcd9ad8,
+    petalRed: 0xbf5047,
+    petalYellow: 0xd7b75a,
+    petalWhite: 0xe6edf8,
+    berry: 0xb84f86,
+    dryStem: 0x8f744b,
+    dryLeaf: 0xa38a5a
+});
+
 const RABBIT_VARIANTS = [
     {
         id: "nube",
@@ -1145,6 +1165,10 @@ const propTypeIndex = new Map(Object.values(PROP_TYPE).map((type) => [type, new 
 const blockMeshes = [];
 const blockPositionLookup = new Map();
 const chunkBuildMatrixScratch = new THREE.Matrix4();
+const floraInstancePositionScratch = new THREE.Vector3();
+const floraInstanceScaleScratch = new THREE.Vector3();
+const floraInstanceEulerScratch = new THREE.Euler();
+const floraInstanceQuaternionScratch = new THREE.Quaternion();
 
 const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
@@ -1306,6 +1330,8 @@ const mapState = {
     homePin: null,
     mode: MAP_MODE.LOCAL,
     globalZoom: 1,
+    globalCenterX: 0,
+    globalCenterZ: 0,
     refreshTick: 0,
     sampleCanvas: null,
     sampleCtx: null,
@@ -2151,14 +2177,12 @@ function getMapTerrainColor(column) {
     const height = Number(column?.height) || SEA_LEVEL;
     const biome = String(column?.biome || BIOME.PLAINS);
     const mountainMask = THREE.MathUtils.clamp(Number(column?.mountainMask) || 0, 0, 1);
-    const riverMask = THREE.MathUtils.clamp(Number(column?.riverMask) || 0, 0, 1);
-    const lakeMask = THREE.MathUtils.clamp(Number(column?.lakeMask) || 0, 0, 1);
     const snowMask = THREE.MathUtils.clamp(Number(column?.snowMask) || 0, 0, 1);
     const rockiness = THREE.MathUtils.clamp(Number(column?.rockiness) || 0, 0, 1);
     const moisture = THREE.MathUtils.clamp((Number(column?.moisture) || 0) * 0.5 + 0.5, 0, 1);
     const temperature = THREE.MathUtils.clamp((Number(column?.temperature) || 0) * 0.5 + 0.5, 0, 1);
 
-    if (height <= SEA_LEVEL || riverMask > 0.27 || lakeMask > 0.24 || biome === BIOME.MARITIME || biome === BIOME.LAKE) {
+    if (height < SEA_LEVEL) {
         const depth = clamp01((SEA_LEVEL - height + 6) / 64);
         return {
             r: clampByte(34 + depth * 22),
@@ -2248,13 +2272,7 @@ function isMapBlockingGameplay() {
 
 function getMapCenterForMode(mode) {
     if (normalizeMapMode(mode) === MAP_MODE.GLOBAL) {
-        if (mapState.globalZoom > 1.02) {
-            return {
-                x: Number(state.playerPosition.x) || 0,
-                z: Number(state.playerPosition.z) || 0
-            };
-        }
-        return { x: 0, z: 0 };
+        return getGlobalMapCenter();
     }
     return {
         x: Number(state.playerPosition.x) || 0,
@@ -2275,6 +2293,30 @@ function getMapEffectiveRange(mode) {
     }
     const zoom = THREE.MathUtils.clamp(Number(mapState.globalZoom) || 1, GLOBAL_MAP_MIN_ZOOM, GLOBAL_MAP_MAX_ZOOM);
     return baseRange / zoom;
+}
+
+function clampGlobalMapCenter(centerX, centerZ, effectiveRange = getMapEffectiveRange(MAP_MODE.GLOBAL)) {
+    const baseRange = GLOBAL_MAP_VIEW_RADIUS_BLOCKS;
+    const safeRange = THREE.MathUtils.clamp(
+        Number(effectiveRange) || baseRange,
+        1,
+        baseRange
+    );
+    const maxOffset = Math.max(0, baseRange - safeRange);
+    return {
+        x: THREE.MathUtils.clamp(Number(centerX) || 0, -maxOffset, maxOffset),
+        z: THREE.MathUtils.clamp(Number(centerZ) || 0, -maxOffset, maxOffset)
+    };
+}
+
+function setGlobalMapCenter(centerX, centerZ, effectiveRange = getMapEffectiveRange(MAP_MODE.GLOBAL)) {
+    const clamped = clampGlobalMapCenter(centerX, centerZ, effectiveRange);
+    mapState.globalCenterX = clamped.x;
+    mapState.globalCenterZ = clamped.z;
+}
+
+function getGlobalMapCenter() {
+    return clampGlobalMapCenter(mapState.globalCenterX, mapState.globalCenterZ);
 }
 
 function updateMapModeButtons() {
@@ -2623,6 +2665,7 @@ function setMapMode(mode, showFeedback = false) {
     mapState.mode = nextMode;
     if (mapState.mode !== MAP_MODE.GLOBAL) {
         mapState.globalZoom = 1;
+        setGlobalMapCenter(0, 0, GLOBAL_MAP_VIEW_RADIUS_BLOCKS);
     }
     mapState.refreshTick = 0;
     updateMapModeButtons();
@@ -3704,7 +3747,58 @@ function clearWildlife() {
     }
 }
 
-function trySpawnRabbitNearPlayer(force = false) {
+function collectWildlifeAnchorPoints() {
+    const anchors = [];
+    const localX = Number(state.playerPosition.x);
+    const localZ = Number(state.playerPosition.z);
+    if (Number.isFinite(localX) && Number.isFinite(localZ)) {
+        anchors.push({ x: localX, z: localZ });
+    }
+
+    for (const remoteNode of multiplayer.remotePlayers.values()) {
+        const remoteX = Number(remoteNode?.targetPosition?.x ?? remoteNode?.group?.position?.x);
+        const remoteZ = Number(remoteNode?.targetPosition?.z ?? remoteNode?.group?.position?.z);
+        if (!Number.isFinite(remoteX) || !Number.isFinite(remoteZ)) {
+            continue;
+        }
+        anchors.push({ x: remoteX, z: remoteZ });
+    }
+
+    if (!anchors.length) {
+        anchors.push({ x: 0, z: 0 });
+    }
+    return anchors;
+}
+
+function getNearestAnchorDistanceSq(x, z, anchors) {
+    const targetX = Number(x);
+    const targetZ = Number(z);
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetZ)) {
+        return Number.POSITIVE_INFINITY;
+    }
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const anchor of anchors) {
+        const dx = targetX - anchor.x;
+        const dz = targetZ - anchor.z;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < nearest) {
+            nearest = distSq;
+        }
+    }
+    return nearest;
+}
+
+function pickWildlifeSpawnAnchor(anchors) {
+    if (!Array.isArray(anchors) || anchors.length === 0) {
+        return {
+            x: Number(state.playerPosition.x) || 0,
+            z: Number(state.playerPosition.z) || 0
+        };
+    }
+    return anchors[Math.floor(Math.random() * anchors.length)] || anchors[0];
+}
+
+function trySpawnRabbitNearPlayer(force = false, anchorX = state.playerPosition.x, anchorZ = state.playerPosition.z) {
     if (!force && !state.worldStarted) {
         return false;
     }
@@ -3714,24 +3808,21 @@ function trySpawnRabbitNearPlayer(force = false) {
     }
 
     const searchRadius = Math.max(28, state.chunkRadius * CHUNK_SIZE * 2.4);
+    const originX = Number(anchorX) || 0;
+    const originZ = Number(anchorZ) || 0;
 
     for (let attempt = 0; attempt < RABBIT_SPAWN_ATTEMPTS; attempt += 1) {
         const angle = Math.random() * Math.PI * 2;
         const distance = randomInRange(RABBIT_MIN_PLAYER_DISTANCE + 8, searchRadius);
-        const candidateX = state.playerPosition.x + Math.cos(angle) * distance;
-        const candidateZ = state.playerPosition.z + Math.sin(angle) * distance;
+        const candidateX = originX + Math.cos(angle) * distance;
+        const candidateZ = originZ + Math.sin(angle) * distance;
         const spawnPoint = sampleSurfaceForRabbit(candidateX, candidateZ);
         if (!spawnPoint) {
             continue;
         }
 
-        const spawnChunkKey = chunkKey(worldToChunkCoord(spawnPoint.x), worldToChunkCoord(spawnPoint.z));
-        if (!chunkMap.has(spawnChunkKey)) {
-            continue;
-        }
-
-        const playerDx = spawnPoint.x - state.playerPosition.x;
-        const playerDz = spawnPoint.z - state.playerPosition.z;
+        const playerDx = spawnPoint.x - originX;
+        const playerDz = spawnPoint.z - originZ;
         if (playerDx * playerDx + playerDz * playerDz < RABBIT_MIN_PLAYER_DISTANCE * RABBIT_MIN_PLAYER_DISTANCE) {
             continue;
         }
@@ -3807,13 +3898,6 @@ function pickRabbitTarget(rabbit) {
 }
 
 function updateSingleRabbit(rabbitId, rabbit, deltaSeconds) {
-    const dxPlayer = rabbit.x - state.playerPosition.x;
-    const dzPlayer = rabbit.z - state.playerPosition.z;
-    if (dxPlayer * dxPlayer + dzPlayer * dzPlayer > RABBIT_DESPAWN_DISTANCE * RABBIT_DESPAWN_DISTANCE) {
-        removeRabbitEntity(rabbitId);
-        return;
-    }
-
     rabbit.roamTimer -= deltaSeconds;
     rabbit.idleTimer -= deltaSeconds;
 
@@ -3902,6 +3986,7 @@ function updateWildlife(deltaSeconds) {
         return;
     }
 
+    const anchors = collectWildlifeAnchorPoints();
     wildlifeState.spawnTimer -= deltaSeconds;
     if (wildlifeState.spawnTimer <= 0) {
         resetRabbitSpawnTimer();
@@ -3911,7 +3996,8 @@ function updateWildlife(deltaSeconds) {
         if (Math.random() < spawnChance) {
             const spawnBursts = 1;
             for (let i = 0; i < spawnBursts; i += 1) {
-                if (!trySpawnRabbitNearPlayer(false)) {
+                const spawnAnchor = pickWildlifeSpawnAnchor(anchors);
+                if (!trySpawnRabbitNearPlayer(false, spawnAnchor.x, spawnAnchor.z)) {
                     break;
                 }
             }
@@ -3919,19 +4005,14 @@ function updateWildlife(deltaSeconds) {
     }
 
     for (const [rabbitId, rabbit] of Array.from(wildlifeState.rabbits.entries())) {
-        const dx = rabbit.x - state.playerPosition.x;
-        const dz = rabbit.z - state.playerPosition.z;
-        if (dx * dx + dz * dz > RABBIT_DESPAWN_DISTANCE * RABBIT_DESPAWN_DISTANCE) {
+        const nearestDistanceSq = getNearestAnchorDistanceSq(rabbit.x, rabbit.z, anchors);
+        if (nearestDistanceSq > RABBIT_DESPAWN_DISTANCE * RABBIT_DESPAWN_DISTANCE) {
             removeRabbitEntity(rabbitId);
             continue;
         }
 
         const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(rabbit.x, rabbit.z);
         rabbit.node.visible = isVisibleInLoadedChunk;
-        if (!isVisibleInLoadedChunk) {
-            continue;
-        }
-
         updateSingleRabbit(rabbitId, rabbit, deltaSeconds);
     }
 }
@@ -4167,7 +4248,7 @@ function clearFish() {
     }
 }
 
-function trySpawnFishNearPlayer(force = false) {
+function trySpawnFishNearPlayer(force = false, anchorX = state.playerPosition.x, anchorZ = state.playerPosition.z) {
     if (!force && !state.worldStarted) {
         return false;
     }
@@ -4176,24 +4257,21 @@ function trySpawnFishNearPlayer(force = false) {
     }
 
     const searchRadius = Math.max(52, state.chunkRadius * CHUNK_SIZE * 3.8);
+    const originX = Number(anchorX) || 0;
+    const originZ = Number(anchorZ) || 0;
     for (let attempt = 0; attempt < FISH_SPAWN_ATTEMPTS; attempt += 1) {
         const angle = Math.random() * Math.PI * 2;
         const distance = randomInRange(FISH_MIN_PLAYER_DISTANCE + 7, searchRadius);
-        const candidateX = state.playerPosition.x + Math.cos(angle) * distance;
-        const candidateZ = state.playerPosition.z + Math.sin(angle) * distance;
+        const candidateX = originX + Math.cos(angle) * distance;
+        const candidateZ = originZ + Math.sin(angle) * distance;
         const variant = pickFishVariant();
         const spawnPoint = sampleSurfaceForFish(candidateX, candidateZ, variant);
         if (!spawnPoint) {
             continue;
         }
 
-        const spawnChunkKey = chunkKey(worldToChunkCoord(spawnPoint.x), worldToChunkCoord(spawnPoint.z));
-        if (!chunkMap.has(spawnChunkKey)) {
-            continue;
-        }
-
-        const playerDx = spawnPoint.x - state.playerPosition.x;
-        const playerDz = spawnPoint.z - state.playerPosition.z;
+        const playerDx = spawnPoint.x - originX;
+        const playerDz = spawnPoint.z - originZ;
         if (playerDx * playerDx + playerDz * playerDz < FISH_MIN_PLAYER_DISTANCE * FISH_MIN_PLAYER_DISTANCE) {
             continue;
         }
@@ -4261,13 +4339,6 @@ function pickFishTarget(fish) {
 }
 
 function updateSingleFish(fishId, fish, deltaSeconds) {
-    const dxPlayer = fish.x - state.playerPosition.x;
-    const dzPlayer = fish.z - state.playerPosition.z;
-    if (dxPlayer * dxPlayer + dzPlayer * dzPlayer > FISH_DESPAWN_DISTANCE * FISH_DESPAWN_DISTANCE) {
-        removeFishEntity(fishId);
-        return;
-    }
-
     fish.targetTimer -= deltaSeconds;
     const dx = fish.targetX - fish.x;
     const dy = fish.targetY - fish.y;
@@ -4349,6 +4420,7 @@ function updateFish(deltaSeconds) {
         return;
     }
 
+    const anchors = collectWildlifeAnchorPoints();
     fishState.spawnTimer -= deltaSeconds;
     if (fishState.spawnTimer <= 0) {
         resetFishSpawnTimer();
@@ -4357,7 +4429,8 @@ function updateFish(deltaSeconds) {
         if (Math.random() < spawnChance) {
             const bursts = fishState.fishes.size < 12 ? 4 : (fishState.fishes.size < 30 ? 2 : 1);
             for (let i = 0; i < bursts; i += 1) {
-                if (!trySpawnFishNearPlayer(false)) {
+                const spawnAnchor = pickWildlifeSpawnAnchor(anchors);
+                if (!trySpawnFishNearPlayer(false, spawnAnchor.x, spawnAnchor.z)) {
                     break;
                 }
             }
@@ -4365,11 +4438,13 @@ function updateFish(deltaSeconds) {
     }
 
     for (const [fishId, fish] of Array.from(fishState.fishes.entries())) {
-        const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(fish.x, fish.z);
-        fish.node.visible = isVisibleInLoadedChunk;
-        if (!isVisibleInLoadedChunk) {
+        const nearestDistanceSq = getNearestAnchorDistanceSq(fish.x, fish.z, anchors);
+        if (nearestDistanceSq > FISH_DESPAWN_DISTANCE * FISH_DESPAWN_DISTANCE) {
+            removeFishEntity(fishId);
             continue;
         }
+        const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(fish.x, fish.z);
+        fish.node.visible = isVisibleInLoadedChunk;
         updateSingleFish(fishId, fish, deltaSeconds);
     }
 }
@@ -9906,12 +9981,6 @@ function getProceduralBlock(x, y, z) {
         }
 
         if (h > SEA_LEVEL + 1 && biome !== BIOME.MARITIME && biome !== BIOME.LAKE && biome !== BIOME.VOLCANIC) {
-            if (y <= h + 3) {
-                const floraBlock = getGroundFloraBlockAt(x, y, z);
-                if (floraBlock !== BLOCK.AIR) {
-                    return floraBlock;
-                }
-            }
             if (y <= h + 18) {
                 return getTreeBlockAt(x, y, z);
             }
@@ -10437,6 +10506,314 @@ function buildChunkColumnMeshYRanges(baseX, baseZ) {
     return { minYByColumn, maxYByColumn };
 }
 
+function pushFloraDecorInstance(instancesByColor, colorHex, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) {
+    const key = Number(colorHex) >>> 0;
+    let instances = instancesByColor.get(key);
+    if (!instances) {
+        instances = [];
+        instancesByColor.set(key, instances);
+    }
+    instances.push(x, y, z, sx, sy, sz, rx, ry, rz);
+}
+
+function emitFloraDecorForColumn(instancesByColor, x, z, column, grassDensityScale = 1) {
+    const floraType = String(column?.floraType || "none");
+    const groundY = Number(column?.height);
+    if (!Number.isFinite(groundY)) {
+        return;
+    }
+
+    const groundBlockY = clampInt(Math.floor(groundY), 0, WORLD_MAX_Y - 2);
+    if (getBlock(x, groundBlockY + 1, z) !== BLOCK.AIR) {
+        return;
+    }
+
+    const biome = String(column?.biome || BIOME.PLAINS);
+    const groundBlockId = getBlock(x, groundBlockY, z);
+    const rootX = x + 0.5;
+    const rootY = groundY + 0.02;
+    const rootZ = z + 0.5;
+
+    const canEmitGrass = (
+        grassDensityScale > 0.01
+        && groundBlockId === BLOCK.GRASS
+        && biome !== BIOME.DESERT
+        && biome !== BIOME.MARITIME
+        && biome !== BIOME.LAKE
+        && biome !== BIOME.VOLCANIC
+    );
+    if (canEmitGrass) {
+        const moisture01 = clamp01((Number(column?.moisture) || 0) * 0.5 + 0.5);
+        const temperature01 = clamp01((Number(column?.temperature) || 0) * 0.5 + 0.5);
+        let biomeBias = 0;
+        if (biome === BIOME.FOREST) biomeBias = 0.2;
+        else if (biome === BIOME.PLAINS || biome === BIOME.SPAWN_VALLEY) biomeBias = 0.15;
+        else if (biome === BIOME.COAST) biomeBias = 0.1;
+        else if (biome === BIOME.CORDILLERA) biomeBias = 0.06;
+
+        let grassDensity = 0.12 + moisture01 * 0.28 + temperature01 * 0.08 + biomeBias;
+        if (floraType !== "none") {
+            grassDensity -= 0.08;
+        }
+        grassDensity = clamp01(grassDensity) * THREE.MathUtils.clamp(Number(grassDensityScale) || 0, 0, 1);
+
+        if (hashUnit(x, z, 1880) < grassDensity) {
+            const tuftScale = 0.72 + hashUnit(x, z, 1881) * 0.94;
+            const tallFactor = hashUnit(x, z, 1882) > 0.78 ? 1.26 : 1;
+            const bladeCount = 4 + (hash2D(x, z, 1883) % 3);
+            const grassPalette = [FLORA_DECOR_COLORS.grassDark, FLORA_DECOR_COLORS.grassMid, FLORA_DECOR_COLORS.grassBright];
+
+            for (let i = 0; i < bladeCount; i += 1) {
+                const angle = (i / bladeCount) * Math.PI * 2 + (hashUnit(x, z, 1890 + i) - 0.5) * 0.42;
+                const spread = 0.035 + hashUnit(x, z, 1910 + i) * 0.07;
+                const bladeHeight = (0.3 + hashUnit(x, z, 1930 + i) * 0.62) * tuftScale * tallFactor;
+                const bladeWidth = 0.032 + hashUnit(x, z, 1950 + i) * 0.028;
+                const bladeDepth = 0.085 + hashUnit(x, z, 1970 + i) * 0.11;
+                const tiltX = (hashUnit(x, z, 1990 + i) - 0.5) * 0.24;
+                const tiltZ = (hashUnit(x, z, 2010 + i) - 0.5) * 0.24;
+                const grassColor = grassPalette[hash2D(x + i * 3, z - i * 5, 2030) % grassPalette.length];
+
+                pushFloraDecorInstance(
+                    instancesByColor,
+                    grassColor,
+                    rootX + Math.cos(angle) * spread,
+                    rootY + bladeHeight * 0.5,
+                    rootZ + Math.sin(angle) * spread,
+                    bladeWidth,
+                    bladeHeight,
+                    bladeDepth,
+                    tiltX,
+                    angle,
+                    tiltZ
+                );
+            }
+        }
+    }
+
+    if (floraType === "none") {
+        return;
+    }
+
+    const floraHeight = clampInt(Number(column?.floraHeight) || 1, 1, 3);
+    const scale = 0.82 + hashUnit(x, z, 1821) * 0.62;
+    const yawJitter = (hashUnit(x, z, 1822) - 0.5) * 0.46;
+    const blossomPalette = [
+        FLORA_DECOR_COLORS.petalBlue,
+        FLORA_DECOR_COLORS.petalPink,
+        FLORA_DECOR_COLORS.petalRed,
+        FLORA_DECOR_COLORS.petalYellow,
+        FLORA_DECOR_COLORS.petalWhite
+    ];
+    const blossomColor = blossomPalette[hash2D(x, z, 1823) % blossomPalette.length];
+
+    const pushPart = (colorHex, sizeX, sizeY, sizeZ, offsetX, offsetY, offsetZ, rotationY = 0, rotationX = 0, rotationZ = 0) => {
+        pushFloraDecorInstance(
+            instancesByColor,
+            colorHex,
+            rootX + offsetX * scale,
+            rootY + offsetY * scale,
+            rootZ + offsetZ * scale,
+            Math.max(0.02, sizeX * scale),
+            Math.max(0.02, sizeY * scale),
+            Math.max(0.02, sizeZ * scale),
+            rotationX,
+            rotationY + yawJitter,
+            rotationZ
+        );
+    };
+
+    if (floraType === "dry_shrub") {
+        const trunkHeight = 0.5 + floraHeight * 0.2;
+        pushPart(FLORA_DECOR_COLORS.dryStem, 0.11, trunkHeight, 0.11, 0, trunkHeight * 0.5, 0, 0);
+        pushPart(FLORA_DECOR_COLORS.dryStem, 0.08, 0.26, 0.08, 0, trunkHeight + 0.12, 0, 0);
+        for (let i = 0; i < 4; i += 1) {
+            const angle = i * (Math.PI * 0.5) + (hashUnit(x, z, 1830 + i) - 0.5) * 0.36;
+            const branchLen = 0.54 + (hashUnit(x, z, 1840 + i) - 0.5) * 0.16;
+            pushPart(
+                FLORA_DECOR_COLORS.dryLeaf,
+                0.08,
+                0.11,
+                branchLen,
+                Math.cos(angle) * 0.14,
+                trunkHeight * 0.58 + (i % 2) * 0.05,
+                Math.sin(angle) * 0.14,
+                angle
+            );
+        }
+        return;
+    }
+
+    if (floraType === "cold_shrub") {
+        const trunkHeight = 0.58 + floraHeight * 0.16;
+        pushPart(FLORA_DECOR_COLORS.stemDark, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+        const leafHeight = 0.46 + floraHeight * 0.1;
+        for (const angle of [0, Math.PI * 0.5, Math.PI * 0.25, -Math.PI * 0.25]) {
+            pushPart(FLORA_DECOR_COLORS.leafCold, 0.08, leafHeight, 0.84, 0, 0.36 + floraHeight * 0.06, 0, angle);
+        }
+        for (let i = 0; i < 3; i += 1) {
+            const angle = i * ((Math.PI * 2) / 3) + 0.35;
+            pushPart(
+                FLORA_DECOR_COLORS.petalWhite,
+                0.18,
+                0.16,
+                0.18,
+                Math.cos(angle) * 0.13,
+                trunkHeight + 0.18,
+                Math.sin(angle) * 0.13,
+                angle
+            );
+        }
+        pushPart(FLORA_DECOR_COLORS.petalPink, 0.18, 0.18, 0.18, 0, trunkHeight + 0.26, 0, 0);
+        return;
+    }
+
+    if (floraType === "coastal_bush") {
+        const trunkHeight = 0.64 + floraHeight * 0.22;
+        pushPart(FLORA_DECOR_COLORS.stemFresh, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+        for (let i = 0; i < 5; i += 1) {
+            const angle = i * ((Math.PI * 2) / 5);
+            const radius = 0.12 + (i % 2) * 0.05;
+            pushPart(
+                FLORA_DECOR_COLORS.leafCoastal,
+                0.08,
+                0.78 + (i % 2) * 0.14,
+                0.74,
+                Math.cos(angle) * radius,
+                trunkHeight * 0.58,
+                Math.sin(angle) * radius,
+                angle
+            );
+        }
+        if (hashUnit(x, z, 1857) > 0.55) {
+            pushPart(blossomColor, 0.2, 0.22, 0.2, 0, trunkHeight + 0.22, 0, 0);
+        }
+        return;
+    }
+
+    if (floraType === "berry_shrub") {
+        const trunkHeight = 0.52 + floraHeight * 0.2;
+        pushPart(FLORA_DECOR_COLORS.stemDark, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+        for (const angle of [0, Math.PI * 0.5, Math.PI * 0.25, -Math.PI * 0.25]) {
+            pushPart(FLORA_DECOR_COLORS.leafSoft, 0.09, 0.68, 0.86, 0, 0.38 + floraHeight * 0.06, 0, angle);
+        }
+        for (let i = 0; i < 4; i += 1) {
+            const angle = i * (Math.PI * 0.5) + 0.22;
+            pushPart(
+                FLORA_DECOR_COLORS.berry,
+                0.16,
+                0.14,
+                0.16,
+                Math.cos(angle) * 0.22,
+                0.46 + (i % 2) * 0.08,
+                Math.sin(angle) * 0.22,
+                angle
+            );
+        }
+        pushPart(blossomColor, 0.18, 0.18, 0.18, 0, trunkHeight + 0.18, 0, 0);
+        return;
+    }
+
+    const trunkHeight = 0.54 + floraHeight * 0.18;
+    pushPart(FLORA_DECOR_COLORS.stemDark, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+    for (const angle of [0, Math.PI * 0.5, Math.PI * 0.25, -Math.PI * 0.25]) {
+        pushPart(FLORA_DECOR_COLORS.leafDense, 0.08, 0.66, 0.84, 0, 0.34 + floraHeight * 0.08, 0, angle);
+    }
+    if (hashUnit(x, z, 1860) > 0.4) {
+        for (let i = 0; i < 3; i += 1) {
+            const angle = i * ((Math.PI * 2) / 3) + 0.18;
+            pushPart(
+                blossomColor,
+                0.2,
+                0.18,
+                0.2,
+                Math.cos(angle) * 0.11,
+                trunkHeight + 0.18,
+                Math.sin(angle) * 0.11,
+                angle
+            );
+        }
+    } else {
+        pushPart(FLORA_DECOR_COLORS.leafSoft, 0.24, 0.14, 0.24, 0, trunkHeight + 0.16, 0, 0);
+    }
+}
+
+function addChunkDecorativeFloraMeshes(chunk, baseX, baseZ) {
+    if (!chunk) {
+        return;
+    }
+
+    const playerChunkX = worldToChunkCoord(state.playerPosition.x);
+    const playerChunkZ = worldToChunkCoord(state.playerPosition.z);
+    const chunkDistance = Math.max(Math.abs(chunk.cx - playerChunkX), Math.abs(chunk.cz - playerChunkZ));
+    let grassDensityScale = 1;
+    if (chunkDistance > 10) {
+        grassDensityScale = 0;
+    } else if (chunkDistance > 8) {
+        grassDensityScale = 0.35;
+    } else if (chunkDistance > 6) {
+        grassDensityScale = 0.62;
+    }
+
+    const instancesByColor = new Map();
+    for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
+            const x = baseX + lx;
+            const z = baseZ + lz;
+            const column = getColumnInfo(x, z);
+            emitFloraDecorForColumn(instancesByColor, x, z, column, grassDensityScale);
+        }
+    }
+
+    if (instancesByColor.size === 0) {
+        return;
+    }
+
+    const matrix = chunkBuildMatrixScratch;
+    instancesByColor.forEach((instances, colorHex) => {
+        const count = Math.floor(instances.length / 9);
+        if (count <= 0) {
+            return;
+        }
+
+        const material = getDetailMaterial(colorHex);
+        const mesh = new THREE.InstancedMesh(detailUnitGeometry, material, count);
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.renderOrder = 2;
+        mesh.userData.lookupKeys = [];
+
+        for (let index = 0; index < count; index += 1) {
+            const base = index * 9;
+            floraInstancePositionScratch.set(
+                instances[base],
+                instances[base + 1],
+                instances[base + 2]
+            );
+            floraInstanceScaleScratch.set(
+                instances[base + 3],
+                instances[base + 4],
+                instances[base + 5]
+            );
+            floraInstanceEulerScratch.set(
+                instances[base + 6],
+                instances[base + 7],
+                instances[base + 8]
+            );
+            floraInstanceQuaternionScratch.setFromEuler(floraInstanceEulerScratch);
+            matrix.compose(
+                floraInstancePositionScratch,
+                floraInstanceQuaternionScratch,
+                floraInstanceScaleScratch
+            );
+            mesh.setMatrixAt(index, matrix);
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        worldRoot.add(mesh);
+        chunk.meshes.push(mesh);
+    });
+}
+
 function addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, options = {}) {
     if (!chunk || !(positionsByBlock instanceof Map)) {
         return;
@@ -10549,6 +10926,7 @@ function rebuildChunkMeshFull(chunk) {
         useLiquidSurfaceMesh: true,
         allowShadows: true
     });
+    addChunkDecorativeFloraMeshes(chunk, baseX, baseZ);
 }
 
 function rebuildChunkMeshFar(chunk, sampleStep = 2) {
@@ -12647,6 +13025,8 @@ function tryRemovePlacedPropAtCrosshair() {
 function onMouseWheel(event) {
     if (state.mapOpen && mapState.mode === MAP_MODE.GLOBAL) {
         event.preventDefault();
+        const currentCenter = getGlobalMapCenter();
+        const currentRange = getMapEffectiveRange(MAP_MODE.GLOBAL);
         const factor = event.deltaY > 0 ? 0.88 : 1.12;
         const nextZoom = THREE.MathUtils.clamp(
             mapState.globalZoom * factor,
@@ -12654,7 +13034,24 @@ function onMouseWheel(event) {
             GLOBAL_MAP_MAX_ZOOM
         );
         if (Math.abs(nextZoom - mapState.globalZoom) > 1e-4) {
+            let anchorNormX = 0.5;
+            let anchorNormY = 0.5;
+            const rect = worldMapCanvasEl?.getBoundingClientRect?.();
+            if (rect && rect.width > 0 && rect.height > 0) {
+                const localX = event.clientX - rect.left;
+                const localY = event.clientY - rect.top;
+                if (localX >= 0 && localX <= rect.width && localY >= 0 && localY <= rect.height) {
+                    anchorNormX = THREE.MathUtils.clamp(localX / rect.width, 0, 1);
+                    anchorNormY = THREE.MathUtils.clamp(localY / rect.height, 0, 1);
+                }
+            }
+            const anchorWorldX = currentCenter.x + (anchorNormX * 2 - 1) * currentRange;
+            const anchorWorldZ = currentCenter.z + (anchorNormY * 2 - 1) * currentRange;
             mapState.globalZoom = nextZoom;
+            const nextRange = getMapEffectiveRange(MAP_MODE.GLOBAL);
+            const nextCenterX = anchorWorldX - (anchorNormX * 2 - 1) * nextRange;
+            const nextCenterZ = anchorWorldZ - (anchorNormY * 2 - 1) * nextRange;
+            setGlobalMapCenter(nextCenterX, nextCenterZ, nextRange);
             mapState.refreshTick = 0;
             renderMapPanelNow();
         }
@@ -12767,6 +13164,33 @@ function onKeyDown(event) {
             closeInteractionPanel(false, true);
         }
         setMapOpen(!state.mapOpen, true);
+        return;
+    }
+
+    if (event.code === "KeyF") {
+        event.preventDefault();
+        if (!state.worldStarted || !state.worldReady) {
+            return;
+        }
+        if (state.tutorialVisible) {
+            closeTutorial(true);
+        }
+        if (state.paused) {
+            setPauseMenuOpen(false);
+        }
+        if (state.avatarPreviewOpen) {
+            setAvatarPreviewOpen(false);
+        }
+        if (state.inventoryOpen) {
+            setInventoryOpen(false);
+        }
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
+        if (state.mapOpen && isMapBlockingGameplay()) {
+            setMapOpen(false, false);
+        }
+        setFlightMode(!state.flightEnabled, true, true);
         return;
     }
 
@@ -13301,7 +13725,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-9/0 material - I inventario - M mapa (global: click pin y rueda zoom) - F3 debug - V ver avatar - ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - F vuelo - Rueda o 1-9/0 material - I inventario - M mapa (global: click pin y rueda zoom donde apuntes) - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;
