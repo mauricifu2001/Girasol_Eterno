@@ -49,9 +49,23 @@ function formatMetricCompact(value) {
 
 const WORLD_MAX_Y = 480;
 const CHUNK_SIZE = 16;
-const CHUNK_MANAGEMENT_INTERVAL = 0.22;
+const CHUNK_RADIUS_MIN = 2;
+const CHUNK_RADIUS_MAX = 64;
+const CHUNK_MANAGEMENT_INTERVAL = 0.08;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
-const INITIAL_CHUNK_BUILD_BUDGET = 10;
+const INITIAL_CHUNK_BUILD_BUDGET = 36;
+const CHUNK_FULL_DETAIL_RADIUS_MIN = 8;
+const CHUNK_FULL_DETAIL_RADIUS_MAX = 24;
+const CHUNK_REBUILD_FIFO_POP_THRESHOLD = 2200;
+const CHUNK_REBUILD_FIFO_POP_SCAN_LIMIT = 28;
+const BLOCK_FACE_NEIGHBOR_OFFSETS = Object.freeze([
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1]
+]);
 const COLUMN_CACHE_MAX_ENTRIES = 160000;
 const COLUMN_CACHE_TRIM_TO_ENTRIES = 130000;
 const COLUMN_CACHE_TRIM_BATCH = 4096;
@@ -274,6 +288,15 @@ const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
 const SKY_SHADOW_REFRESH_SECONDS = 0.82;
 const PROP_ROTATION_STEP = Math.PI * 0.5;
+const ENABLE_WORLD_FOG = false;
+const FOG_SAMPLE_INTERVAL_SECONDS = 0.3;
+const FOG_BLEND_SPEED = 2.6;
+const FOG_BASE_PADDING_BLOCKS = 96;
+const FOG_MIN_FAR = 220;
+const FOG_MAX_FAR = CHUNK_RADIUS_MAX * CHUNK_SIZE + FOG_BASE_PADDING_BLOCKS;
+const CAMERA_FAR_PADDING = 120;
+const CAMERA_MIN_FAR = 300;
+const CAMERA_MAX_FAR = FOG_MAX_FAR + CAMERA_FAR_PADDING + 80;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
 const SKY_DUSK_COLOR = new THREE.Color(0xffb579);
 const SKY_NIGHT_COLOR = new THREE.Color(0x091327);
@@ -318,8 +341,8 @@ const TERRAIN_GENERATION_VERSION = 4;
 const WORLD_SEED = Number(gameConfig.worldSeed) || 42173;
 const INITIAL_CHUNK_RADIUS = clampInt(
     Number(urlParams.get("chunks") || gameConfig.renderChunkRadius || 4),
-    2,
-    16
+    CHUNK_RADIUS_MIN,
+    CHUNK_RADIUS_MAX
 );
 
 const canvas = document.getElementById("gameCanvas");
@@ -415,11 +438,85 @@ function readInitialGraphicsModeFromStorage() {
 
 const INITIAL_GRAPHICS_MODE = readInitialGraphicsModeFromStorage();
 
+function getBaseViewDistanceForChunkRadius(chunkRadius) {
+    const radiusBlocks = clampInt(chunkRadius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX) * CHUNK_SIZE;
+    return THREE.MathUtils.clamp(radiusBlocks + FOG_BASE_PADDING_BLOCKS, FOG_MIN_FAR, FOG_MAX_FAR);
+}
+
+function simplifyRendererLabel(rawLabel) {
+    const text = String(rawLabel || "").trim();
+    if (!text) {
+        return "";
+    }
+
+    const angleMatch = text.match(/^ANGLE\s*\((.+)\)$/i);
+    if (!angleMatch) {
+        return text;
+    }
+
+    const parts = angleMatch[1].split(",").map((item) => item.trim()).filter(Boolean);
+    if (parts.length < 2) {
+        return text;
+    }
+
+    const backend = parts[parts.length - 1];
+    const adapter = parts[1] || parts[0];
+    return `${adapter} [ANGLE ${backend}]`;
+}
+
+function classifyGraphicsAdapterLabel(label) {
+    const text = String(label || "").toLowerCase();
+    if (!text || text === "no disponible") {
+        return "unknown";
+    }
+
+    if (text.includes("swiftshader") || text.includes("llvmpipe") || text.includes("software")) {
+        return "software";
+    }
+
+    if (
+        text.includes("geforce")
+        || text.includes("quadro")
+        || text.includes("rtx")
+        || text.includes("radeon rx")
+        || text.includes("radeon pro")
+        || text.includes("intel arc")
+        || text.includes("arc a")
+    ) {
+        return "dedicated";
+    }
+
+    if (
+        text.includes("intel")
+        || text.includes("uhd")
+        || text.includes("iris")
+        || text.includes("vega")
+        || text.includes("radeon graphics")
+        || text.includes("apu")
+    ) {
+        return "integrated";
+    }
+
+    return "unknown";
+}
+
+function getGraphicsDeviceCategoryLabel(category) {
+    if (category === "dedicated") return "dedicada";
+    if (category === "integrated") return "integrada";
+    if (category === "software") return "software";
+    return "sin clasificar";
+}
+
+const INITIAL_BASE_VIEW_DISTANCE = getBaseViewDistanceForChunkRadius(INITIAL_CHUNK_RADIUS);
+const INITIAL_FOG_NEAR = Math.max(24, INITIAL_BASE_VIEW_DISTANCE * 0.14);
+const INITIAL_FOG_FAR = INITIAL_BASE_VIEW_DISTANCE;
+const INITIAL_CAMERA_FAR = THREE.MathUtils.clamp(INITIAL_FOG_FAR + CAMERA_FAR_PADDING, CAMERA_MIN_FAR, CAMERA_MAX_FAR);
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
-scene.fog = new THREE.Fog(0x9bc7ff, 30, 220);
+scene.fog = ENABLE_WORLD_FOG ? new THREE.Fog(0x9bc7ff, INITIAL_FOG_NEAR, INITIAL_FOG_FAR) : null;
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, INITIAL_CAMERA_FAR);
 camera.rotation.order = "YXZ";
 const renderer = new THREE.WebGLRenderer({
     canvas,
@@ -443,7 +540,7 @@ function detectGraphicsDeviceLabelFromRenderer(targetRenderer) {
         const vendorLabel = debugExt
             ? gl.getParameter(debugExt.UNMASKED_VENDOR_WEBGL)
             : gl.getParameter(gl.VENDOR);
-        const rendererText = String(rendererLabel || "").trim();
+        const rendererText = simplifyRendererLabel(rendererLabel);
         const vendorText = String(vendorLabel || "").trim();
         if (rendererText && vendorText && !rendererText.toLowerCase().includes(vendorText.toLowerCase())) {
             return `${rendererText} (${vendorText})`;
@@ -454,7 +551,25 @@ function detectGraphicsDeviceLabelFromRenderer(targetRenderer) {
     }
 }
 
+function detectGraphicsContextPowerPreference(targetRenderer) {
+    if (!targetRenderer) {
+        return "default";
+    }
+    try {
+        const gl = targetRenderer.getContext?.();
+        const attrs = gl?.getContextAttributes?.();
+        const powerPreference = String(attrs?.powerPreference || "default");
+        if (powerPreference === "high-performance" || powerPreference === "low-power" || powerPreference === "default") {
+            return powerPreference;
+        }
+    } catch (error) {
+    }
+    return "default";
+}
+
 const INITIAL_GRAPHICS_DEVICE_LABEL = detectGraphicsDeviceLabelFromRenderer(renderer);
+const INITIAL_GRAPHICS_CONTEXT_POWER_PREFERENCE = detectGraphicsContextPowerPreference(renderer);
+const INITIAL_GRAPHICS_DEVICE_CATEGORY = classifyGraphicsAdapterLabel(INITIAL_GRAPHICS_DEVICE_LABEL);
 const basePixelRatio = Math.min(window.devicePixelRatio, 2);
 renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1019,6 +1134,7 @@ function createDetailPart(size, position, colorHex, rotation = null) {
 
 const chunkMap = new Map();
 const chunkRebuildQueue = new Set();
+const chunkOffsetsByRadiusCache = new Map();
 const editedBlocks = new Map();
 const editedColumnYIndex = new Map();
 const columnCache = new Map();
@@ -1028,6 +1144,7 @@ const propTypeIndex = new Map(Object.values(PROP_TYPE).map((type) => [type, new 
 
 const blockMeshes = [];
 const blockPositionLookup = new Map();
+const chunkBuildMatrixScratch = new THREE.Matrix4();
 
 const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
@@ -1083,6 +1200,8 @@ const state = {
     chunkTick: 0,
     loadedChunkCount: 0,
     pendingChunkBuildCount: 0,
+    lastChunkCenterCx: Number.NaN,
+    lastChunkCenterCz: Number.NaN,
     lastForward: new THREE.Vector3(0, 0, -1),
     autoSaveTick: 0,
     playerStateSaveTick: 0,
@@ -1142,6 +1261,8 @@ const perfState = {
     qualityPreset: "auto",
     graphicsMode: INITIAL_GRAPHICS_MODE,
     graphicsDeviceLabel: INITIAL_GRAPHICS_DEVICE_LABEL,
+    graphicsDeviceCategory: INITIAL_GRAPHICS_DEVICE_CATEGORY,
+    graphicsContextPowerPreference: INITIAL_GRAPHICS_CONTEXT_POWER_PREFERENCE,
     statsTick: 0,
     drawCalls: 0,
     triangles: 0,
@@ -1165,7 +1286,12 @@ const skyState = {
     shadowRefreshTimer: 0,
     lastShadowAnchorX: 0,
     lastShadowAnchorZ: 0,
-    lastShadowSunY: 0
+    lastShadowSunY: 0,
+    fogSampleTimer: 0,
+    fogNear: INITIAL_FOG_NEAR,
+    fogFar: INITIAL_FOG_FAR,
+    fogTargetNear: INITIAL_FOG_NEAR,
+    fogTargetFar: INITIAL_FOG_FAR
 };
 
 const uiState = {
@@ -1668,6 +1794,39 @@ function loadSunflowerCurrency() {
     updateSunflowerCurrencyHud();
 }
 
+function syncCameraViewDistanceWithChunkRadius() {
+    const baseViewDistance = getBaseViewDistanceForChunkRadius(state.chunkRadius);
+    const targetFar = THREE.MathUtils.clamp(baseViewDistance + CAMERA_FAR_PADDING, CAMERA_MIN_FAR, CAMERA_MAX_FAR);
+    if (Math.abs(camera.far - targetFar) > 0.5) {
+        camera.far = targetFar;
+        camera.updateProjectionMatrix();
+    }
+}
+
+function resolveGraphicsModeUiLabel(mode) {
+    if (mode === GRAPHICS_MODE.DEDICATED) return "preferir dedicada";
+    if (mode === GRAPHICS_MODE.INTEGRATED) return "preferir integrada";
+    if (mode === GRAPHICS_MODE.SOFTWARE) return "software";
+    return "auto";
+}
+
+function buildGraphicsModeHelpText() {
+    const modeLabel = resolveGraphicsModeUiLabel(perfState.graphicsMode);
+    const contextPowerPreference = String(perfState.graphicsContextPowerPreference || "default");
+    const category = String(perfState.graphicsDeviceCategory || "unknown");
+    const baseMessage = `Modo GPU: ${modeLabel}. Contexto WebGL: ${contextPowerPreference}. En web esto es una sugerencia al navegador/SO.`;
+
+    if (perfState.graphicsMode === GRAPHICS_MODE.DEDICATED && category !== "dedicated") {
+        return `${baseMessage} Si quieres forzar dedicada: Windows > Sistema > Pantalla > Graficos > navegador > Alto rendimiento, activar aceleracion por hardware y reiniciar el navegador.`;
+    }
+
+    if (perfState.graphicsMode === GRAPHICS_MODE.INTEGRATED && category === "dedicated") {
+        return `${baseMessage} El sistema priorizo GPU dedicada; ajusta el navegador en Graficos de Windows a "Ahorro de energia" si necesitas integrada.`;
+    }
+
+    return baseMessage;
+}
+
 function updateGameplaySettingsUi() {
     if (chunkRadiusSliderEl) {
         chunkRadiusSliderEl.value = String(state.chunkRadius);
@@ -1692,10 +1851,11 @@ function updateGameplaySettingsUi() {
         graphicsModeSelectEl.value = perfState.graphicsMode;
     }
     if (graphicsModeHelpEl) {
-        graphicsModeHelpEl.textContent = "Nota: en web esto es una preferencia. El navegador/Windows decide la GPU final.";
+        graphicsModeHelpEl.textContent = buildGraphicsModeHelpText();
     }
     if (graphicsDeviceLabelEl) {
-        graphicsDeviceLabelEl.textContent = `GPU activa: ${perfState.graphicsDeviceLabel || "No disponible"}`;
+        const categoryLabel = getGraphicsDeviceCategoryLabel(perfState.graphicsDeviceCategory);
+        graphicsDeviceLabelEl.textContent = `GPU activa: ${perfState.graphicsDeviceLabel || "No disponible"} | Tipo: ${categoryLabel} | Contexto: ${perfState.graphicsContextPowerPreference}`;
     }
 
     if (flightModeToggleEl) {
@@ -1759,6 +1919,9 @@ function setGraphicsMode(mode, persist = true, showFeedback = false) {
     const normalized = normalizeGraphicsMode(mode);
     const changed = normalized !== perfState.graphicsMode;
     perfState.graphicsMode = normalized;
+    perfState.graphicsContextPowerPreference = detectGraphicsContextPowerPreference(renderer);
+    perfState.graphicsDeviceLabel = detectGraphicsDeviceLabelFromRenderer(renderer);
+    perfState.graphicsDeviceCategory = classifyGraphicsAdapterLabel(perfState.graphicsDeviceLabel);
 
     if (persist) {
         writeStorageValue(GRAPHICS_MODE_STORAGE_KEY, normalized);
@@ -1780,7 +1943,7 @@ function setGraphicsMode(mode, persist = true, showFeedback = false) {
         : normalized === GRAPHICS_MODE.INTEGRATED
             ? "preferir GPU integrada"
             : "auto";
-    showToast(`Preferencia GPU: ${label}${changed ? " (requiere recarga)" : ""}. El navegador puede ignorarla.`, "info", 2400);
+    showToast(`Preferencia GPU: ${label}${changed ? " (requiere recarga)" : ""}. En web no se puede forzar desde JavaScript.`, "info", 2600);
     if (changed) {
         let shouldReload = false;
         try {
@@ -1866,8 +2029,13 @@ function setFlightMode(enabled, persist = true, showFeedback = false) {
 }
 
 function loadGameplayPreferences() {
-    const storedChunkRadius = clampInt(readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius), 2, 16);
+    const storedChunkRadius = clampInt(
+        readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius),
+        CHUNK_RADIUS_MIN,
+        CHUNK_RADIUS_MAX
+    );
     state.chunkRadius = storedChunkRadius;
+    syncCameraViewDistanceWithChunkRadius();
 
     const storedPointerSensitivity = readStorageNumber(POINTER_SENSITIVITY_STORAGE_KEY, DEFAULT_POINTER_SPEED);
     setPointerSensitivity(storedPointerSensitivity, false, false);
@@ -3210,6 +3378,50 @@ function resolveRemoteAvatarYaw(yawValue) {
     return (Number.isFinite(yaw) ? yaw : 0) + REMOTE_AVATAR_YAW_OFFSET;
 }
 
+function computeFogTargetsForPlayerEnvironment(dayFactor, twilightFactor) {
+    const playerX = Math.floor(state.playerPosition.x);
+    const playerZ = Math.floor(state.playerPosition.z);
+    const column = getColumnInfo(playerX, playerZ);
+    const biome = String(column?.biome || BIOME.PLAINS);
+    const moisture01 = clamp01((Number(column?.moisture) + 1) * 0.5);
+    const terrainHeight = Number(column?.height) || SEA_LEVEL;
+    const altitudeFactor = smoothstep(SEA_LEVEL + 54, SEA_LEVEL + 132, terrainHeight);
+    const driftSignal = valueNoise2D(
+        playerX + skyState.cycleSeconds * 2.1,
+        playerZ - skyState.cycleSeconds * 1.7,
+        0.012,
+        877
+    );
+    const drift01 = clamp01((driftSignal + 1) * 0.5);
+
+    let biomeHaze = 0.035;
+    if (biome === BIOME.MARITIME) biomeHaze = 0.17;
+    else if (biome === BIOME.LAKE) biomeHaze = 0.16;
+    else if (biome === BIOME.COAST) biomeHaze = 0.1;
+    else if (biome === BIOME.FOREST) biomeHaze = 0.08;
+    else if (biome === BIOME.CORDILLERA) biomeHaze = 0.1;
+    else if (biome === BIOME.VOLCANIC) biomeHaze = 0.06;
+    else if (biome === BIOME.DESERT) biomeHaze = 0.012;
+    else if (biome === BIOME.SPAWN_VALLEY) biomeHaze = 0.04;
+
+    let haze = biomeHaze
+        + moisture01 * 0.08
+        + twilightFactor * 0.06
+        + (1 - dayFactor) * 0.035;
+
+    if (biome !== BIOME.DESERT) {
+        haze += altitudeFactor * (0.03 + smoothstep(0.56, 0.9, drift01) * 0.2);
+    } else {
+        haze *= 0.25;
+    }
+
+    haze = clamp01(haze);
+    const baseFar = getBaseViewDistanceForChunkRadius(state.chunkRadius);
+    const far = THREE.MathUtils.clamp(baseFar * (1 - haze * 0.42), 200, baseFar + 6);
+    const near = THREE.MathUtils.clamp(far * (0.11 + haze * 0.15), 24, 220);
+    return { near, far };
+}
+
 function getSkyOrbitAngle(cycleSeconds) {
     const wrapped = ((cycleSeconds % DAY_NIGHT_CYCLE_SECONDS) + DAY_NIGHT_CYCLE_SECONDS) % DAY_NIGHT_CYCLE_SECONDS;
     if (wrapped < DAY_DURATION_SECONDS) {
@@ -3298,7 +3510,21 @@ function updateSky(deltaSeconds) {
         skyColorScratch.lerp(SKY_DUSK_COLOR, twilightFactor * (1 - dayFactor * 0.6));
     }
     scene.background.copy(skyColorScratch);
-    scene.fog.color.copy(skyColorScratch);
+    if (ENABLE_WORLD_FOG && scene.fog) {
+        scene.fog.color.copy(skyColorScratch);
+        skyState.fogSampleTimer -= deltaSeconds;
+        if (skyState.fogSampleTimer <= 0) {
+            const fogTargets = computeFogTargetsForPlayerEnvironment(dayFactor, twilightFactor);
+            skyState.fogTargetNear = fogTargets.near;
+            skyState.fogTargetFar = fogTargets.far;
+            skyState.fogSampleTimer = FOG_SAMPLE_INTERVAL_SECONDS;
+        }
+        const fogBlendAlpha = 1 - Math.exp(-FOG_BLEND_SPEED * Math.max(0, deltaSeconds));
+        skyState.fogNear = lerp(skyState.fogNear, skyState.fogTargetNear, fogBlendAlpha);
+        skyState.fogFar = lerp(skyState.fogFar, skyState.fogTargetFar, fogBlendAlpha);
+        scene.fog.near = skyState.fogNear;
+        scene.fog.far = Math.max(scene.fog.near + 26, skyState.fogFar);
+    }
 
     sun.intensity = 0.14 + dayFactor * 1.08;
     moon.intensity = 0.03 + nightFactor * 0.26;
@@ -8542,8 +8768,44 @@ function getDynamicChunkBuildBudget() {
     if (state.pendingChunkBuildCount > 38 && fps > 50 && frameMs < 20) {
         budget += 1;
     }
+    if (state.pendingChunkBuildCount > 1800 && fps > 48 && frameMs < 21) {
+        budget += 2;
+    }
+    if (state.pendingChunkBuildCount > 5200 && fps > 45 && frameMs < 22) {
+        budget += 3;
+    }
 
-    return clampInt(budget, 1, 4);
+    return clampInt(budget, 1, 12);
+}
+
+function getDynamicChunkBuildFrameBudgetMs() {
+    if (state.pendingChunkBuildCount <= 0) {
+        return 0;
+    }
+
+    const fps = perfState.fpsEma;
+    const frameMs = perfState.frameMsEma;
+
+    let frameBudgetMs = 2.4;
+    if (fps >= 58 && frameMs <= 17) {
+        frameBudgetMs = 4.2;
+    } else if (fps >= 52 && frameMs <= 19.5) {
+        frameBudgetMs = 3.2;
+    } else if (fps <= 42 || frameMs >= 24) {
+        frameBudgetMs = 1.35;
+    }
+
+    if (state.pendingChunkBuildCount > 56 && fps >= 54 && frameMs < 19) {
+        frameBudgetMs += 0.65;
+    }
+    if (state.pendingChunkBuildCount > 1800 && fps >= 48 && frameMs < 21.5) {
+        frameBudgetMs += 1.5;
+    }
+    if (state.pendingChunkBuildCount > 5200 && fps >= 45 && frameMs < 23) {
+        frameBudgetMs += 2.2;
+    }
+
+    return Math.max(1, Math.min(9.2, frameBudgetMs));
 }
 
 let runtimeFirebaseConfigPromise = null;
@@ -9848,6 +10110,10 @@ function getProceduralBlock(x, y, z) {
 }
 
 function getBlock(x, y, z) {
+    if (editedBlocks.size === 0) {
+        return getProceduralBlock(x, y, z);
+    }
+
     const override = editedBlocks.get(blockKey(x, y, z));
     if (override !== undefined) {
         return override;
@@ -9943,17 +10209,9 @@ function doesNeighborOccludeFace(id, neighborId) {
 }
 
 function isBlockVisible(x, y, z, id) {
-    const neighbors = [
-        [1, 0, 0],
-        [-1, 0, 0],
-        [0, 1, 0],
-        [0, -1, 0],
-        [0, 0, 1],
-        [0, 0, -1]
-    ];
-
-    for (const [dx, dy, dz] of neighbors) {
-        const neighborId = getBlock(x + dx, y + dy, z + dz);
+    for (let index = 0; index < BLOCK_FACE_NEIGHBOR_OFFSETS.length; index += 1) {
+        const offset = BLOCK_FACE_NEIGHBOR_OFFSETS[index];
+        const neighborId = getBlock(x + offset[0], y + offset[1], z + offset[2]);
         if (!doesNeighborOccludeFace(id, neighborId)) {
             return true;
         }
@@ -10012,10 +10270,27 @@ function buildLiquidChunkMesh(liquidBlockId, positions) {
     const normalData = [];
     const indexData = [];
 
-    for (const position of positions) {
-        const x = position.x;
-        const y = position.y;
-        const z = position.z;
+    const isFlatArray = typeof positions[0] === "number";
+    const count = isFlatArray ? Math.floor(positions.length / 3) : positions.length;
+    if (count <= 0) {
+        return null;
+    }
+
+    for (let index = 0; index < count; index += 1) {
+        let x;
+        let y;
+        let z;
+        if (isFlatArray) {
+            const base = index * 3;
+            x = positions[base];
+            y = positions[base + 1];
+            z = positions[base + 2];
+        } else {
+            const position = positions[index];
+            x = position.x;
+            y = position.y;
+            z = position.z;
+        }
 
         for (const face of waterFaces) {
             const neighborId = getBlock(
@@ -10051,82 +10326,202 @@ function buildLiquidChunkMesh(liquidBlockId, positions) {
     return mesh;
 }
 
-function getColumnMeshYRange(x, z, column = null) {
-    const centerColumn = column || getColumnInfo(x, z);
-    let minTerrain = centerColumn.height;
-    let maxTerrain = centerColumn.height;
-    let maxVegetationTop = centerColumn.height + 3;
+function buildChunkColumnMeshYRanges(baseX, baseZ) {
+    const padding = 3;
+    const windowSize = 7;
+    const extendedSize = CHUNK_SIZE + padding * 2;
+    const extendedTotal = extendedSize * extendedSize;
+    const hasEditedColumns = editedColumnYIndex.size > 0;
+    const terrainHeights = new Int16Array(extendedTotal);
+    const vegetationTops = new Int16Array(extendedTotal);
+    let editedMins = null;
+    let editedMaxs = null;
 
-    for (let nx = x - 3; nx <= x + 3; nx += 1) {
-        for (let nz = z - 3; nz <= z + 3; nz += 1) {
-            const neighbor = getColumnInfo(nx, nz);
-            const neighborHeight = neighbor.height;
-            if (neighborHeight < minTerrain) minTerrain = neighborHeight;
-            if (neighborHeight > maxTerrain) maxTerrain = neighborHeight;
+    if (hasEditedColumns) {
+        editedMins = new Int16Array(extendedTotal);
+        editedMaxs = new Int16Array(extendedTotal);
+        editedMins.fill(WORLD_MAX_Y);
+        editedMaxs.fill(-1);
+    }
 
-            let vegetationTop = neighborHeight + 3;
-            if (neighbor.hasTree) {
-                vegetationTop = Math.max(vegetationTop, neighborHeight + (Number(neighbor.treeHeight) || 0) + 7);
+    for (let ez = 0; ez < extendedSize; ez += 1) {
+        for (let ex = 0; ex < extendedSize; ex += 1) {
+            const x = baseX + ex - padding;
+            const z = baseZ + ez - padding;
+            const index = ez * extendedSize + ex;
+            const column = getColumnInfo(x, z);
+            const terrainHeight = clampInt(column.height, 0, WORLD_MAX_Y - 1);
+            let vegetationTop = terrainHeight + 3;
+            if (column.hasTree) {
+                vegetationTop = Math.max(vegetationTop, terrainHeight + (Number(column.treeHeight) || 0) + 7);
             }
-            if (neighbor.floraType && neighbor.floraType !== "none") {
-                vegetationTop = Math.max(vegetationTop, neighborHeight + (Number(neighbor.floraHeight) || 1) + 3);
+            if (column.floraType && column.floraType !== "none") {
+                vegetationTop = Math.max(vegetationTop, terrainHeight + (Number(column.floraHeight) || 1) + 3);
             }
-            if (vegetationTop > maxVegetationTop) {
-                maxVegetationTop = vegetationTop;
+
+            terrainHeights[index] = terrainHeight;
+            vegetationTops[index] = clampInt(vegetationTop, 0, WORLD_MAX_Y - 1);
+
+            if (hasEditedColumns) {
+                const editedRange = getEditedColumnRange(x, z);
+                if (editedRange) {
+                    editedMins[index] = clampInt(editedRange.minY, 0, WORLD_MAX_Y - 1);
+                    editedMaxs[index] = clampInt(editedRange.maxY, 0, WORLD_MAX_Y - 1);
+                }
             }
         }
     }
 
-    let minY = Math.max(0, minTerrain - 4);
-    let maxY = Math.min(
-        WORLD_MAX_Y - 1,
-        Math.max(
-            maxTerrain + 6,
-            SEA_LEVEL + 2,
-            maxVegetationTop
-        )
-    );
+    const columnCount = CHUNK_SIZE * CHUNK_SIZE;
+    const minYByColumn = new Int16Array(columnCount);
+    const maxYByColumn = new Int16Array(columnCount);
 
-    for (let nx = x - 3; nx <= x + 3; nx += 1) {
-        for (let nz = z - 3; nz <= z + 3; nz += 1) {
-            const editedRange = getEditedColumnRange(nx, nz);
-            if (!editedRange) {
-                continue;
+    for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
+        for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
+            const centerX = lx + padding;
+            const centerZ = lz + padding;
+            const centerIndex = centerZ * extendedSize + centerX;
+            let minTerrain = terrainHeights[centerIndex];
+            let maxTerrain = terrainHeights[centerIndex];
+            let maxVegetationTop = vegetationTops[centerIndex];
+            let minEdited = WORLD_MAX_Y;
+            let maxEdited = -1;
+
+            for (let wz = 0; wz < windowSize; wz += 1) {
+                const rowBase = (centerZ + wz - padding) * extendedSize + (centerX - padding);
+                for (let wx = 0; wx < windowSize; wx += 1) {
+                    const index = rowBase + wx;
+                    const terrainHeight = terrainHeights[index];
+                    if (terrainHeight < minTerrain) minTerrain = terrainHeight;
+                    if (terrainHeight > maxTerrain) maxTerrain = terrainHeight;
+
+                    const vegetationTop = vegetationTops[index];
+                    if (vegetationTop > maxVegetationTop) {
+                        maxVegetationTop = vegetationTop;
+                    }
+
+                    if (hasEditedColumns && editedMaxs[index] >= 0) {
+                        minEdited = Math.min(minEdited, editedMins[index] - 2);
+                        maxEdited = Math.max(maxEdited, editedMaxs[index] + 2);
+                    }
+                }
             }
-            minY = Math.min(minY, editedRange.minY - 2);
-            maxY = Math.max(maxY, editedRange.maxY + 2);
+
+            let minY = Math.max(0, minTerrain - 4);
+            let maxY = Math.min(
+                WORLD_MAX_Y - 1,
+                Math.max(
+                    maxTerrain + 6,
+                    SEA_LEVEL + 2,
+                    maxVegetationTop
+                )
+            );
+
+            if (maxEdited >= 0) {
+                minY = Math.min(minY, minEdited);
+                maxY = Math.max(maxY, maxEdited);
+            }
+
+            minY = clampInt(minY, 0, WORLD_MAX_Y - 1);
+            maxY = clampInt(maxY, 0, WORLD_MAX_Y - 1);
+            if (maxY < minY) {
+                maxY = minY;
+            }
+
+            const outIndex = lz * CHUNK_SIZE + lx;
+            minYByColumn[outIndex] = minY;
+            maxYByColumn[outIndex] = maxY;
         }
     }
 
-    minY = clampInt(minY, 0, WORLD_MAX_Y - 1);
-    maxY = clampInt(maxY, 0, WORLD_MAX_Y - 1);
-    if (maxY < minY) {
-        maxY = minY;
-    }
-
-    return { minY, maxY };
+    return { minYByColumn, maxYByColumn };
 }
 
-function rebuildChunkMesh(chunk) {
-    if (!chunk) {
+function addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, options = {}) {
+    if (!chunk || !(positionsByBlock instanceof Map)) {
         return;
     }
+    const enableLookup = options.enableLookup !== false;
+    const useLiquidSurfaceMesh = options.useLiquidSurfaceMesh !== false;
+    const allowShadows = options.allowShadows !== false;
+    const instanceScale = THREE.MathUtils.clamp(Number(options.instanceScale) || 1, 1, CHUNK_SIZE);
+    const matrix = chunkBuildMatrixScratch;
 
-    while (chunk.meshes.length) {
-        const mesh = chunk.meshes.pop();
-        removeMeshReferences(mesh);
-    }
+    positionsByBlock.forEach((positions, id) => {
+        const material = blockMaterials[id];
+        const instanceCount = Math.floor(positions.length / 3);
+        if (!material || instanceCount <= 0) {
+            return;
+        }
 
+        if (useLiquidSurfaceMesh && LIQUID_BLOCK_IDS.has(id)) {
+            const liquidMesh = buildLiquidChunkMesh(id, positions);
+            if (!liquidMesh) {
+                return;
+            }
+            worldRoot.add(liquidMesh);
+            blockMeshes.push(liquidMesh);
+            chunk.meshes.push(liquidMesh);
+            return;
+        }
+
+        const mesh = new THREE.InstancedMesh(blockGeometry, material, instanceCount);
+        const transparentBlock = isTranslucentBlock(id);
+        const definition = getBlockDefinitionById(id);
+        const isFoliage = Boolean(definition?.tags?.includes("foliage"));
+        const renderOrder = Number(definition?.visual?.renderOrder ?? (transparentBlock ? 2 : 1));
+        mesh.castShadow = allowShadows && !transparentBlock && !isFoliage;
+        mesh.receiveShadow = allowShadows && !LIQUID_BLOCK_IDS.has(id) && !isFoliage;
+        mesh.renderOrder = renderOrder;
+        mesh.userData.blockId = id;
+        mesh.userData.lookupKeys = [];
+
+        for (let index = 0; index < instanceCount; index += 1) {
+            const base = index * 3;
+            const x = positions[base];
+            const y = positions[base + 1];
+            const z = positions[base + 2];
+            if (instanceScale > 1.001) {
+                matrix.makeScale(instanceScale, 1, instanceScale);
+                matrix.setPosition(
+                    x + instanceScale * 0.5,
+                    y + 0.5,
+                    z + instanceScale * 0.5
+                );
+            } else {
+                matrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
+            }
+            mesh.setMatrixAt(index, matrix);
+
+            if (enableLookup) {
+                const lookupKey = `${mesh.id}:${index}`;
+                blockPositionLookup.set(lookupKey, { x, y, z, id });
+                mesh.userData.lookupKeys.push(lookupKey);
+            }
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        worldRoot.add(mesh);
+        blockMeshes.push(mesh);
+        chunk.meshes.push(mesh);
+    });
+}
+
+function rebuildChunkMeshFull(chunk) {
     const positionsByBlock = new Map();
     const baseX = chunk.cx * CHUNK_SIZE;
     const baseZ = chunk.cz * CHUNK_SIZE;
+    const columnYRanges = buildChunkColumnMeshYRanges(baseX, baseZ);
+    const minYByColumn = columnYRanges.minYByColumn;
+    const maxYByColumn = columnYRanges.maxYByColumn;
 
     for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
         for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
             const x = baseX + lx;
             const z = baseZ + lz;
-            const column = getColumnInfo(x, z);
-            const { minY, maxY } = getColumnMeshYRange(x, z, column);
+            const columnIndex = lz * CHUNK_SIZE + lx;
+            const minY = minYByColumn[columnIndex];
+            const maxY = maxYByColumn[columnIndex];
 
             for (let y = minY; y <= maxY; y += 1) {
                 const id = getBlock(x, y, z);
@@ -10144,49 +10539,114 @@ function rebuildChunkMesh(chunk) {
                     positionsByBlock.set(id, positions);
                 }
 
-                positions.push({ x, y, z });
+                positions.push(x, y, z);
             }
         }
     }
 
-    const matrix = new THREE.Matrix4();
+    addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, {
+        enableLookup: true,
+        useLiquidSurfaceMesh: true,
+        allowShadows: true
+    });
+}
 
-    positionsByBlock.forEach((positions, id) => {
-        const material = blockMaterials[id];
-        if (!material || positions.length === 0) {
-            return;
-        }
+function rebuildChunkMeshFar(chunk, sampleStep = 2) {
+    const columnsByBlock = new Map();
+    const baseX = chunk.cx * CHUNK_SIZE;
+    const baseZ = chunk.cz * CHUNK_SIZE;
+    const step = sampleStep >= 4 ? 4 : 2;
+    const matrix = chunkBuildMatrixScratch;
 
-        if (LIQUID_BLOCK_IDS.has(id)) {
-            const liquidMesh = buildLiquidChunkMesh(id, positions);
-            if (!liquidMesh) {
-                return;
+    for (let lx = 0; lx < CHUNK_SIZE; lx += step) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz += step) {
+            const x = baseX + lx;
+            const z = baseZ + lz;
+            let bestY = -1;
+            let bestBlockId = BLOCK.AIR;
+            const cellMaxX = Math.min(CHUNK_SIZE, lx + step);
+            const cellMaxZ = Math.min(CHUNK_SIZE, lz + step);
+
+            for (let ox = lx; ox < cellMaxX; ox += 1) {
+                for (let oz = lz; oz < cellMaxZ; oz += 1) {
+                    const sampleX = baseX + ox;
+                    const sampleZ = baseZ + oz;
+                    const column = getColumnInfo(sampleX, sampleZ);
+                    let sampleY = clampInt(column.height, 0, WORLD_MAX_Y - 1);
+                    let sampleId = getBlock(sampleX, sampleY, sampleZ);
+
+                    if (sampleY < SEA_LEVEL) {
+                        const waterId = getBlock(sampleX, SEA_LEVEL, sampleZ);
+                        if (LIQUID_BLOCK_IDS.has(waterId)) {
+                            sampleY = SEA_LEVEL;
+                            sampleId = waterId;
+                        }
+                    }
+
+                    if (sampleId === BLOCK.AIR) {
+                        continue;
+                    }
+
+                    if (sampleY > bestY) {
+                        bestY = sampleY;
+                        bestBlockId = sampleId;
+                    }
+                }
             }
-            worldRoot.add(liquidMesh);
-            blockMeshes.push(liquidMesh);
-            chunk.meshes.push(liquidMesh);
+
+            if (bestBlockId === BLOCK.AIR || bestY < 0) {
+                continue;
+            }
+
+            let baseY = 0;
+            let columnHeight = Math.max(1, bestY + 1);
+            if (LIQUID_BLOCK_IDS.has(bestBlockId)) {
+                // Far liquids are rendered as thin surface tiles to avoid giant water columns.
+                baseY = bestY;
+                columnHeight = 1;
+            }
+
+            let columns = columnsByBlock.get(bestBlockId);
+            if (!columns) {
+                columns = [];
+                columnsByBlock.set(bestBlockId, columns);
+            }
+            columns.push(x, baseY, z, columnHeight);
+        }
+    }
+
+    columnsByBlock.forEach((columns, id) => {
+        const material = blockMaterials[id];
+        const instanceCount = Math.floor(columns.length / 4);
+        if (!material || instanceCount <= 0) {
             return;
         }
 
-        const mesh = new THREE.InstancedMesh(blockGeometry, material, positions.length);
+        const mesh = new THREE.InstancedMesh(blockGeometry, material, instanceCount);
         const transparentBlock = isTranslucentBlock(id);
         const definition = getBlockDefinitionById(id);
         const isFoliage = Boolean(definition?.tags?.includes("foliage"));
         const renderOrder = Number(definition?.visual?.renderOrder ?? (transparentBlock ? 2 : 1));
-        mesh.castShadow = !transparentBlock && !isFoliage;
-        mesh.receiveShadow = !LIQUID_BLOCK_IDS.has(id) && !isFoliage;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
         mesh.renderOrder = renderOrder;
         mesh.userData.blockId = id;
         mesh.userData.lookupKeys = [];
 
-        for (let index = 0; index < positions.length; index += 1) {
-            const { x, y, z } = positions[index];
-            matrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
-            mesh.setMatrixAt(index, matrix);
+        for (let index = 0; index < instanceCount; index += 1) {
+            const base = index * 4;
+            const x = columns[base];
+            const baseY = columns[base + 1];
+            const z = columns[base + 2];
+            const columnHeight = columns[base + 3];
 
-            const lookupKey = `${mesh.id}:${index}`;
-            blockPositionLookup.set(lookupKey, { x, y, z, id });
-            mesh.userData.lookupKeys.push(lookupKey);
+            matrix.makeScale(step, columnHeight, step);
+            matrix.setPosition(
+                x + step * 0.5,
+                baseY + columnHeight * 0.5,
+                z + step * 0.5
+            );
+            mesh.setMatrixAt(index, matrix);
         }
 
         mesh.instanceMatrix.needsUpdate = true;
@@ -10194,14 +10654,41 @@ function rebuildChunkMesh(chunk) {
         blockMeshes.push(mesh);
         chunk.meshes.push(mesh);
     });
+}
 
+function rebuildChunkMesh(chunk) {
+    if (!chunk) {
+        return;
+    }
+
+    while (chunk.meshes.length) {
+        const mesh = chunk.meshes.pop();
+        removeMeshReferences(mesh);
+    }
+
+    const desiredLod = chunk.desiredLod === "far4" ? "far4" : chunk.desiredLod === "far2" ? "far2" : "full";
+    if (desiredLod === "far4") {
+        rebuildChunkMeshFar(chunk, 4);
+    } else if (desiredLod === "far2") {
+        rebuildChunkMeshFar(chunk, 2);
+    } else {
+        rebuildChunkMeshFull(chunk);
+    }
+    chunk.lodLevel = desiredLod;
     chunk.dirty = false;
 }
 
-function ensureChunk(cx, cz) {
+function ensureChunk(cx, cz, desiredLod = "full") {
     const key = chunkKey(cx, cz);
     let chunk = chunkMap.get(key);
     if (chunk) {
+        if (chunk.desiredLod !== desiredLod) {
+            chunk.desiredLod = desiredLod;
+            if (chunk.lodLevel !== desiredLod) {
+                chunk.dirty = true;
+                chunkRebuildQueue.add(key);
+            }
+        }
         return chunk;
     }
 
@@ -10209,7 +10696,9 @@ function ensureChunk(cx, cz) {
         cx,
         cz,
         meshes: [],
-        dirty: true
+        dirty: true,
+        desiredLod,
+        lodLevel: "none"
     };
 
     chunkMap.set(key, chunk);
@@ -10236,6 +10725,61 @@ function unloadChunk(key) {
     }
 }
 
+function getChunkOffsetsForRadius(radius) {
+    const clampedRadius = clampInt(radius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX);
+    const cached = chunkOffsetsByRadiusCache.get(clampedRadius);
+    if (cached) {
+        return cached;
+    }
+
+    const offsets = [];
+    for (let dx = -clampedRadius; dx <= clampedRadius; dx += 1) {
+        for (let dz = -clampedRadius; dz <= clampedRadius; dz += 1) {
+            offsets.push({ dx, dz, dist: Math.abs(dx) + Math.abs(dz) });
+        }
+    }
+    offsets.sort((a, b) => a.dist - b.dist);
+    chunkOffsetsByRadiusCache.set(clampedRadius, offsets);
+    return offsets;
+}
+
+function getChunkFullDetailRadius() {
+    if (state.chunkRadius <= CHUNK_FULL_DETAIL_RADIUS_MAX) {
+        return state.chunkRadius;
+    }
+
+    let fullRadius = THREE.MathUtils.clamp(
+        Math.floor(state.chunkRadius * 0.34),
+        CHUNK_FULL_DETAIL_RADIUS_MIN,
+        CHUNK_FULL_DETAIL_RADIUS_MAX
+    );
+
+    if (perfState.fpsEma < 48 || perfState.frameMsEma > 21) {
+        fullRadius = Math.max(CHUNK_FULL_DETAIL_RADIUS_MIN, fullRadius - 2);
+    }
+    if (state.pendingChunkBuildCount > 3400) {
+        fullRadius = Math.max(CHUNK_FULL_DETAIL_RADIUS_MIN, fullRadius - 3);
+    } else if (perfState.fpsEma > 58 && state.pendingChunkBuildCount < 850) {
+        fullRadius = Math.min(CHUNK_FULL_DETAIL_RADIUS_MAX, fullRadius + 2);
+    }
+
+    return Math.min(state.chunkRadius, fullRadius);
+}
+
+function resolveChunkDesiredLod(distanceFromCenter) {
+    const fullDetailRadius = getChunkFullDetailRadius();
+    if (distanceFromCenter <= fullDetailRadius) {
+        return "full";
+    }
+
+    const far4Start = Math.max(fullDetailRadius + 18, 44);
+    if (distanceFromCenter >= far4Start) {
+        return "far4";
+    }
+
+    return "far2";
+}
+
 function updateChunkStreaming(force = false) {
     state.chunkTick = force ? CHUNK_MANAGEMENT_INTERVAL : state.chunkTick;
 
@@ -10246,29 +10790,29 @@ function updateChunkStreaming(force = false) {
     state.chunkTick = 0;
     const centerCx = worldToChunkCoord(state.playerPosition.x);
     const centerCz = worldToChunkCoord(state.playerPosition.z);
+    const centerUnchanged = centerCx === state.lastChunkCenterCx && centerCz === state.lastChunkCenterCz;
+    if (!force && centerUnchanged) {
+        state.loadedChunkCount = chunkMap.size;
+        state.pendingChunkBuildCount = chunkRebuildQueue.size;
+        return;
+    }
+    state.lastChunkCenterCx = centerCx;
+    state.lastChunkCenterCz = centerCz;
 
     const desired = new Set();
-    const orderedTargets = [];
     let chunksChanged = false;
+    const orderedOffsets = getChunkOffsetsForRadius(state.chunkRadius);
 
-    for (let dx = -state.chunkRadius; dx <= state.chunkRadius; dx += 1) {
-        for (let dz = -state.chunkRadius; dz <= state.chunkRadius; dz += 1) {
-            const cx = centerCx + dx;
-            const cz = centerCz + dz;
-            const key = chunkKey(cx, cz);
-
-            desired.add(key);
-            orderedTargets.push({ key, cx, cz, dist: Math.abs(dx) + Math.abs(dz) });
-        }
-    }
-
-    orderedTargets.sort((a, b) => a.dist - b.dist);
-
-    for (const target of orderedTargets) {
-        if (!chunkMap.has(target.key)) {
+    for (const offset of orderedOffsets) {
+        const cx = centerCx + offset.dx;
+        const cz = centerCz + offset.dz;
+        const key = chunkKey(cx, cz);
+        desired.add(key);
+        if (!chunkMap.has(key)) {
             chunksChanged = true;
         }
-        ensureChunk(target.cx, target.cz);
+        const desiredLod = resolveChunkDesiredLod(offset.dist);
+        ensureChunk(cx, cz, desiredLod);
     }
 
     for (const key of chunkMap.keys()) {
@@ -10290,17 +10834,82 @@ function updateChunkStreaming(force = false) {
     }
 }
 
-function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
-    const startMs = performance.now();
-    let builds = 0;
-    while (builds < maxBuilds && chunkRebuildQueue.size > 0) {
-        const iterator = chunkRebuildQueue.values().next();
-        if (iterator.done) {
-            break;
+function popNextChunkRebuildKey(centerCx, centerCz, forwardX, forwardZ) {
+    if (chunkRebuildQueue.size >= CHUNK_REBUILD_FIFO_POP_THRESHOLD) {
+        let scanned = 0;
+        for (const key of chunkRebuildQueue) {
+            chunkRebuildQueue.delete(key);
+            const chunk = chunkMap.get(key);
+            if (chunk && chunk.dirty) {
+                return key;
+            }
+            scanned += 1;
+            if (scanned >= CHUNK_REBUILD_FIFO_POP_SCAN_LIMIT) {
+                break;
+            }
+        }
+    }
+
+    let bestKey = null;
+    let bestScore = Number.POSITIVE_INFINITY;
+    const staleKeys = [];
+
+    for (const key of chunkRebuildQueue) {
+        const chunk = chunkMap.get(key);
+        if (!chunk || !chunk.dirty) {
+            staleKeys.push(key);
+            continue;
         }
 
-        const key = iterator.value;
-        chunkRebuildQueue.delete(key);
+        const dx = chunk.cx - centerCx;
+        const dz = chunk.cz - centerCz;
+        const distance = Math.abs(dx) + Math.abs(dz);
+        const forwardBias = dx * forwardX + dz * forwardZ;
+        let score = distance * 8 - forwardBias;
+        if (chunk.desiredLod === "full" && chunk.lodLevel !== "full") {
+            score -= 1200;
+        } else if (chunk.desiredLod === "far2" && chunk.lodLevel === "far4") {
+            score -= 280;
+        }
+
+        if (score < bestScore) {
+            bestScore = score;
+            bestKey = key;
+        }
+    }
+
+    for (const staleKey of staleKeys) {
+        chunkRebuildQueue.delete(staleKey);
+    }
+
+    if (bestKey !== null) {
+        chunkRebuildQueue.delete(bestKey);
+    }
+
+    return bestKey;
+}
+
+function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME, maxFrameBudgetMs = Number.POSITIVE_INFINITY) {
+    const startMs = performance.now();
+    const centerCx = worldToChunkCoord(state.playerPosition.x);
+    const centerCz = worldToChunkCoord(state.playerPosition.z);
+    const forwardLength = Math.hypot(state.lastForward.x, state.lastForward.z);
+    const forwardX = forwardLength > 0.0001 ? state.lastForward.x / forwardLength : 0;
+    const forwardZ = forwardLength > 0.0001 ? state.lastForward.z / forwardLength : 0;
+    let builds = 0;
+
+    while (builds < maxBuilds && chunkRebuildQueue.size > 0) {
+        if (builds > 0 && Number.isFinite(maxFrameBudgetMs) && maxFrameBudgetMs > 0) {
+            const elapsed = performance.now() - startMs;
+            if (elapsed >= maxFrameBudgetMs) {
+                break;
+            }
+        }
+
+        const key = popNextChunkRebuildKey(centerCx, centerCz, forwardX, forwardZ);
+        if (key === null) {
+            break;
+        }
 
         const chunk = chunkMap.get(key);
         if (!chunk || !chunk.dirty) {
@@ -10317,10 +10926,11 @@ function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME) {
 }
 
 function setChunkRadius(nextRadius) {
-    const clamped = clampInt(nextRadius, 2, 16);
+    const clamped = clampInt(nextRadius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX);
     const changed = clamped !== state.chunkRadius;
 
     state.chunkRadius = clamped;
+    syncCameraViewDistanceWithChunkRadius();
     updateGameplaySettingsUi();
 
     writeStorageValue(CHUNK_RADIUS_STORAGE_KEY, clamped);
@@ -12598,7 +13208,8 @@ function animate() {
     updateChunkStreaming(false);
     const budget = getDynamicChunkBuildBudget();
     if (budget > 0) {
-        processChunkRebuildQueue(budget);
+        const frameBudgetMs = getDynamicChunkBuildFrameBudgetMs();
+        processChunkRebuildQueue(budget, frameBudgetMs);
     }
     if (propState.cullingDirty) {
         updatePlacedPropCulling();
