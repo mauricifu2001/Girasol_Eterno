@@ -1306,6 +1306,8 @@ const mapState = {
     homePin: null,
     mode: MAP_MODE.LOCAL,
     globalZoom: 1,
+    globalCenterX: 0,
+    globalCenterZ: 0,
     refreshTick: 0,
     sampleCanvas: null,
     sampleCtx: null,
@@ -2151,14 +2153,12 @@ function getMapTerrainColor(column) {
     const height = Number(column?.height) || SEA_LEVEL;
     const biome = String(column?.biome || BIOME.PLAINS);
     const mountainMask = THREE.MathUtils.clamp(Number(column?.mountainMask) || 0, 0, 1);
-    const riverMask = THREE.MathUtils.clamp(Number(column?.riverMask) || 0, 0, 1);
-    const lakeMask = THREE.MathUtils.clamp(Number(column?.lakeMask) || 0, 0, 1);
     const snowMask = THREE.MathUtils.clamp(Number(column?.snowMask) || 0, 0, 1);
     const rockiness = THREE.MathUtils.clamp(Number(column?.rockiness) || 0, 0, 1);
     const moisture = THREE.MathUtils.clamp((Number(column?.moisture) || 0) * 0.5 + 0.5, 0, 1);
     const temperature = THREE.MathUtils.clamp((Number(column?.temperature) || 0) * 0.5 + 0.5, 0, 1);
 
-    if (height <= SEA_LEVEL || riverMask > 0.27 || lakeMask > 0.24 || biome === BIOME.MARITIME || biome === BIOME.LAKE) {
+    if (height < SEA_LEVEL) {
         const depth = clamp01((SEA_LEVEL - height + 6) / 64);
         return {
             r: clampByte(34 + depth * 22),
@@ -2248,13 +2248,7 @@ function isMapBlockingGameplay() {
 
 function getMapCenterForMode(mode) {
     if (normalizeMapMode(mode) === MAP_MODE.GLOBAL) {
-        if (mapState.globalZoom > 1.02) {
-            return {
-                x: Number(state.playerPosition.x) || 0,
-                z: Number(state.playerPosition.z) || 0
-            };
-        }
-        return { x: 0, z: 0 };
+        return getGlobalMapCenter();
     }
     return {
         x: Number(state.playerPosition.x) || 0,
@@ -2275,6 +2269,30 @@ function getMapEffectiveRange(mode) {
     }
     const zoom = THREE.MathUtils.clamp(Number(mapState.globalZoom) || 1, GLOBAL_MAP_MIN_ZOOM, GLOBAL_MAP_MAX_ZOOM);
     return baseRange / zoom;
+}
+
+function clampGlobalMapCenter(centerX, centerZ, effectiveRange = getMapEffectiveRange(MAP_MODE.GLOBAL)) {
+    const baseRange = GLOBAL_MAP_VIEW_RADIUS_BLOCKS;
+    const safeRange = THREE.MathUtils.clamp(
+        Number(effectiveRange) || baseRange,
+        1,
+        baseRange
+    );
+    const maxOffset = Math.max(0, baseRange - safeRange);
+    return {
+        x: THREE.MathUtils.clamp(Number(centerX) || 0, -maxOffset, maxOffset),
+        z: THREE.MathUtils.clamp(Number(centerZ) || 0, -maxOffset, maxOffset)
+    };
+}
+
+function setGlobalMapCenter(centerX, centerZ, effectiveRange = getMapEffectiveRange(MAP_MODE.GLOBAL)) {
+    const clamped = clampGlobalMapCenter(centerX, centerZ, effectiveRange);
+    mapState.globalCenterX = clamped.x;
+    mapState.globalCenterZ = clamped.z;
+}
+
+function getGlobalMapCenter() {
+    return clampGlobalMapCenter(mapState.globalCenterX, mapState.globalCenterZ);
 }
 
 function updateMapModeButtons() {
@@ -2623,6 +2641,7 @@ function setMapMode(mode, showFeedback = false) {
     mapState.mode = nextMode;
     if (mapState.mode !== MAP_MODE.GLOBAL) {
         mapState.globalZoom = 1;
+        setGlobalMapCenter(0, 0, GLOBAL_MAP_VIEW_RADIUS_BLOCKS);
     }
     mapState.refreshTick = 0;
     updateMapModeButtons();
@@ -3704,7 +3723,58 @@ function clearWildlife() {
     }
 }
 
-function trySpawnRabbitNearPlayer(force = false) {
+function collectWildlifeAnchorPoints() {
+    const anchors = [];
+    const localX = Number(state.playerPosition.x);
+    const localZ = Number(state.playerPosition.z);
+    if (Number.isFinite(localX) && Number.isFinite(localZ)) {
+        anchors.push({ x: localX, z: localZ });
+    }
+
+    for (const remoteNode of multiplayer.remotePlayers.values()) {
+        const remoteX = Number(remoteNode?.targetPosition?.x ?? remoteNode?.group?.position?.x);
+        const remoteZ = Number(remoteNode?.targetPosition?.z ?? remoteNode?.group?.position?.z);
+        if (!Number.isFinite(remoteX) || !Number.isFinite(remoteZ)) {
+            continue;
+        }
+        anchors.push({ x: remoteX, z: remoteZ });
+    }
+
+    if (!anchors.length) {
+        anchors.push({ x: 0, z: 0 });
+    }
+    return anchors;
+}
+
+function getNearestAnchorDistanceSq(x, z, anchors) {
+    const targetX = Number(x);
+    const targetZ = Number(z);
+    if (!Number.isFinite(targetX) || !Number.isFinite(targetZ)) {
+        return Number.POSITIVE_INFINITY;
+    }
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const anchor of anchors) {
+        const dx = targetX - anchor.x;
+        const dz = targetZ - anchor.z;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < nearest) {
+            nearest = distSq;
+        }
+    }
+    return nearest;
+}
+
+function pickWildlifeSpawnAnchor(anchors) {
+    if (!Array.isArray(anchors) || anchors.length === 0) {
+        return {
+            x: Number(state.playerPosition.x) || 0,
+            z: Number(state.playerPosition.z) || 0
+        };
+    }
+    return anchors[Math.floor(Math.random() * anchors.length)] || anchors[0];
+}
+
+function trySpawnRabbitNearPlayer(force = false, anchorX = state.playerPosition.x, anchorZ = state.playerPosition.z) {
     if (!force && !state.worldStarted) {
         return false;
     }
@@ -3714,24 +3784,21 @@ function trySpawnRabbitNearPlayer(force = false) {
     }
 
     const searchRadius = Math.max(28, state.chunkRadius * CHUNK_SIZE * 2.4);
+    const originX = Number(anchorX) || 0;
+    const originZ = Number(anchorZ) || 0;
 
     for (let attempt = 0; attempt < RABBIT_SPAWN_ATTEMPTS; attempt += 1) {
         const angle = Math.random() * Math.PI * 2;
         const distance = randomInRange(RABBIT_MIN_PLAYER_DISTANCE + 8, searchRadius);
-        const candidateX = state.playerPosition.x + Math.cos(angle) * distance;
-        const candidateZ = state.playerPosition.z + Math.sin(angle) * distance;
+        const candidateX = originX + Math.cos(angle) * distance;
+        const candidateZ = originZ + Math.sin(angle) * distance;
         const spawnPoint = sampleSurfaceForRabbit(candidateX, candidateZ);
         if (!spawnPoint) {
             continue;
         }
 
-        const spawnChunkKey = chunkKey(worldToChunkCoord(spawnPoint.x), worldToChunkCoord(spawnPoint.z));
-        if (!chunkMap.has(spawnChunkKey)) {
-            continue;
-        }
-
-        const playerDx = spawnPoint.x - state.playerPosition.x;
-        const playerDz = spawnPoint.z - state.playerPosition.z;
+        const playerDx = spawnPoint.x - originX;
+        const playerDz = spawnPoint.z - originZ;
         if (playerDx * playerDx + playerDz * playerDz < RABBIT_MIN_PLAYER_DISTANCE * RABBIT_MIN_PLAYER_DISTANCE) {
             continue;
         }
@@ -3807,13 +3874,6 @@ function pickRabbitTarget(rabbit) {
 }
 
 function updateSingleRabbit(rabbitId, rabbit, deltaSeconds) {
-    const dxPlayer = rabbit.x - state.playerPosition.x;
-    const dzPlayer = rabbit.z - state.playerPosition.z;
-    if (dxPlayer * dxPlayer + dzPlayer * dzPlayer > RABBIT_DESPAWN_DISTANCE * RABBIT_DESPAWN_DISTANCE) {
-        removeRabbitEntity(rabbitId);
-        return;
-    }
-
     rabbit.roamTimer -= deltaSeconds;
     rabbit.idleTimer -= deltaSeconds;
 
@@ -3902,6 +3962,7 @@ function updateWildlife(deltaSeconds) {
         return;
     }
 
+    const anchors = collectWildlifeAnchorPoints();
     wildlifeState.spawnTimer -= deltaSeconds;
     if (wildlifeState.spawnTimer <= 0) {
         resetRabbitSpawnTimer();
@@ -3911,7 +3972,8 @@ function updateWildlife(deltaSeconds) {
         if (Math.random() < spawnChance) {
             const spawnBursts = 1;
             for (let i = 0; i < spawnBursts; i += 1) {
-                if (!trySpawnRabbitNearPlayer(false)) {
+                const spawnAnchor = pickWildlifeSpawnAnchor(anchors);
+                if (!trySpawnRabbitNearPlayer(false, spawnAnchor.x, spawnAnchor.z)) {
                     break;
                 }
             }
@@ -3919,19 +3981,14 @@ function updateWildlife(deltaSeconds) {
     }
 
     for (const [rabbitId, rabbit] of Array.from(wildlifeState.rabbits.entries())) {
-        const dx = rabbit.x - state.playerPosition.x;
-        const dz = rabbit.z - state.playerPosition.z;
-        if (dx * dx + dz * dz > RABBIT_DESPAWN_DISTANCE * RABBIT_DESPAWN_DISTANCE) {
+        const nearestDistanceSq = getNearestAnchorDistanceSq(rabbit.x, rabbit.z, anchors);
+        if (nearestDistanceSq > RABBIT_DESPAWN_DISTANCE * RABBIT_DESPAWN_DISTANCE) {
             removeRabbitEntity(rabbitId);
             continue;
         }
 
         const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(rabbit.x, rabbit.z);
         rabbit.node.visible = isVisibleInLoadedChunk;
-        if (!isVisibleInLoadedChunk) {
-            continue;
-        }
-
         updateSingleRabbit(rabbitId, rabbit, deltaSeconds);
     }
 }
@@ -4167,7 +4224,7 @@ function clearFish() {
     }
 }
 
-function trySpawnFishNearPlayer(force = false) {
+function trySpawnFishNearPlayer(force = false, anchorX = state.playerPosition.x, anchorZ = state.playerPosition.z) {
     if (!force && !state.worldStarted) {
         return false;
     }
@@ -4176,24 +4233,21 @@ function trySpawnFishNearPlayer(force = false) {
     }
 
     const searchRadius = Math.max(52, state.chunkRadius * CHUNK_SIZE * 3.8);
+    const originX = Number(anchorX) || 0;
+    const originZ = Number(anchorZ) || 0;
     for (let attempt = 0; attempt < FISH_SPAWN_ATTEMPTS; attempt += 1) {
         const angle = Math.random() * Math.PI * 2;
         const distance = randomInRange(FISH_MIN_PLAYER_DISTANCE + 7, searchRadius);
-        const candidateX = state.playerPosition.x + Math.cos(angle) * distance;
-        const candidateZ = state.playerPosition.z + Math.sin(angle) * distance;
+        const candidateX = originX + Math.cos(angle) * distance;
+        const candidateZ = originZ + Math.sin(angle) * distance;
         const variant = pickFishVariant();
         const spawnPoint = sampleSurfaceForFish(candidateX, candidateZ, variant);
         if (!spawnPoint) {
             continue;
         }
 
-        const spawnChunkKey = chunkKey(worldToChunkCoord(spawnPoint.x), worldToChunkCoord(spawnPoint.z));
-        if (!chunkMap.has(spawnChunkKey)) {
-            continue;
-        }
-
-        const playerDx = spawnPoint.x - state.playerPosition.x;
-        const playerDz = spawnPoint.z - state.playerPosition.z;
+        const playerDx = spawnPoint.x - originX;
+        const playerDz = spawnPoint.z - originZ;
         if (playerDx * playerDx + playerDz * playerDz < FISH_MIN_PLAYER_DISTANCE * FISH_MIN_PLAYER_DISTANCE) {
             continue;
         }
@@ -4261,13 +4315,6 @@ function pickFishTarget(fish) {
 }
 
 function updateSingleFish(fishId, fish, deltaSeconds) {
-    const dxPlayer = fish.x - state.playerPosition.x;
-    const dzPlayer = fish.z - state.playerPosition.z;
-    if (dxPlayer * dxPlayer + dzPlayer * dzPlayer > FISH_DESPAWN_DISTANCE * FISH_DESPAWN_DISTANCE) {
-        removeFishEntity(fishId);
-        return;
-    }
-
     fish.targetTimer -= deltaSeconds;
     const dx = fish.targetX - fish.x;
     const dy = fish.targetY - fish.y;
@@ -4349,6 +4396,7 @@ function updateFish(deltaSeconds) {
         return;
     }
 
+    const anchors = collectWildlifeAnchorPoints();
     fishState.spawnTimer -= deltaSeconds;
     if (fishState.spawnTimer <= 0) {
         resetFishSpawnTimer();
@@ -4357,7 +4405,8 @@ function updateFish(deltaSeconds) {
         if (Math.random() < spawnChance) {
             const bursts = fishState.fishes.size < 12 ? 4 : (fishState.fishes.size < 30 ? 2 : 1);
             for (let i = 0; i < bursts; i += 1) {
-                if (!trySpawnFishNearPlayer(false)) {
+                const spawnAnchor = pickWildlifeSpawnAnchor(anchors);
+                if (!trySpawnFishNearPlayer(false, spawnAnchor.x, spawnAnchor.z)) {
                     break;
                 }
             }
@@ -4365,11 +4414,13 @@ function updateFish(deltaSeconds) {
     }
 
     for (const [fishId, fish] of Array.from(fishState.fishes.entries())) {
-        const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(fish.x, fish.z);
-        fish.node.visible = isVisibleInLoadedChunk;
-        if (!isVisibleInLoadedChunk) {
+        const nearestDistanceSq = getNearestAnchorDistanceSq(fish.x, fish.z, anchors);
+        if (nearestDistanceSq > FISH_DESPAWN_DISTANCE * FISH_DESPAWN_DISTANCE) {
+            removeFishEntity(fishId);
             continue;
         }
+        const isVisibleInLoadedChunk = isWorldPositionChunkLoaded(fish.x, fish.z);
+        fish.node.visible = isVisibleInLoadedChunk;
         updateSingleFish(fishId, fish, deltaSeconds);
     }
 }
@@ -12647,6 +12698,8 @@ function tryRemovePlacedPropAtCrosshair() {
 function onMouseWheel(event) {
     if (state.mapOpen && mapState.mode === MAP_MODE.GLOBAL) {
         event.preventDefault();
+        const currentCenter = getGlobalMapCenter();
+        const currentRange = getMapEffectiveRange(MAP_MODE.GLOBAL);
         const factor = event.deltaY > 0 ? 0.88 : 1.12;
         const nextZoom = THREE.MathUtils.clamp(
             mapState.globalZoom * factor,
@@ -12654,7 +12707,24 @@ function onMouseWheel(event) {
             GLOBAL_MAP_MAX_ZOOM
         );
         if (Math.abs(nextZoom - mapState.globalZoom) > 1e-4) {
+            let anchorNormX = 0.5;
+            let anchorNormY = 0.5;
+            const rect = worldMapCanvasEl?.getBoundingClientRect?.();
+            if (rect && rect.width > 0 && rect.height > 0) {
+                const localX = event.clientX - rect.left;
+                const localY = event.clientY - rect.top;
+                if (localX >= 0 && localX <= rect.width && localY >= 0 && localY <= rect.height) {
+                    anchorNormX = THREE.MathUtils.clamp(localX / rect.width, 0, 1);
+                    anchorNormY = THREE.MathUtils.clamp(localY / rect.height, 0, 1);
+                }
+            }
+            const anchorWorldX = currentCenter.x + (anchorNormX * 2 - 1) * currentRange;
+            const anchorWorldZ = currentCenter.z + (anchorNormY * 2 - 1) * currentRange;
             mapState.globalZoom = nextZoom;
+            const nextRange = getMapEffectiveRange(MAP_MODE.GLOBAL);
+            const nextCenterX = anchorWorldX - (anchorNormX * 2 - 1) * nextRange;
+            const nextCenterZ = anchorWorldZ - (anchorNormY * 2 - 1) * nextRange;
+            setGlobalMapCenter(nextCenterX, nextCenterZ, nextRange);
             mapState.refreshTick = 0;
             renderMapPanelNow();
         }
@@ -12767,6 +12837,33 @@ function onKeyDown(event) {
             closeInteractionPanel(false, true);
         }
         setMapOpen(!state.mapOpen, true);
+        return;
+    }
+
+    if (event.code === "KeyF") {
+        event.preventDefault();
+        if (!state.worldStarted || !state.worldReady) {
+            return;
+        }
+        if (state.tutorialVisible) {
+            closeTutorial(true);
+        }
+        if (state.paused) {
+            setPauseMenuOpen(false);
+        }
+        if (state.avatarPreviewOpen) {
+            setAvatarPreviewOpen(false);
+        }
+        if (state.inventoryOpen) {
+            setInventoryOpen(false);
+        }
+        if (state.interactionPanelOpen) {
+            closeInteractionPanel(false, true);
+        }
+        if (state.mapOpen && isMapBlockingGameplay()) {
+            setMapOpen(false, false);
+        }
+        setFlightMode(!state.flightEnabled, true, true);
         return;
     }
 
@@ -13301,7 +13398,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-9/0 material - I inventario - M mapa (global: click pin y rueda zoom) - F3 debug - V ver avatar - ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - F vuelo - Rueda o 1-9/0 material - I inventario - M mapa (global: click pin y rueda zoom donde apuntes) - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;
