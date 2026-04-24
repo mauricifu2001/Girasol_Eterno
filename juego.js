@@ -103,11 +103,18 @@ const MULTIPLAYER_SESSION_ID_KEY = "girasolMultiplayerSessionId";
 const CHUNK_RADIUS_STORAGE_KEY = "girasolChunkRadiusV1";
 const POINTER_SENSITIVITY_STORAGE_KEY = "girasolPointerSensitivityV1";
 const QUALITY_PRESET_STORAGE_KEY = "girasolQualityPresetV1";
+const GRAPHICS_MODE_STORAGE_KEY = "girasolGraphicsModeV1";
 const FLIGHT_MODE_STORAGE_KEY = "girasolFlightModeV1";
 const HOTBAR_STORAGE_KEY = "girasolHotbarSlotsV1";
 const SUNFLOWER_CURRENCY_STORAGE_KEY = "girasolSunflowerCurrencyV1";
 const MAP_PIN_STORAGE_KEY_PREFIX = "girasolMapPinV1";
 const MAP_HOME_PIN_STORAGE_KEY_PREFIX = "girasolMapHomePinV1";
+const GRAPHICS_MODE = Object.freeze({
+    AUTO: "auto",
+    DEDICATED: "dedicated",
+    INTEGRATED: "integrated",
+    SOFTWARE: "software"
+});
 
 const PROFILE_COLORS = {
     Mauricio: "#f4cf85",
@@ -316,6 +323,8 @@ const mapToggleButtonEl = document.getElementById("mapToggleButton");
 const inventoryPanelEl = document.getElementById("inventoryPanel");
 const inventoryCloseButtonEl = document.getElementById("inventoryCloseButton");
 const inventoryGridEl = document.getElementById("inventoryGrid");
+const inventoryCategoryQuickFillSelectEl = document.getElementById("inventoryCategoryQuickFillSelect");
+const inventoryCategoryQuickFillButtonEl = document.getElementById("inventoryCategoryQuickFillButton");
 const mapPanelEl = document.getElementById("mapPanel");
 const mapCloseButtonEl = document.getElementById("mapCloseButton");
 const mapInfoEl = document.getElementById("mapInfo");
@@ -340,6 +349,7 @@ const pauseSettingsSection = document.getElementById("pauseSettingsSection");
 const chunkRadiusSliderEl = document.getElementById("chunkRadiusSlider");
 const chunkRadiusValueEl = document.getElementById("chunkRadiusValue");
 const qualityPresetSelectEl = document.getElementById("qualityPresetSelect");
+const graphicsModeSelectEl = document.getElementById("graphicsModeSelect");
 const pointerSensitivitySliderEl = document.getElementById("pointerSensitivitySlider");
 const pointerSensitivityValueEl = document.getElementById("pointerSensitivityValue");
 const flightModeToggleEl = document.getElementById("flightModeToggle");
@@ -353,13 +363,52 @@ const interactionPanelBodyEl = document.getElementById("interactionPanelBody");
 const interactionCloseButtonEl = document.getElementById("interactionCloseButton");
 const worldMapCtx = worldMapCanvasEl?.getContext("2d", { alpha: false }) || null;
 
+function normalizeGraphicsMode(value) {
+    const raw = String(value || "").toLowerCase();
+    if (
+        raw === GRAPHICS_MODE.AUTO
+        || raw === GRAPHICS_MODE.DEDICATED
+        || raw === GRAPHICS_MODE.INTEGRATED
+        || raw === GRAPHICS_MODE.SOFTWARE
+    ) {
+        return raw;
+    }
+    return GRAPHICS_MODE.AUTO;
+}
+
+function resolveRendererPowerPreference(mode) {
+    const normalized = normalizeGraphicsMode(mode);
+    if (normalized === GRAPHICS_MODE.DEDICATED) {
+        return "high-performance";
+    }
+    if (normalized === GRAPHICS_MODE.INTEGRATED) {
+        return "low-power";
+    }
+    return "default";
+}
+
+function readInitialGraphicsModeFromStorage() {
+    try {
+        const raw = window.localStorage.getItem(GRAPHICS_MODE_STORAGE_KEY);
+        return normalizeGraphicsMode(raw || GRAPHICS_MODE.AUTO);
+    } catch (error) {
+        return GRAPHICS_MODE.AUTO;
+    }
+}
+
+const INITIAL_GRAPHICS_MODE = readInitialGraphicsModeFromStorage();
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x9bc7ff);
 scene.fog = new THREE.Fog(0x9bc7ff, 30, 220);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 300);
 camera.rotation.order = "YXZ";
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    powerPreference: resolveRendererPowerPreference(INITIAL_GRAPHICS_MODE)
+});
 const basePixelRatio = Math.min(window.devicePixelRatio, 2);
 renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1043,7 +1092,8 @@ const perfState = {
     adjustCooldown: 0,
     adaptiveEnabled: true,
     minPixelRatio: 0.72,
-    qualityPreset: "auto"
+    qualityPreset: "auto",
+    graphicsMode: INITIAL_GRAPHICS_MODE
 };
 
 const skyState = {
@@ -1288,6 +1338,10 @@ function sanitizeHotbarItemIds(rawSlots) {
 
     for (let i = 0; i < HOTBAR_SIZE; i += 1) {
         const candidate = source[i];
+        if (candidate === "") {
+            next.push("");
+            continue;
+        }
         if (candidate && INVENTORY_ITEM_BY_ID.has(candidate)) {
             next.push(candidate);
             continue;
@@ -1458,7 +1512,10 @@ function restoreLocalPlayerStateFromSnapshot(savedState) {
 function getHotbarItemByIndex(index) {
     const safeIndex = THREE.MathUtils.clamp(Math.floor(Number(index) || 0), 0, HOTBAR_SIZE - 1);
     const itemId = state.hotbarItemIds[safeIndex];
-    return INVENTORY_ITEM_BY_ID.get(itemId) || INVENTORY_ITEMS[0];
+    if (!itemId) {
+        return null;
+    }
+    return INVENTORY_ITEM_BY_ID.get(itemId) || null;
 }
 
 function getSelectedHotbarItem() {
@@ -1467,6 +1524,66 @@ function getSelectedHotbarItem() {
 
 function getInventoryItemTint(item) {
     return getInventoryItemTintByDefinition(item, BLOCK_COLORS);
+}
+
+function normalizeInventoryCategoryForQuickFill(category) {
+    const raw = String(category || "").toLowerCase();
+    if (INVENTORY_CATEGORY_ORDER.includes(raw)) {
+        return raw;
+    }
+    return INVENTORY_CATEGORY.CONSTRUCTION;
+}
+
+function getInventoryItemIdsForCategory(category) {
+    const normalized = normalizeInventoryCategoryForQuickFill(category);
+    return INVENTORY_ITEMS
+        .filter((item) => item.category === normalized)
+        .map((item) => item.id);
+}
+
+function populateInventoryCategoryQuickFillOptions() {
+    if (!inventoryCategoryQuickFillSelectEl) {
+        return;
+    }
+    if (inventoryCategoryQuickFillSelectEl.options.length > 0) {
+        return;
+    }
+    for (const category of INVENTORY_CATEGORY_ORDER) {
+        const option = document.createElement("option");
+        option.value = category;
+        option.textContent = INVENTORY_CATEGORY_LABELS[category] || category;
+        inventoryCategoryQuickFillSelectEl.appendChild(option);
+    }
+    inventoryCategoryQuickFillSelectEl.value = INVENTORY_CATEGORY.CONSTRUCTION;
+}
+
+function applyHotbarCategoryQuickFill(category, showFeedback = true) {
+    const normalized = normalizeInventoryCategoryForQuickFill(category);
+    const categoryIds = getInventoryItemIdsForCategory(normalized);
+    if (categoryIds.length === 0) {
+        if (showFeedback) {
+            showToast("Esa seccion no tiene items disponibles", "warning", 1000);
+        }
+        return false;
+    }
+
+    const nextSlots = new Array(HOTBAR_SIZE).fill("");
+    for (let i = 0; i < HOTBAR_SIZE && i < categoryIds.length; i += 1) {
+        nextSlots[i] = categoryIds[i];
+    }
+
+    state.hotbarItemIds = nextSlots;
+    const firstFilledIndex = state.hotbarItemIds.findIndex((itemId) => Boolean(itemId));
+    state.selectedHotbarIndex = firstFilledIndex >= 0 ? firstFilledIndex : 0;
+    saveHotbarConfiguration();
+    refreshHotbarUi();
+
+    if (showFeedback) {
+        const categoryLabel = INVENTORY_CATEGORY_LABELS[normalized] || normalized;
+        const loadedCount = Math.min(HOTBAR_SIZE, categoryIds.length);
+        showToast(`Barra cargada: ${categoryLabel} (${loadedCount}/${HOTBAR_SIZE})`, "success", 1300);
+    }
+    return true;
 }
 
 function updateSunflowerCurrencyHud() {
@@ -1511,6 +1628,9 @@ function updateGameplaySettingsUi() {
 
     if (qualityPresetSelectEl) {
         qualityPresetSelectEl.value = perfState.qualityPreset;
+    }
+    if (graphicsModeSelectEl) {
+        graphicsModeSelectEl.value = perfState.graphicsMode;
     }
 
     if (flightModeToggleEl) {
@@ -1568,6 +1688,45 @@ function setQualityPreset(preset, persist = true, showFeedback = false) {
     }
 
     updateGameplaySettingsUi();
+}
+
+function setGraphicsMode(mode, persist = true, showFeedback = false) {
+    const normalized = normalizeGraphicsMode(mode);
+    const changed = normalized !== perfState.graphicsMode;
+    perfState.graphicsMode = normalized;
+
+    if (persist) {
+        writeStorageValue(GRAPHICS_MODE_STORAGE_KEY, normalized);
+    }
+
+    updateGameplaySettingsUi();
+
+    if (!showFeedback) {
+        return;
+    }
+
+    if (normalized === GRAPHICS_MODE.SOFTWARE) {
+        showToast("Modo software: configuracion manual del navegador", "info", 2200);
+        return;
+    }
+
+    const label = normalized === GRAPHICS_MODE.DEDICATED
+        ? "GPU dedicada"
+        : normalized === GRAPHICS_MODE.INTEGRATED
+            ? "GPU integrada"
+            : "auto";
+    showToast(`Modo GPU: ${label}${changed ? " (recarga para aplicar)" : ""}`, "info", 1800);
+    if (changed) {
+        let shouldReload = false;
+        try {
+            shouldReload = window.confirm("Para aplicar el modo GPU se necesita recargar la pagina. Recargar ahora?");
+        } catch (error) {
+            shouldReload = false;
+        }
+        if (shouldReload) {
+            window.location.reload();
+        }
+    }
 }
 
 function setPointerSensitivity(value, persist = true, showFeedback = false) {
@@ -1650,6 +1809,8 @@ function loadGameplayPreferences() {
 
     const storedQualityPreset = readStorageString(QUALITY_PRESET_STORAGE_KEY, "auto");
     setQualityPreset(storedQualityPreset, false, false);
+    const storedGraphicsMode = readStorageString(GRAPHICS_MODE_STORAGE_KEY, INITIAL_GRAPHICS_MODE);
+    setGraphicsMode(storedGraphicsMode, false, false);
     const storedFlightMode = readStorageBoolean(FLIGHT_MODE_STORAGE_KEY, false);
     setFlightMode(storedFlightMode, false, false);
 
@@ -1790,14 +1951,14 @@ function getMapTerrainColor(column) {
         };
     } else if (biome === BIOME.VOLCANIC) {
         const lavaHint = clamp01(
-            (Number(column?.volcanicMask) || 0) * 0.62
-            + (Number(column?.craterMask) || 0) * 0.92
-            + (Number(column?.lavaChannelMask) || 0) * 0.74
+            (Number(column?.volcanicMask) || 0) * 0.58
+            + (Number(column?.craterMask) || 0) * 0.96
+            + (Number(column?.lavaChannelMask) || 0) * 0.82
         );
         color = {
-            r: clampByte(82 + lavaHint * 90),
-            g: clampByte(62 + lavaHint * 34),
-            b: clampByte(58 - lavaHint * 16)
+            r: clampByte(118 + lavaHint * 124),
+            g: clampByte(58 + lavaHint * 38),
+            b: clampByte(34 - lavaHint * 14)
         };
     } else if (biome === BIOME.COAST) {
         color = {
@@ -1821,8 +1982,8 @@ function getMapTerrainColor(column) {
         };
     }
 
-    if (rockiness > 0.62 && biome !== BIOME.DESERT && biome !== BIOME.FOREST && biome !== BIOME.VOLCANIC) {
-        const rockyMix = clamp01((rockiness - 0.62) / 0.38);
+    if (rockiness > 0.78 && biome !== BIOME.DESERT && biome !== BIOME.FOREST && biome !== BIOME.VOLCANIC) {
+        const rockyMix = clamp01((rockiness - 0.78) / 0.22) * 0.62;
         color = {
             r: clampByte(lerp(color.r, 124, rockyMix)),
             g: clampByte(lerp(color.g, 128, rockyMix)),
@@ -2364,12 +2525,37 @@ function setMapPinAtCurrentPosition(showFeedback = true) {
 }
 
 function setMapHomePinAtCurrentPosition(showFeedback = true) {
+    const nextX = Number(state.playerPosition.x) || 0;
+    const nextZ = Number(state.playerPosition.z) || 0;
+    const hasCurrentHome = Boolean(mapState.homePin && Number.isFinite(Number(mapState.homePin.x)) && Number.isFinite(Number(mapState.homePin.z)));
+    let confirmMessage = `Guardar esta posicion como casa?\nX: ${nextX.toFixed(1)} Z: ${nextZ.toFixed(1)}`;
+    if (hasCurrentHome) {
+        confirmMessage = [
+            "Vas a reemplazar el pin de casa actual.",
+            `Casa actual: X ${Number(mapState.homePin.x).toFixed(1)} Z ${Number(mapState.homePin.z).toFixed(1)}`,
+            `Nueva casa: X ${nextX.toFixed(1)} Z ${nextZ.toFixed(1)}`,
+            "Quieres continuar?"
+        ].join("\n");
+    }
+    let accepted = true;
+    try {
+        accepted = window.confirm(confirmMessage);
+    } catch (error) {
+        accepted = true;
+    }
+    if (!accepted) {
+        if (showFeedback) {
+            showToast("Cambio de casa cancelado", "info", 900);
+        }
+        return false;
+    }
     setMapHomePinAtWorldCoordinates(
-        state.playerPosition.x,
-        state.playerPosition.z,
+        nextX,
+        nextZ,
         showFeedback,
         "Casa guardada en tu posicion"
     );
+    return true;
 }
 
 function setMapPinAtWorldCoordinates(x, z, showFeedback = true, successMessage = "Destino temporal guardado") {
@@ -8677,23 +8863,58 @@ function getEarthLikeContinentMask(worldX, worldZ) {
     const nz = wrappedZ / GLOBAL_MAP_VIEW_RADIUS_BLOCKS;
 
     let continents = 0;
-    continents = Math.max(continents, ellipseMask(nx, nz, -0.66, -0.14, 0.19, 0.28, -16, 1.45));
-    continents = Math.max(continents, ellipseMask(nx, nz, -0.56, 0.31, 0.12, 0.24, 12, 1.6));
-    continents = Math.max(continents, ellipseMask(nx, nz, -0.05, -0.08, 0.11, 0.12, -8, 1.5));
-    continents = Math.max(continents, ellipseMask(nx, nz, 0.01, 0.17, 0.14, 0.24, 2, 1.6));
-    continents = Math.max(continents, ellipseMask(nx, nz, 0.41, -0.07, 0.37, 0.28, 11, 1.5));
-    continents = Math.max(continents, ellipseMask(nx, nz, 0.58, 0.42, 0.13, 0.09, 8, 1.55));
-    continents = Math.max(continents, ellipseMask(nx, nz, -0.42, -0.48, 0.07, 0.06, 5, 1.3));
+    const add = (cx, cz, rx, rz, angle, weight = 1, softness = 0.9) => {
+        continents += ellipseMask(nx, nz, cx, cz, rx, rz, angle, softness) * weight;
+    };
 
-    const coastalNoise = fractalNoise2D(wrappedX + 1400, wrappedZ - 1100, 0.0014, 3, 0.56, 420);
-    const gulfNoise = Math.abs(valueNoise2D(wrappedX - 920, wrappedZ + 760, 0.0029, 421));
+    // Americas
+    add(-0.68, -0.2, 0.29, 0.31, -18, 1.02, 0.84);
+    add(-0.76, -0.08, 0.16, 0.16, -26, 0.74, 0.86);
+    add(-0.58, -0.02, 0.14, 0.2, -16, 0.68, 0.9);
+    add(-0.64, 0.16, 0.1, 0.14, -5, 0.56, 0.95);
+    add(-0.57, 0.43, 0.16, 0.32, -7, 0.98, 0.9);
+    add(-0.53, 0.62, 0.1, 0.2, 8, 0.58, 0.95);
+
+    // Greenland
+    add(-0.37, -0.53, 0.12, 0.14, -8, 0.62, 0.92);
+
+    // Europe + Africa
+    add(-0.05, -0.16, 0.13, 0.11, -11, 0.86, 0.87);
+    add(0.02, 0.09, 0.21, 0.32, 4, 1.08, 0.9);
+    add(0.08, 0.29, 0.13, 0.2, 8, 0.74, 0.93);
+
+    // Arabia + India
+    add(0.2, 0.08, 0.11, 0.12, 14, 0.64, 0.92);
+    add(0.3, 0.13, 0.09, 0.13, 24, 0.58, 0.92);
+
+    // Asia
+    add(0.42, -0.17, 0.34, 0.24, 8, 1.08, 0.86);
+    add(0.58, -0.04, 0.23, 0.2, 4, 0.94, 0.9);
+    add(0.48, 0.1, 0.22, 0.18, 12, 0.76, 0.9);
+    add(0.68, 0.02, 0.11, 0.11, 0, 0.56, 0.94);
+
+    // Oceania
+    add(0.71, 0.53, 0.16, 0.1, 8, 0.94, 0.87);
+    add(0.62, 0.41, 0.14, 0.11, 22, 0.56, 0.92);
+    add(0.79, 0.4, 0.08, 0.07, 6, 0.44, 0.9);
+
+    let landMask = smoothstep(0.22, 0.74, continents);
+    const atlanticCarve = ellipseMask(nx, nz, -0.21, 0.02, 0.24, 0.62, 2, 1.26);
+    const pacificNorthCarve = ellipseMask(nx, nz, -0.88, -0.04, 0.18, 0.42, -8, 1.3);
+    const pacificSouthCarve = ellipseMask(nx, nz, 0.9, 0.24, 0.16, 0.4, 8, 1.3);
+    landMask -= atlanticCarve * 0.2;
+    landMask -= pacificNorthCarve * 0.12;
+    landMask -= pacificSouthCarve * 0.12;
+
+    const coastalNoise = fractalNoise2D(wrappedX + 1420, wrappedZ - 1180, 0.00135, 4, 0.56, 420);
+    const shorelineRidges = Math.abs(valueNoise2D(wrappedX - 760, wrappedZ + 520, 0.0034, 421));
     const archipelagoNoise = fractalNoise2D(wrappedX + 2600, wrappedZ + 1800, 0.0022, 2, 0.54, 422);
-    let landMask = continents;
     landMask += coastalNoise * 0.065;
-    landMask -= smoothstep(0.38, 0.78, gulfNoise) * 0.12;
-    if (archipelagoNoise > 0.44 && continents < 0.42) {
-        landMask += (archipelagoNoise - 0.44) * 0.12;
+    landMask -= smoothstep(0.4, 0.78, shorelineRidges) * 0.11;
+    if (archipelagoNoise > 0.52 && landMask < 0.48) {
+        landMask += (archipelagoNoise - 0.52) * 0.16;
     }
+
     return clamp01(landMask);
 }
 
@@ -8714,11 +8935,11 @@ function getColumnInfo(x, z) {
     const continentalNoise = fractalNoise2D(wx, wz, 0.00045, 5, 0.56, 31);
     const continentalShapeNoise = fractalNoise2D(wx + 3100, wz - 2700, 0.00072, 3, 0.56, 32);
     const earthLandMask = getEarthLikeContinentMask(x, z);
-    const continentalBase = (earthLandMask - 0.5) * 2;
+    const continentalBase = earthLandMask * 2 - 1;
     const continental = THREE.MathUtils.clamp(
-        continentalBase * 0.92
-        + continentalNoise * 0.18
-        + continentalShapeNoise * 0.1,
+        continentalBase * 0.96
+        + continentalNoise * 0.1
+        + continentalShapeNoise * 0.06,
         -1,
         1
     );
@@ -8746,6 +8967,8 @@ function getColumnInfo(x, z) {
     const volcanicNoise = fractalNoise2D(wx - 1380, wz + 870, 0.00105, 4, 0.58, 333);
     const volcanicRidged = Math.pow(clamp01(1 - Math.abs(valueNoise2D(wx + 940, wz - 420, 0.0038, 338))), 1.34);
     const volcanicClusterNoise = fractalNoise2D(wx - 3260, wz + 2490, 0.00042, 3, 0.62, 339);
+    const tectonicSignal = Math.abs(valueNoise2D(wx - 2200, wz + 1400, 0.00052, 340));
+    const tectonicBeltMask = 1 - smoothstep(0.18, 0.42, tectonicSignal);
 
     const microMoisture01 = clamp01((moistureNoise + 1) * 0.5);
     const microHeat01 = clamp01((temperatureNoise + 1) * 0.5);
@@ -8800,20 +9023,29 @@ function getColumnInfo(x, z) {
     rawHeight -= lakeMaskRaw * (12 + deepLakeMaskRaw * 30 + (1 - mountainMask) * 10);
 
     const volcanicClusterMask = smoothstep(
-        0.58,
-        0.86,
-        volcanicClusterNoise * 0.84 + mountainMask * 0.3 + regionalRelief * 0.16 - valleyMask * 0.24
+        0.44,
+        0.72,
+        volcanicClusterNoise * 0.82
+        + mountainMask * 0.32
+        + regionalRelief * 0.24
+        + tectonicBeltMask * 0.34
+        - valleyMask * 0.22
     );
     const volcanicMaskRaw = smoothstep(
-        0.56,
-        0.84,
-        volcanicNoise * 0.76 + volcanicRidged * 0.56 + ridgePeaks * 0.24 + (1 - climateMoisture01) * 0.3 - valleyMask * 0.28
+        0.42,
+        0.7,
+        volcanicNoise * 0.76
+        + volcanicRidged * 0.56
+        + ridgePeaks * 0.3
+        + tectonicBeltMask * 0.24
+        + (1 - climateMoisture01) * 0.32
+        - valleyMask * 0.24
     ) * volcanicClusterMask;
     const craterMaskRaw = smoothstep(0.78, 0.97, volcanicRidged + volcanicMaskRaw * 0.38) * volcanicMaskRaw;
     const lavaChannelMaskRaw = smoothstep(0.44, 0.84, volcanicMaskRaw)
         * (1 - craterMaskRaw * 0.68)
         * (1 - smoothstep(0.05, 0.18, Math.abs(valueNoise2D(wx + 1280, wz - 960, 0.012, 352))));
-    rawHeight += volcanicMaskRaw * (24 + ridgePeaks * 86);
+    rawHeight += volcanicMaskRaw * (30 + ridgePeaks * 96);
     rawHeight -= craterMaskRaw * (18 + volcanicMaskRaw * 38);
 
     const centerDistance = Math.hypot(x, z);
@@ -8847,8 +9079,8 @@ function getColumnInfo(x, z) {
     const craterMask = craterMaskRaw * spawnBlend;
     const lavaChannelMask = lavaChannelMaskRaw * spawnBlend;
 
-    const isOceanic = continental < -0.24 || height <= SEA_LEVEL - 9;
-    const isCoast = !isOceanic && (continental < -0.06 || (height <= SEA_LEVEL + 3 && moisture > -0.08));
+    const isOceanic = continental < -0.28 || height <= SEA_LEVEL - 11;
+    const isCoast = !isOceanic && (continental < 0.08 || (height <= SEA_LEVEL + 4 && moisture > -0.12));
     const isDeepLake = deepLakeMask > 0.44 && height <= SEA_LEVEL + 2;
     const mountainDominance = smoothstep(0.42, 0.84, mountainMask + regionalRelief * 0.22);
     const desertScore = clamp01((1 - climateMoisture01) * 0.78 + climateHeat01 * 0.54 + mountainDominance * 0.08 - valleyMask * 0.16);
@@ -8862,13 +9094,13 @@ function getColumnInfo(x, z) {
     } else if (isDeepLake || (lakeMask > 0.42 && height <= SEA_LEVEL + 2)) {
         biome = BIOME.LAKE;
     } else if (
-        volcanicMask > 0.54
-        && mountainMask > 0.3
-        && ridgePeaks > 0.16
+        volcanicMask > 0.3
+        && mountainMask > 0.16
+        && ridgePeaks > 0.08
         && lakeMask < 0.22
-        && height >= SEA_LEVEL + 10
-        && continental > 0.02
-        && regionalRelief > 0.34
+        && height >= SEA_LEVEL + 5
+        && continental > -0.12
+        && regionalRelief > 0.2
     ) {
         biome = BIOME.VOLCANIC;
     } else if (isCoast) {
@@ -9292,10 +9524,10 @@ function getProceduralBlock(x, y, z) {
         }
 
         if (biome === BIOME.VOLCANIC) {
-            if (column.craterMask > 0.84 && h >= SEA_LEVEL + 10) {
+            if (column.craterMask > 0.62 && h >= SEA_LEVEL + 7) {
                 return BLOCK.LAVA;
             }
-            if (column.lavaChannelMask > 0.72 && h >= SEA_LEVEL + 12 && (hash2D(x, z, 1704) % 5 === 0)) {
+            if (column.lavaChannelMask > 0.52 && h >= SEA_LEVEL + 8 && (hash2D(x, z, 1704) % 3 === 0)) {
                 return BLOCK.LAVA;
             }
             const volcanicTopPick = hash2D(x, z, 1705) % 9;
@@ -9389,7 +9621,7 @@ function getProceduralBlock(x, y, z) {
 
     if (biome === BIOME.VOLCANIC) {
         if (y >= h - 2) {
-            if ((column.craterMask > 0.78 || column.lavaChannelMask > 0.74) && h >= SEA_LEVEL + 8 && (hash2D(x, z, 1710) % 6 === 0)) {
+            if ((column.craterMask > 0.54 || column.lavaChannelMask > 0.52) && h >= SEA_LEVEL + 6 && (hash2D(x, z, 1710) % 3 === 0)) {
                 return BLOCK.LAVA;
             }
             const volcanicSurface = hash2D(x, z, 1711) % 8;
@@ -9398,6 +9630,9 @@ function getProceduralBlock(x, y, z) {
             return BLOCK.VOLCANIC_STONE;
         }
         if (y >= h - 8) {
+            if ((column.craterMask > 0.58 || column.lavaChannelMask > 0.55) && y >= h - 6 && (hash2D(x, z, 1713) % 5 === 0)) {
+                return BLOCK.LAVA;
+            }
             const volcanicDeep = hash2D(x, z, 1712) % 7;
             if (volcanicDeep <= 1) return BLOCK.OBSIDIAN;
             if (volcanicDeep <= 3) return BLOCK.BASALT;
@@ -10348,8 +10583,10 @@ function updateHud() {
 
 function updateSelectedMaterialHud() {
     const item = getSelectedHotbarItem();
-    const label = item?.label || "Material";
-    const kindLabel = item?.kind === ITEM_KIND.PROP ? "Objeto" : "Material";
+    const label = item?.label || "Slot vacio";
+    const kindLabel = item
+        ? (item.kind === ITEM_KIND.PROP ? "Objeto" : "Material")
+        : "Barra";
 
     if (selectedMaterialHudEl) {
         selectedMaterialHudEl.textContent = `${kindLabel}: ${label}`;
@@ -10364,6 +10601,7 @@ function renderInventoryUi() {
     if (!inventoryGridEl) {
         return;
     }
+    populateInventoryCategoryQuickFillOptions();
 
     inventoryGridEl.innerHTML = "";
     for (const category of INVENTORY_CATEGORY_ORDER) {
@@ -10871,7 +11109,7 @@ function updateInteractionPanel(deltaSeconds = 0) {
 function assignHotbarSlot(slotIndex, itemId, showFeedback = false) {
     const index = THREE.MathUtils.clamp(Math.floor(Number(slotIndex) || 0), 0, HOTBAR_SIZE - 1);
     const normalizedId = String(itemId || "");
-    if (!INVENTORY_ITEM_BY_ID.has(normalizedId)) {
+    if (normalizedId && !INVENTORY_ITEM_BY_ID.has(normalizedId)) {
         return;
     }
 
@@ -10880,8 +11118,12 @@ function assignHotbarSlot(slotIndex, itemId, showFeedback = false) {
     refreshHotbarUi();
 
     if (showFeedback) {
-        const item = INVENTORY_ITEM_BY_ID.get(normalizedId);
-        showToast(`Slot ${index + 1}: ${item?.label || "Item"}`, "success", 900);
+        if (!normalizedId) {
+            showToast(`Slot ${index + 1} vaciado`, "info", 900);
+        } else {
+            const item = INVENTORY_ITEM_BY_ID.get(normalizedId);
+            showToast(`Slot ${index + 1}: ${item?.label || "Item"}`, "success", 900);
+        }
     }
 }
 
@@ -10893,11 +11135,12 @@ function refreshHotbarUi() {
     hotbarEl.innerHTML = "";
     for (let index = 0; index < HOTBAR_SIZE; index += 1) {
         const item = getHotbarItemByIndex(index);
+        const itemLabel = item?.label || "Vacio";
         const slot = document.createElement("div");
-        slot.className = `slot${index === state.selectedHotbarIndex ? " selected" : ""}`;
-        slot.setAttribute("aria-label", `${index + 1} ${item.label}`);
-        slot.style.backgroundColor = getInventoryItemTint(item);
-        slot.textContent = `${index + 1}\n${item.label}`;
+        slot.className = `slot${index === state.selectedHotbarIndex ? " selected" : ""}${item ? "" : " empty"}`;
+        slot.setAttribute("aria-label", `${index + 1} ${itemLabel}`);
+        slot.style.backgroundColor = item ? getInventoryItemTint(item) : "rgba(255, 255, 255, 0.02)";
+        slot.textContent = `${index + 1}\n${itemLabel}`;
         slot.draggable = true;
 
         slot.addEventListener("click", () => {
@@ -10938,6 +11181,11 @@ function refreshHotbarUi() {
             const droppedId = event.dataTransfer?.getData("text/plain") || draggedInventoryItemId;
             assignHotbarSlot(index, droppedId, true);
             draggedInventoryItemId = "";
+        });
+
+        slot.addEventListener("contextmenu", (event) => {
+            event.preventDefault();
+            assignHotbarSlot(index, "", true);
         });
 
         hotbarEl.appendChild(slot);
@@ -11341,8 +11589,8 @@ function setSelectedHotbar(index) {
 
     state.selectedHotbarIndex = clamped;
     refreshHotbarUi();
-    const label = getSelectedHotbarItem()?.label || "Material";
-    showToast(`Material seleccionado: ${label}`, "success", 900);
+    const label = getSelectedHotbarItem()?.label || "Slot vacio";
+    showToast(`Seleccionado: ${label}`, "success", 900);
 }
 
 function tryHarvestSunflowerAtCrosshair() {
@@ -11825,9 +12073,13 @@ function onKeyDown(event) {
         return;
     }
 
-    if (/^Digit[1-8]$/.test(event.code)) {
+    if (/^Digit[1-9]$/.test(event.code)) {
         const idx = Number(event.code.slice(-1)) - 1;
         setSelectedHotbar(idx);
+        return;
+    }
+    if (event.code === "Digit0") {
+        setSelectedHotbar(9);
         return;
     }
 
@@ -11959,6 +12211,13 @@ function setupEvents() {
         });
     }
 
+    if (inventoryCategoryQuickFillButtonEl) {
+        inventoryCategoryQuickFillButtonEl.addEventListener("click", () => {
+            const selectedCategory = inventoryCategoryQuickFillSelectEl?.value || INVENTORY_CATEGORY.CONSTRUCTION;
+            applyHotbarCategoryQuickFill(selectedCategory, true);
+        });
+    }
+
     if (mapToggleButtonEl) {
         mapToggleButtonEl.addEventListener("click", () => {
             if (!state.worldStarted || !state.worldReady) {
@@ -12078,6 +12337,13 @@ function setupEvents() {
         qualityPresetSelectEl.addEventListener("change", (event) => {
             const value = event.target?.value || "auto";
             setQualityPreset(value, true, true);
+        });
+    }
+
+    if (graphicsModeSelectEl) {
+        graphicsModeSelectEl.addEventListener("change", (event) => {
+            const value = event.target?.value || GRAPHICS_MODE.AUTO;
+            setGraphicsMode(value, true, true);
         });
     }
 
@@ -12211,6 +12477,7 @@ function init() {
     setDebugVisible(loadDebugVisibility(), false);
     loadGameplayPreferences();
     loadMapPinFromStorage();
+    populateInventoryCategoryQuickFillOptions();
     updateMapModeButtons();
     updateMapPanelLayout();
     if (pauseButton) {
@@ -12247,7 +12514,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-8 material - I inventario - M mapa (global: click pin y rueda zoom) - F3 debug - V ver avatar - ESC pausa";
+        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - Rueda o 1-9/0 material - I inventario - M mapa (global: click pin y rueda zoom) - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;

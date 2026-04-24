@@ -46,7 +46,15 @@
             <p class="title">Inventario</p>
             <button id="inventoryCloseButton" type="button" aria-label="Cerrar inventario">Cerrar</button>
         </div>
-        <p class="inventory-note">Arrastra materiales u objetos a la barra inferior (8 slots).</p>
+        <p class="inventory-note">Arrastra materiales u objetos a la barra inferior (15 slots).</p>
+        <div class="inventory-quickbar">
+            <label for="inventoryCategoryQuickFillSelect">Carga rapida por seccion</label>
+            <div class="inventory-quickbar-row">
+                <select id="inventoryCategoryQuickFillSelect" aria-label="Seccion de inventario para cargar en barra"></select>
+                <button id="inventoryCategoryQuickFillButton" type="button">Cargar en barra</button>
+            </div>
+            <p class="inventory-note inventory-note-soft">Si la seccion tiene menos items, los slots restantes quedan vacios.</p>
+        </div>
         <div id="inventoryGrid" aria-label="Todos los materiales"></div>
     </aside>
 
@@ -110,6 +118,16 @@
                     </select>
                 </label>
 
+                <label class="settings-control" for="graphicsModeSelect">
+                    <span>Modo GPU</span>
+                    <select id="graphicsModeSelect">
+                        <option value="auto">Auto (recomendado)</option>
+                        <option value="dedicated">Dedicada (alto rendimiento)</option>
+                        <option value="integrated">Integrada (ahorro)</option>
+                        <option value="software">Software (sin aceleracion)</option>
+                    </select>
+                </label>
+
                 <label class="settings-control" for="pointerSensitivitySlider">
                     <span>Sensibilidad mouse</span>
                     <input id="pointerSensitivitySlider" type="range" min="0.35" max="1.5" step="0.01" value="0.68">
@@ -147,7 +165,7 @@
         <div class="panel overlay-card">
             <h1>Sandbox 3D</h1>
             <p>Prototipo estilo Minecraft para que iteremos rapido en local.</p>
-            <p>Controles: WASD, Mouse, Espacio, Shift, V para ver avatar, 1-8 para slots.</p>
+            <p>Controles: WASD, Mouse, Espacio, Shift, V para ver avatar, 1-9/0 para slots.</p>
             <p id="bootStatus">Preparando motor 3D...</p>
             <button id="startButton" type="button">Entrar al mundo</button>
         </div>

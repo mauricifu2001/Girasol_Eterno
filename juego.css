@@ -158,6 +158,12 @@ body {
     transition: transform 130ms ease, border-color 130ms ease, box-shadow 130ms ease, background-color 130ms ease;
 }
 
+.slot.empty {
+    opacity: 0.82;
+    background: rgba(255, 255, 255, 0.015);
+    border-style: dashed;
+}
+
 .slot.selected {
     border-color: #f4cf85;
     box-shadow: 0 0 0 1px rgba(244, 207, 133, 0.45) inset;
@@ -311,6 +317,42 @@ body {
     margin: 7px 0 0;
     font-size: 0.68rem;
     color: #b7e1ff;
+}
+
+.inventory-note-soft {
+    color: #9eb8cb;
+}
+
+.inventory-quickbar {
+    margin-top: 8px;
+    display: grid;
+    gap: 6px;
+}
+
+.inventory-quickbar > label {
+    font-size: 0.68rem;
+    color: #f4cf85;
+}
+
+.inventory-quickbar-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+}
+
+.inventory-quickbar-row select,
+.inventory-quickbar-row button {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    background: rgba(17, 20, 28, 0.82);
+    color: #efe9db;
+    padding: 6px 8px;
+    font-size: 0.7rem;
+}
+
+.inventory-quickbar-row button {
+    cursor: pointer;
+    white-space: nowrap;
 }
 
 #inventoryGrid {
