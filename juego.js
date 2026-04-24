@@ -49,6 +49,8 @@ function formatMetricCompact(value) {
 
 const WORLD_MAX_Y = 480;
 const CHUNK_SIZE = 16;
+const CHUNK_RADIUS_MIN = 2;
+const CHUNK_RADIUS_MAX = 64;
 const CHUNK_MANAGEMENT_INTERVAL = 0.22;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
 const INITIAL_CHUNK_BUILD_BUDGET = 10;
@@ -287,10 +289,10 @@ const FOG_SAMPLE_INTERVAL_SECONDS = 0.3;
 const FOG_BLEND_SPEED = 2.6;
 const FOG_BASE_PADDING_BLOCKS = 96;
 const FOG_MIN_FAR = 220;
-const FOG_MAX_FAR = 520;
-const CAMERA_FAR_PADDING = 84;
+const FOG_MAX_FAR = CHUNK_RADIUS_MAX * CHUNK_SIZE + FOG_BASE_PADDING_BLOCKS;
+const CAMERA_FAR_PADDING = 120;
 const CAMERA_MIN_FAR = 300;
-const CAMERA_MAX_FAR = 620;
+const CAMERA_MAX_FAR = FOG_MAX_FAR + CAMERA_FAR_PADDING + 80;
 const SKY_DAY_COLOR = new THREE.Color(0x9bc7ff);
 const SKY_DUSK_COLOR = new THREE.Color(0xffb579);
 const SKY_NIGHT_COLOR = new THREE.Color(0x091327);
@@ -335,8 +337,8 @@ const TERRAIN_GENERATION_VERSION = 4;
 const WORLD_SEED = Number(gameConfig.worldSeed) || 42173;
 const INITIAL_CHUNK_RADIUS = clampInt(
     Number(urlParams.get("chunks") || gameConfig.renderChunkRadius || 4),
-    2,
-    16
+    CHUNK_RADIUS_MIN,
+    CHUNK_RADIUS_MAX
 );
 
 const canvas = document.getElementById("gameCanvas");
@@ -433,7 +435,7 @@ function readInitialGraphicsModeFromStorage() {
 const INITIAL_GRAPHICS_MODE = readInitialGraphicsModeFromStorage();
 
 function getBaseViewDistanceForChunkRadius(chunkRadius) {
-    const radiusBlocks = clampInt(chunkRadius, 2, 16) * CHUNK_SIZE;
+    const radiusBlocks = clampInt(chunkRadius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX) * CHUNK_SIZE;
     return THREE.MathUtils.clamp(radiusBlocks + FOG_BASE_PADDING_BLOCKS, FOG_MIN_FAR, FOG_MAX_FAR);
 }
 
@@ -2019,7 +2021,11 @@ function setFlightMode(enabled, persist = true, showFeedback = false) {
 }
 
 function loadGameplayPreferences() {
-    const storedChunkRadius = clampInt(readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius), 2, 16);
+    const storedChunkRadius = clampInt(
+        readStorageNumber(CHUNK_RADIUS_STORAGE_KEY, state.chunkRadius),
+        CHUNK_RADIUS_MIN,
+        CHUNK_RADIUS_MAX
+    );
     state.chunkRadius = storedChunkRadius;
     syncCameraViewDistanceWithChunkRadius();
 
@@ -10674,7 +10680,7 @@ function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME, ma
 }
 
 function setChunkRadius(nextRadius) {
-    const clamped = clampInt(nextRadius, 2, 16);
+    const clamped = clampInt(nextRadius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX);
     const changed = clamped !== state.chunkRadius;
 
     state.chunkRadius = clamped;
