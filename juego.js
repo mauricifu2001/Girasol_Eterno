@@ -153,6 +153,9 @@ const PROFILE_COLORS = {
 const FLORA_DECOR_COLORS = Object.freeze({
     stemDark: 0x3f7436,
     stemFresh: 0x5a8e46,
+    grassDark: 0x3f7f2f,
+    grassMid: 0x5a973e,
+    grassBright: 0x7cb356,
     leafDense: 0x4d8944,
     leafSoft: 0x78a861,
     leafCoastal: 0x6c9962,
@@ -10513,12 +10516,8 @@ function pushFloraDecorInstance(instancesByColor, colorHex, x, y, z, sx, sy, sz,
     instances.push(x, y, z, sx, sy, sz, rx, ry, rz);
 }
 
-function emitFloraDecorForColumn(instancesByColor, x, z, column) {
+function emitFloraDecorForColumn(instancesByColor, x, z, column, grassDensityScale = 1) {
     const floraType = String(column?.floraType || "none");
-    if (floraType === "none") {
-        return;
-    }
-
     const groundY = Number(column?.height);
     if (!Number.isFinite(groundY)) {
         return;
@@ -10529,12 +10528,75 @@ function emitFloraDecorForColumn(instancesByColor, x, z, column) {
         return;
     }
 
-    const floraHeight = clampInt(Number(column?.floraHeight) || 1, 1, 3);
-    const scale = 0.82 + hashUnit(x, z, 1821) * 0.62;
-    const yawJitter = (hashUnit(x, z, 1822) - 0.5) * 0.46;
+    const biome = String(column?.biome || BIOME.PLAINS);
+    const groundBlockId = getBlock(x, groundBlockY, z);
     const rootX = x + 0.5;
     const rootY = groundY + 0.02;
     const rootZ = z + 0.5;
+
+    const canEmitGrass = (
+        grassDensityScale > 0.01
+        && groundBlockId === BLOCK.GRASS
+        && biome !== BIOME.DESERT
+        && biome !== BIOME.MARITIME
+        && biome !== BIOME.LAKE
+        && biome !== BIOME.VOLCANIC
+    );
+    if (canEmitGrass) {
+        const moisture01 = clamp01((Number(column?.moisture) || 0) * 0.5 + 0.5);
+        const temperature01 = clamp01((Number(column?.temperature) || 0) * 0.5 + 0.5);
+        let biomeBias = 0;
+        if (biome === BIOME.FOREST) biomeBias = 0.2;
+        else if (biome === BIOME.PLAINS || biome === BIOME.SPAWN_VALLEY) biomeBias = 0.15;
+        else if (biome === BIOME.COAST) biomeBias = 0.1;
+        else if (biome === BIOME.CORDILLERA) biomeBias = 0.06;
+
+        let grassDensity = 0.12 + moisture01 * 0.28 + temperature01 * 0.08 + biomeBias;
+        if (floraType !== "none") {
+            grassDensity -= 0.08;
+        }
+        grassDensity = clamp01(grassDensity) * THREE.MathUtils.clamp(Number(grassDensityScale) || 0, 0, 1);
+
+        if (hashUnit(x, z, 1880) < grassDensity) {
+            const tuftScale = 0.72 + hashUnit(x, z, 1881) * 0.94;
+            const tallFactor = hashUnit(x, z, 1882) > 0.78 ? 1.26 : 1;
+            const bladeCount = 4 + (hash2D(x, z, 1883) % 3);
+            const grassPalette = [FLORA_DECOR_COLORS.grassDark, FLORA_DECOR_COLORS.grassMid, FLORA_DECOR_COLORS.grassBright];
+
+            for (let i = 0; i < bladeCount; i += 1) {
+                const angle = (i / bladeCount) * Math.PI * 2 + (hashUnit(x, z, 1890 + i) - 0.5) * 0.42;
+                const spread = 0.035 + hashUnit(x, z, 1910 + i) * 0.07;
+                const bladeHeight = (0.3 + hashUnit(x, z, 1930 + i) * 0.62) * tuftScale * tallFactor;
+                const bladeWidth = 0.032 + hashUnit(x, z, 1950 + i) * 0.028;
+                const bladeDepth = 0.085 + hashUnit(x, z, 1970 + i) * 0.11;
+                const tiltX = (hashUnit(x, z, 1990 + i) - 0.5) * 0.24;
+                const tiltZ = (hashUnit(x, z, 2010 + i) - 0.5) * 0.24;
+                const grassColor = grassPalette[hash2D(x + i * 3, z - i * 5, 2030) % grassPalette.length];
+
+                pushFloraDecorInstance(
+                    instancesByColor,
+                    grassColor,
+                    rootX + Math.cos(angle) * spread,
+                    rootY + bladeHeight * 0.5,
+                    rootZ + Math.sin(angle) * spread,
+                    bladeWidth,
+                    bladeHeight,
+                    bladeDepth,
+                    tiltX,
+                    angle,
+                    tiltZ
+                );
+            }
+        }
+    }
+
+    if (floraType === "none") {
+        return;
+    }
+
+    const floraHeight = clampInt(Number(column?.floraHeight) || 1, 1, 3);
+    const scale = 0.82 + hashUnit(x, z, 1821) * 0.62;
+    const yawJitter = (hashUnit(x, z, 1822) - 0.5) * 0.46;
     const blossomPalette = [
         FLORA_DECOR_COLORS.petalBlue,
         FLORA_DECOR_COLORS.petalPink,
@@ -10680,13 +10742,25 @@ function addChunkDecorativeFloraMeshes(chunk, baseX, baseZ) {
         return;
     }
 
+    const playerChunkX = worldToChunkCoord(state.playerPosition.x);
+    const playerChunkZ = worldToChunkCoord(state.playerPosition.z);
+    const chunkDistance = Math.max(Math.abs(chunk.cx - playerChunkX), Math.abs(chunk.cz - playerChunkZ));
+    let grassDensityScale = 1;
+    if (chunkDistance > 10) {
+        grassDensityScale = 0;
+    } else if (chunkDistance > 8) {
+        grassDensityScale = 0.35;
+    } else if (chunkDistance > 6) {
+        grassDensityScale = 0.62;
+    }
+
     const instancesByColor = new Map();
     for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
         for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
             const x = baseX + lx;
             const z = baseZ + lz;
             const column = getColumnInfo(x, z);
-            emitFloraDecorForColumn(instancesByColor, x, z, column);
+            emitFloraDecorForColumn(instancesByColor, x, z, column, grassDensityScale);
         }
     }
 
