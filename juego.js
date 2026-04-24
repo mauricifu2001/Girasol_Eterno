@@ -51,9 +51,13 @@ const WORLD_MAX_Y = 480;
 const CHUNK_SIZE = 16;
 const CHUNK_RADIUS_MIN = 2;
 const CHUNK_RADIUS_MAX = 64;
-const CHUNK_MANAGEMENT_INTERVAL = 0.22;
+const CHUNK_MANAGEMENT_INTERVAL = 0.08;
 const CHUNK_REBUILD_BUDGET_PER_FRAME = 1;
-const INITIAL_CHUNK_BUILD_BUDGET = 10;
+const INITIAL_CHUNK_BUILD_BUDGET = 36;
+const CHUNK_FULL_DETAIL_RADIUS_MIN = 8;
+const CHUNK_FULL_DETAIL_RADIUS_MAX = 24;
+const CHUNK_REBUILD_FIFO_POP_THRESHOLD = 2200;
+const CHUNK_REBUILD_FIFO_POP_SCAN_LIMIT = 28;
 const BLOCK_FACE_NEIGHBOR_OFFSETS = Object.freeze([
     [1, 0, 0],
     [-1, 0, 0],
@@ -1130,6 +1134,7 @@ function createDetailPart(size, position, colorHex, rotation = null) {
 
 const chunkMap = new Map();
 const chunkRebuildQueue = new Set();
+const chunkOffsetsByRadiusCache = new Map();
 const editedBlocks = new Map();
 const editedColumnYIndex = new Map();
 const columnCache = new Map();
@@ -1139,6 +1144,7 @@ const propTypeIndex = new Map(Object.values(PROP_TYPE).map((type) => [type, new 
 
 const blockMeshes = [];
 const blockPositionLookup = new Map();
+const chunkBuildMatrixScratch = new THREE.Matrix4();
 
 const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
@@ -1194,6 +1200,8 @@ const state = {
     chunkTick: 0,
     loadedChunkCount: 0,
     pendingChunkBuildCount: 0,
+    lastChunkCenterCx: Number.NaN,
+    lastChunkCenterCz: Number.NaN,
     lastForward: new THREE.Vector3(0, 0, -1),
     autoSaveTick: 0,
     playerStateSaveTick: 0,
@@ -8760,8 +8768,14 @@ function getDynamicChunkBuildBudget() {
     if (state.pendingChunkBuildCount > 38 && fps > 50 && frameMs < 20) {
         budget += 1;
     }
+    if (state.pendingChunkBuildCount > 1800 && fps > 48 && frameMs < 21) {
+        budget += 2;
+    }
+    if (state.pendingChunkBuildCount > 5200 && fps > 45 && frameMs < 22) {
+        budget += 3;
+    }
 
-    return clampInt(budget, 1, 4);
+    return clampInt(budget, 1, 12);
 }
 
 function getDynamicChunkBuildFrameBudgetMs() {
@@ -8784,8 +8798,14 @@ function getDynamicChunkBuildFrameBudgetMs() {
     if (state.pendingChunkBuildCount > 56 && fps >= 54 && frameMs < 19) {
         frameBudgetMs += 0.65;
     }
+    if (state.pendingChunkBuildCount > 1800 && fps >= 48 && frameMs < 21.5) {
+        frameBudgetMs += 1.5;
+    }
+    if (state.pendingChunkBuildCount > 5200 && fps >= 45 && frameMs < 23) {
+        frameBudgetMs += 2.2;
+    }
 
-    return Math.max(1, Math.min(5.4, frameBudgetMs));
+    return Math.max(1, Math.min(9.2, frameBudgetMs));
 }
 
 let runtimeFirebaseConfigPromise = null;
@@ -10417,16 +10437,77 @@ function buildChunkColumnMeshYRanges(baseX, baseZ) {
     return { minYByColumn, maxYByColumn };
 }
 
-function rebuildChunkMesh(chunk) {
-    if (!chunk) {
+function addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, options = {}) {
+    if (!chunk || !(positionsByBlock instanceof Map)) {
         return;
     }
+    const enableLookup = options.enableLookup !== false;
+    const useLiquidSurfaceMesh = options.useLiquidSurfaceMesh !== false;
+    const allowShadows = options.allowShadows !== false;
+    const instanceScale = THREE.MathUtils.clamp(Number(options.instanceScale) || 1, 1, CHUNK_SIZE);
+    const matrix = chunkBuildMatrixScratch;
 
-    while (chunk.meshes.length) {
-        const mesh = chunk.meshes.pop();
-        removeMeshReferences(mesh);
-    }
+    positionsByBlock.forEach((positions, id) => {
+        const material = blockMaterials[id];
+        const instanceCount = Math.floor(positions.length / 3);
+        if (!material || instanceCount <= 0) {
+            return;
+        }
 
+        if (useLiquidSurfaceMesh && LIQUID_BLOCK_IDS.has(id)) {
+            const liquidMesh = buildLiquidChunkMesh(id, positions);
+            if (!liquidMesh) {
+                return;
+            }
+            worldRoot.add(liquidMesh);
+            blockMeshes.push(liquidMesh);
+            chunk.meshes.push(liquidMesh);
+            return;
+        }
+
+        const mesh = new THREE.InstancedMesh(blockGeometry, material, instanceCount);
+        const transparentBlock = isTranslucentBlock(id);
+        const definition = getBlockDefinitionById(id);
+        const isFoliage = Boolean(definition?.tags?.includes("foliage"));
+        const renderOrder = Number(definition?.visual?.renderOrder ?? (transparentBlock ? 2 : 1));
+        mesh.castShadow = allowShadows && !transparentBlock && !isFoliage;
+        mesh.receiveShadow = allowShadows && !LIQUID_BLOCK_IDS.has(id) && !isFoliage;
+        mesh.renderOrder = renderOrder;
+        mesh.userData.blockId = id;
+        mesh.userData.lookupKeys = [];
+
+        for (let index = 0; index < instanceCount; index += 1) {
+            const base = index * 3;
+            const x = positions[base];
+            const y = positions[base + 1];
+            const z = positions[base + 2];
+            if (instanceScale > 1.001) {
+                matrix.makeScale(instanceScale, 1, instanceScale);
+                matrix.setPosition(
+                    x + instanceScale * 0.5,
+                    y + 0.5,
+                    z + instanceScale * 0.5
+                );
+            } else {
+                matrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
+            }
+            mesh.setMatrixAt(index, matrix);
+
+            if (enableLookup) {
+                const lookupKey = `${mesh.id}:${index}`;
+                blockPositionLookup.set(lookupKey, { x, y, z, id });
+                mesh.userData.lookupKeys.push(lookupKey);
+            }
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        worldRoot.add(mesh);
+        blockMeshes.push(mesh);
+        chunk.meshes.push(mesh);
+    });
+}
+
+function rebuildChunkMeshFull(chunk) {
     const positionsByBlock = new Map();
     const baseX = chunk.cx * CHUNK_SIZE;
     const baseZ = chunk.cz * CHUNK_SIZE;
@@ -10463,63 +10544,91 @@ function rebuildChunkMesh(chunk) {
         }
     }
 
-    const matrix = new THREE.Matrix4();
-
-    positionsByBlock.forEach((positions, id) => {
-        const material = blockMaterials[id];
-        const instanceCount = Math.floor(positions.length / 3);
-        if (!material || instanceCount <= 0) {
-            return;
-        }
-
-        if (LIQUID_BLOCK_IDS.has(id)) {
-            const liquidMesh = buildLiquidChunkMesh(id, positions);
-            if (!liquidMesh) {
-                return;
-            }
-            worldRoot.add(liquidMesh);
-            blockMeshes.push(liquidMesh);
-            chunk.meshes.push(liquidMesh);
-            return;
-        }
-
-        const mesh = new THREE.InstancedMesh(blockGeometry, material, instanceCount);
-        const transparentBlock = isTranslucentBlock(id);
-        const definition = getBlockDefinitionById(id);
-        const isFoliage = Boolean(definition?.tags?.includes("foliage"));
-        const renderOrder = Number(definition?.visual?.renderOrder ?? (transparentBlock ? 2 : 1));
-        mesh.castShadow = !transparentBlock && !isFoliage;
-        mesh.receiveShadow = !LIQUID_BLOCK_IDS.has(id) && !isFoliage;
-        mesh.renderOrder = renderOrder;
-        mesh.userData.blockId = id;
-        mesh.userData.lookupKeys = [];
-
-        for (let index = 0; index < instanceCount; index += 1) {
-            const base = index * 3;
-            const x = positions[base];
-            const y = positions[base + 1];
-            const z = positions[base + 2];
-            matrix.makeTranslation(x + 0.5, y + 0.5, z + 0.5);
-            mesh.setMatrixAt(index, matrix);
-
-            const lookupKey = `${mesh.id}:${index}`;
-            blockPositionLookup.set(lookupKey, { x, y, z, id });
-            mesh.userData.lookupKeys.push(lookupKey);
-        }
-
-        mesh.instanceMatrix.needsUpdate = true;
-        worldRoot.add(mesh);
-        blockMeshes.push(mesh);
-        chunk.meshes.push(mesh);
+    addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, {
+        enableLookup: true,
+        useLiquidSurfaceMesh: true,
+        allowShadows: true
     });
+}
 
+function rebuildChunkMeshFar(chunk, sampleStep = 2) {
+    const positionsByBlock = new Map();
+    const baseX = chunk.cx * CHUNK_SIZE;
+    const baseZ = chunk.cz * CHUNK_SIZE;
+    const step = sampleStep >= 4 ? 4 : 2;
+
+    for (let lx = 0; lx < CHUNK_SIZE; lx += step) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz += step) {
+            const sampleX = baseX + Math.min(CHUNK_SIZE - 1, lx + Math.floor(step * 0.5));
+            const sampleZ = baseZ + Math.min(CHUNK_SIZE - 1, lz + Math.floor(step * 0.5));
+            const x = baseX + lx;
+            const z = baseZ + lz;
+            const column = getColumnInfo(sampleX, sampleZ);
+            let y = clampInt(column.height, 0, WORLD_MAX_Y - 1);
+            let id = getBlock(sampleX, y, sampleZ);
+
+            if (y < SEA_LEVEL) {
+                const waterId = getBlock(sampleX, SEA_LEVEL, sampleZ);
+                if (LIQUID_BLOCK_IDS.has(waterId)) {
+                    y = SEA_LEVEL;
+                    id = waterId;
+                }
+            }
+
+            if (id === BLOCK.AIR) {
+                continue;
+            }
+
+            let positions = positionsByBlock.get(id);
+            if (!positions) {
+                positions = [];
+                positionsByBlock.set(id, positions);
+            }
+            positions.push(x, y, z);
+        }
+    }
+
+    addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, {
+        enableLookup: false,
+        useLiquidSurfaceMesh: false,
+        allowShadows: false,
+        instanceScale: step
+    });
+}
+
+function rebuildChunkMesh(chunk) {
+    if (!chunk) {
+        return;
+    }
+
+    while (chunk.meshes.length) {
+        const mesh = chunk.meshes.pop();
+        removeMeshReferences(mesh);
+    }
+
+    const desiredLod = chunk.desiredLod === "far4" ? "far4" : chunk.desiredLod === "far2" ? "far2" : "full";
+    if (desiredLod === "far4") {
+        rebuildChunkMeshFar(chunk, 4);
+    } else if (desiredLod === "far2") {
+        rebuildChunkMeshFar(chunk, 2);
+    } else {
+        rebuildChunkMeshFull(chunk);
+    }
+    chunk.lodLevel = desiredLod;
     chunk.dirty = false;
 }
 
-function ensureChunk(cx, cz) {
+function ensureChunk(cx, cz, desiredLod = "full") {
     const key = chunkKey(cx, cz);
     let chunk = chunkMap.get(key);
     if (chunk) {
+        if (chunk.desiredLod !== desiredLod) {
+            chunk.desiredLod = desiredLod;
+            if (chunk.lodLevel !== desiredLod) {
+                chunk.dirty = true;
+                chunkRebuildQueue.add(key);
+            }
+        }
         return chunk;
     }
 
@@ -10527,7 +10636,9 @@ function ensureChunk(cx, cz) {
         cx,
         cz,
         meshes: [],
-        dirty: true
+        dirty: true,
+        desiredLod,
+        lodLevel: "none"
     };
 
     chunkMap.set(key, chunk);
@@ -10554,6 +10665,61 @@ function unloadChunk(key) {
     }
 }
 
+function getChunkOffsetsForRadius(radius) {
+    const clampedRadius = clampInt(radius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX);
+    const cached = chunkOffsetsByRadiusCache.get(clampedRadius);
+    if (cached) {
+        return cached;
+    }
+
+    const offsets = [];
+    for (let dx = -clampedRadius; dx <= clampedRadius; dx += 1) {
+        for (let dz = -clampedRadius; dz <= clampedRadius; dz += 1) {
+            offsets.push({ dx, dz, dist: Math.abs(dx) + Math.abs(dz) });
+        }
+    }
+    offsets.sort((a, b) => a.dist - b.dist);
+    chunkOffsetsByRadiusCache.set(clampedRadius, offsets);
+    return offsets;
+}
+
+function getChunkFullDetailRadius() {
+    if (state.chunkRadius <= CHUNK_FULL_DETAIL_RADIUS_MAX) {
+        return state.chunkRadius;
+    }
+
+    let fullRadius = THREE.MathUtils.clamp(
+        Math.floor(state.chunkRadius * 0.34),
+        CHUNK_FULL_DETAIL_RADIUS_MIN,
+        CHUNK_FULL_DETAIL_RADIUS_MAX
+    );
+
+    if (perfState.fpsEma < 48 || perfState.frameMsEma > 21) {
+        fullRadius = Math.max(CHUNK_FULL_DETAIL_RADIUS_MIN, fullRadius - 2);
+    }
+    if (state.pendingChunkBuildCount > 3400) {
+        fullRadius = Math.max(CHUNK_FULL_DETAIL_RADIUS_MIN, fullRadius - 3);
+    } else if (perfState.fpsEma > 58 && state.pendingChunkBuildCount < 850) {
+        fullRadius = Math.min(CHUNK_FULL_DETAIL_RADIUS_MAX, fullRadius + 2);
+    }
+
+    return Math.min(state.chunkRadius, fullRadius);
+}
+
+function resolveChunkDesiredLod(distanceFromCenter) {
+    const fullDetailRadius = getChunkFullDetailRadius();
+    if (distanceFromCenter <= fullDetailRadius) {
+        return "full";
+    }
+
+    const far4Start = Math.max(fullDetailRadius + 18, 44);
+    if (distanceFromCenter >= far4Start) {
+        return "far4";
+    }
+
+    return "far2";
+}
+
 function updateChunkStreaming(force = false) {
     state.chunkTick = force ? CHUNK_MANAGEMENT_INTERVAL : state.chunkTick;
 
@@ -10564,29 +10730,29 @@ function updateChunkStreaming(force = false) {
     state.chunkTick = 0;
     const centerCx = worldToChunkCoord(state.playerPosition.x);
     const centerCz = worldToChunkCoord(state.playerPosition.z);
+    const centerUnchanged = centerCx === state.lastChunkCenterCx && centerCz === state.lastChunkCenterCz;
+    if (!force && centerUnchanged) {
+        state.loadedChunkCount = chunkMap.size;
+        state.pendingChunkBuildCount = chunkRebuildQueue.size;
+        return;
+    }
+    state.lastChunkCenterCx = centerCx;
+    state.lastChunkCenterCz = centerCz;
 
     const desired = new Set();
-    const orderedTargets = [];
     let chunksChanged = false;
+    const orderedOffsets = getChunkOffsetsForRadius(state.chunkRadius);
 
-    for (let dx = -state.chunkRadius; dx <= state.chunkRadius; dx += 1) {
-        for (let dz = -state.chunkRadius; dz <= state.chunkRadius; dz += 1) {
-            const cx = centerCx + dx;
-            const cz = centerCz + dz;
-            const key = chunkKey(cx, cz);
-
-            desired.add(key);
-            orderedTargets.push({ key, cx, cz, dist: Math.abs(dx) + Math.abs(dz) });
-        }
-    }
-
-    orderedTargets.sort((a, b) => a.dist - b.dist);
-
-    for (const target of orderedTargets) {
-        if (!chunkMap.has(target.key)) {
+    for (const offset of orderedOffsets) {
+        const cx = centerCx + offset.dx;
+        const cz = centerCz + offset.dz;
+        const key = chunkKey(cx, cz);
+        desired.add(key);
+        if (!chunkMap.has(key)) {
             chunksChanged = true;
         }
-        ensureChunk(target.cx, target.cz);
+        const desiredLod = resolveChunkDesiredLod(offset.dist);
+        ensureChunk(cx, cz, desiredLod);
     }
 
     for (const key of chunkMap.keys()) {
@@ -10609,6 +10775,21 @@ function updateChunkStreaming(force = false) {
 }
 
 function popNextChunkRebuildKey(centerCx, centerCz, forwardX, forwardZ) {
+    if (chunkRebuildQueue.size >= CHUNK_REBUILD_FIFO_POP_THRESHOLD) {
+        let scanned = 0;
+        for (const key of chunkRebuildQueue) {
+            chunkRebuildQueue.delete(key);
+            const chunk = chunkMap.get(key);
+            if (chunk && chunk.dirty) {
+                return key;
+            }
+            scanned += 1;
+            if (scanned >= CHUNK_REBUILD_FIFO_POP_SCAN_LIMIT) {
+                break;
+            }
+        }
+    }
+
     let bestKey = null;
     let bestScore = Number.POSITIVE_INFINITY;
     const staleKeys = [];
