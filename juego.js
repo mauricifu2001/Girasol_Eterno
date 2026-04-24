@@ -350,6 +350,8 @@ const chunkRadiusSliderEl = document.getElementById("chunkRadiusSlider");
 const chunkRadiusValueEl = document.getElementById("chunkRadiusValue");
 const qualityPresetSelectEl = document.getElementById("qualityPresetSelect");
 const graphicsModeSelectEl = document.getElementById("graphicsModeSelect");
+const graphicsModeHelpEl = document.getElementById("graphicsModeHelp");
+const graphicsDeviceLabelEl = document.getElementById("graphicsDeviceLabel");
 const pointerSensitivitySliderEl = document.getElementById("pointerSensitivitySlider");
 const pointerSensitivityValueEl = document.getElementById("pointerSensitivityValue");
 const flightModeToggleEl = document.getElementById("flightModeToggle");
@@ -409,6 +411,35 @@ const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: resolveRendererPowerPreference(INITIAL_GRAPHICS_MODE)
 });
+
+function detectGraphicsDeviceLabelFromRenderer(targetRenderer) {
+    if (!targetRenderer) {
+        return "No disponible";
+    }
+    try {
+        const gl = targetRenderer.getContext?.();
+        if (!gl) {
+            return "No disponible";
+        }
+        const debugExt = gl.getExtension("WEBGL_debug_renderer_info");
+        const rendererLabel = debugExt
+            ? gl.getParameter(debugExt.UNMASKED_RENDERER_WEBGL)
+            : gl.getParameter(gl.RENDERER);
+        const vendorLabel = debugExt
+            ? gl.getParameter(debugExt.UNMASKED_VENDOR_WEBGL)
+            : gl.getParameter(gl.VENDOR);
+        const rendererText = String(rendererLabel || "").trim();
+        const vendorText = String(vendorLabel || "").trim();
+        if (rendererText && vendorText && !rendererText.toLowerCase().includes(vendorText.toLowerCase())) {
+            return `${rendererText} (${vendorText})`;
+        }
+        return rendererText || vendorText || "No disponible";
+    } catch (error) {
+        return "No disponible";
+    }
+}
+
+const INITIAL_GRAPHICS_DEVICE_LABEL = detectGraphicsDeviceLabelFromRenderer(renderer);
 const basePixelRatio = Math.min(window.devicePixelRatio, 2);
 renderer.setPixelRatio(basePixelRatio);
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1093,7 +1124,8 @@ const perfState = {
     adaptiveEnabled: true,
     minPixelRatio: 0.72,
     qualityPreset: "auto",
-    graphicsMode: INITIAL_GRAPHICS_MODE
+    graphicsMode: INITIAL_GRAPHICS_MODE,
+    graphicsDeviceLabel: INITIAL_GRAPHICS_DEVICE_LABEL
 };
 
 const skyState = {
@@ -1632,6 +1664,12 @@ function updateGameplaySettingsUi() {
     if (graphicsModeSelectEl) {
         graphicsModeSelectEl.value = perfState.graphicsMode;
     }
+    if (graphicsModeHelpEl) {
+        graphicsModeHelpEl.textContent = "Nota: en web esto es una preferencia. El navegador/Windows decide la GPU final.";
+    }
+    if (graphicsDeviceLabelEl) {
+        graphicsDeviceLabelEl.textContent = `GPU activa: ${perfState.graphicsDeviceLabel || "No disponible"}`;
+    }
 
     if (flightModeToggleEl) {
         flightModeToggleEl.checked = state.flightEnabled;
@@ -1706,20 +1744,20 @@ function setGraphicsMode(mode, persist = true, showFeedback = false) {
     }
 
     if (normalized === GRAPHICS_MODE.SOFTWARE) {
-        showToast("Modo software: configuracion manual del navegador", "info", 2200);
+        showToast("Modo software: desactiva aceleracion por hardware en el navegador y recarga", "info", 2600);
         return;
     }
 
     const label = normalized === GRAPHICS_MODE.DEDICATED
-        ? "GPU dedicada"
+        ? "preferir GPU dedicada"
         : normalized === GRAPHICS_MODE.INTEGRATED
-            ? "GPU integrada"
+            ? "preferir GPU integrada"
             : "auto";
-    showToast(`Modo GPU: ${label}${changed ? " (recarga para aplicar)" : ""}`, "info", 1800);
+    showToast(`Preferencia GPU: ${label}${changed ? " (requiere recarga)" : ""}. El navegador puede ignorarla.`, "info", 2400);
     if (changed) {
         let shouldReload = false;
         try {
-            shouldReload = window.confirm("Para aplicar el modo GPU se necesita recargar la pagina. Recargar ahora?");
+            shouldReload = window.confirm("Para aplicar la nueva preferencia GPU debes recargar. Recargar ahora?");
         } catch (error) {
             shouldReload = false;
         }
@@ -8944,6 +8982,7 @@ function getColumnInfo(x, z) {
         1
     );
     const erosion = fractalNoise2D(wx + 420, wz - 260, 0.0015, 4, 0.58, 53);
+    const erosion01 = clamp01((erosion + 1) * 0.5);
     const ridges = Math.pow(clamp01(1 - Math.abs(fractalNoise2D(wx, wz, 0.0019, 5, 0.5, 67))), 1.12);
     const lowDetail = fractalNoise2D(wx, wz, 0.0058, 4, 0.54, 11);
     const highDetail = fractalNoise2D(wx, wz, 0.0185, 3, 0.5, 12);
@@ -8987,27 +9026,36 @@ function getColumnInfo(x, z) {
     let moisture = climateMoisture01 * 2 - 1;
     let temperature = climateHeat01 * 2 - 1;
     const continental01 = clamp01((continental + 1) * 0.5);
-    const mountainMask = smoothstep(0.18, 0.9, continental * 0.7 + ridges * 0.64 + regionalRelief * 0.26 - erosion * 0.23);
-    const valleyMask = smoothstep(0.22, 0.94, -continental + erosion * 0.38);
-    const ridgePeaks = Math.pow(clamp01(ridges * 0.9 + mountainMask * 0.24 + regionalRelief * 0.18), 1.48);
+    const mountainRegionNoise = fractalNoise2D(wx - 2500, wz + 1700, 0.00028, 3, 0.58, 341);
+    const mountainRegionMask = smoothstep(
+        0.4,
+        0.82,
+        clamp01((mountainRegionNoise + 1) * 0.5 + tectonicBeltMask * 0.24 - erosion01 * 0.18)
+    );
+    const mountainShape = continental * 0.22 + ridges * 0.68 + regionalRelief * 0.22 - erosion01 * 0.52;
+    const mountainMaskBase = smoothstep(0.48, 0.9, mountainShape);
+    const mountainMask = clamp01(mountainMaskBase * (0.16 + mountainRegionMask * 1.04));
+    const valleyMask = smoothstep(0.3, 0.95, -continental + erosion01 * 0.82);
+    const ridgePeaks = Math.pow(clamp01(ridges * 0.78 + mountainMask * 0.52 + mountainRegionMask * 0.22), 1.42);
     let dryness = clamp01((1 - climateMoisture01) * 0.66 + climateHeat01 * 0.44 - valleyMask * 0.18);
 
     let rawHeight = SEA_LEVEL
-        + (continental01 - 0.5) * 86
-        + lowDetail * 22
-        + highDetail * 9
-        - erosion * 14;
-    rawHeight += mountainMask * (60 + ridgePeaks * 170);
+        + (continental01 - 0.5) * 58
+        + lowDetail * 12
+        + highDetail * 5
+        - erosion01 * 8;
+    rawHeight += mountainMask * (18 + ridgePeaks * 98);
+    rawHeight += mountainRegionMask * 6;
 
-    if (temperature < -0.08 && mountainMask > 0.45) {
-        rawHeight += (mountainMask - 0.45) * 118;
+    if (temperature < -0.14 && mountainMask > 0.58) {
+        rawHeight += (mountainMask - 0.58) * 66;
     }
 
     const oceanDepthSignal = clamp01((fractalNoise2D(wx - 400, wz + 600, 0.0011, 3, 0.57, 280) + 1) * 0.5);
-    if (continental < -0.24) {
-        rawHeight = SEA_LEVEL - (12 + oceanDepthSignal * 54 + clamp01(-continental - 0.24) * 96);
-    } else if (continental < -0.08) {
-        rawHeight -= smoothstep(-0.24, -0.08, continental) * (8 + oceanDepthSignal * 26);
+    if (continental < -0.34) {
+        rawHeight = SEA_LEVEL - (10 + oceanDepthSignal * 46 + clamp01(-continental - 0.34) * 72);
+    } else if (continental < -0.12) {
+        rawHeight -= smoothstep(-0.34, -0.12, continental) * (7 + oceanDepthSignal * 22);
     }
 
     const riverSignal = Math.abs(valueNoise2D(wx + 1330, wz - 870, 0.00125, 191));
@@ -9027,6 +9075,7 @@ function getColumnInfo(x, z) {
         0.72,
         volcanicClusterNoise * 0.82
         + mountainMask * 0.32
+        + mountainRegionMask * 0.26
         + regionalRelief * 0.24
         + tectonicBeltMask * 0.34
         - valleyMask * 0.22
@@ -9079,8 +9128,8 @@ function getColumnInfo(x, z) {
     const craterMask = craterMaskRaw * spawnBlend;
     const lavaChannelMask = lavaChannelMaskRaw * spawnBlend;
 
-    const isOceanic = continental < -0.28 || height <= SEA_LEVEL - 11;
-    const isCoast = !isOceanic && (continental < 0.08 || (height <= SEA_LEVEL + 4 && moisture > -0.12));
+    const isOceanic = continental < -0.3 || height <= SEA_LEVEL - 11;
+    const isCoast = !isOceanic && (continental < 0.06 || (height <= SEA_LEVEL + 4 && moisture > -0.12));
     const isDeepLake = deepLakeMask > 0.44 && height <= SEA_LEVEL + 2;
     const mountainDominance = smoothstep(0.42, 0.84, mountainMask + regionalRelief * 0.22);
     const desertScore = clamp01((1 - climateMoisture01) * 0.78 + climateHeat01 * 0.54 + mountainDominance * 0.08 - valleyMask * 0.16);
@@ -9105,11 +9154,15 @@ function getColumnInfo(x, z) {
         biome = BIOME.VOLCANIC;
     } else if (isCoast) {
         biome = BIOME.COAST;
-    } else if ((snowMask > 0.54 && mountainMask > 0.34) || (height > SEA_LEVEL + 122 && mountainMask > 0.38) || (mountainMask > 0.62 && climateHeat01 < 0.42)) {
+    } else if (
+        (snowMask > 0.62 && mountainMask > 0.54 && ridgePeaks > 0.36)
+        || (height > SEA_LEVEL + 120 && mountainMask > 0.48)
+        || (mountainMask > 0.72 && climateHeat01 < 0.4)
+    ) {
         biome = BIOME.CORDILLERA;
-    } else if (desertScore > 0.69 && dryness > 0.62 && climateHeat01 > 0.46) {
+    } else if (desertScore > 0.67 && dryness > 0.6 && climateHeat01 > 0.46) {
         biome = BIOME.DESERT;
-    } else if (forestScore > 0.53 && mountainMask < 0.72) {
+    } else if (forestScore > 0.47 && mountainMask < 0.6) {
         biome = BIOME.FOREST;
     }
 

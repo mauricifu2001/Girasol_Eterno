@@ -122,11 +122,13 @@
                     <span>Modo GPU</span>
                     <select id="graphicsModeSelect">
                         <option value="auto">Auto (recomendado)</option>
-                        <option value="dedicated">Dedicada (alto rendimiento)</option>
-                        <option value="integrated">Integrada (ahorro)</option>
-                        <option value="software">Software (sin aceleracion)</option>
+                        <option value="dedicated">Preferir dedicada</option>
+                        <option value="integrated">Preferir integrada</option>
+                        <option value="software">Sin aceleracion (manual)</option>
                     </select>
                 </label>
+                <p id="graphicsModeHelp" class="settings-hint">Nota: en web esto es una preferencia. El navegador/Windows decide la GPU final.</p>
+                <p id="graphicsDeviceLabel" class="settings-hint">GPU activa: detectando...</p>
 
                 <label class="settings-control" for="pointerSensitivitySlider">
                     <span>Sensibilidad mouse</span>
