@@ -10552,10 +10552,11 @@ function rebuildChunkMeshFull(chunk) {
 }
 
 function rebuildChunkMeshFar(chunk, sampleStep = 2) {
-    const positionsByBlock = new Map();
+    const columnsByBlock = new Map();
     const baseX = chunk.cx * CHUNK_SIZE;
     const baseZ = chunk.cz * CHUNK_SIZE;
     const step = sampleStep >= 4 ? 4 : 2;
+    const matrix = chunkBuildMatrixScratch;
 
     for (let lx = 0; lx < CHUNK_SIZE; lx += step) {
         for (let lz = 0; lz < CHUNK_SIZE; lz += step) {
@@ -10579,20 +10580,61 @@ function rebuildChunkMeshFar(chunk, sampleStep = 2) {
                 continue;
             }
 
-            let positions = positionsByBlock.get(id);
-            if (!positions) {
-                positions = [];
-                positionsByBlock.set(id, positions);
+            let baseY = 0;
+            let columnHeight = Math.max(1, y + 1);
+            if (LIQUID_BLOCK_IDS.has(id)) {
+                // Far liquids are rendered as thin surface tiles to avoid giant water columns.
+                baseY = y;
+                columnHeight = 1;
             }
-            positions.push(x, y, z);
+
+            let columns = columnsByBlock.get(id);
+            if (!columns) {
+                columns = [];
+                columnsByBlock.set(id, columns);
+            }
+            columns.push(x, baseY, z, columnHeight);
         }
     }
 
-    addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, {
-        enableLookup: false,
-        useLiquidSurfaceMesh: false,
-        allowShadows: false,
-        instanceScale: step
+    columnsByBlock.forEach((columns, id) => {
+        const material = blockMaterials[id];
+        const instanceCount = Math.floor(columns.length / 4);
+        if (!material || instanceCount <= 0) {
+            return;
+        }
+
+        const mesh = new THREE.InstancedMesh(blockGeometry, material, instanceCount);
+        const transparentBlock = isTranslucentBlock(id);
+        const definition = getBlockDefinitionById(id);
+        const isFoliage = Boolean(definition?.tags?.includes("foliage"));
+        const renderOrder = Number(definition?.visual?.renderOrder ?? (transparentBlock ? 2 : 1));
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.renderOrder = renderOrder;
+        mesh.userData.blockId = id;
+        mesh.userData.lookupKeys = [];
+
+        for (let index = 0; index < instanceCount; index += 1) {
+            const base = index * 4;
+            const x = columns[base];
+            const baseY = columns[base + 1];
+            const z = columns[base + 2];
+            const columnHeight = columns[base + 3];
+
+            matrix.makeScale(step, columnHeight, step);
+            matrix.setPosition(
+                x + step * 0.5,
+                baseY + columnHeight * 0.5,
+                z + step * 0.5
+            );
+            mesh.setMatrixAt(index, matrix);
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        worldRoot.add(mesh);
+        blockMeshes.push(mesh);
+        chunk.meshes.push(mesh);
     });
 }
 
