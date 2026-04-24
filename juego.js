@@ -150,6 +150,23 @@ const PROFILE_COLORS = {
     Valentina: "#ff96c9"
 };
 
+const FLORA_DECOR_COLORS = Object.freeze({
+    stemDark: 0x3f7436,
+    stemFresh: 0x5a8e46,
+    leafDense: 0x4d8944,
+    leafSoft: 0x78a861,
+    leafCoastal: 0x6c9962,
+    leafCold: 0x73909a,
+    petalBlue: 0x5e82db,
+    petalPink: 0xcd9ad8,
+    petalRed: 0xbf5047,
+    petalYellow: 0xd7b75a,
+    petalWhite: 0xe6edf8,
+    berry: 0xb84f86,
+    dryStem: 0x8f744b,
+    dryLeaf: 0xa38a5a
+});
+
 const RABBIT_VARIANTS = [
     {
         id: "nube",
@@ -1145,6 +1162,10 @@ const propTypeIndex = new Map(Object.values(PROP_TYPE).map((type) => [type, new 
 const blockMeshes = [];
 const blockPositionLookup = new Map();
 const chunkBuildMatrixScratch = new THREE.Matrix4();
+const floraInstancePositionScratch = new THREE.Vector3();
+const floraInstanceScaleScratch = new THREE.Vector3();
+const floraInstanceEulerScratch = new THREE.Euler();
+const floraInstanceQuaternionScratch = new THREE.Quaternion();
 
 const raycaster = new THREE.Raycaster();
 const clock = new THREE.Clock();
@@ -9957,12 +9978,6 @@ function getProceduralBlock(x, y, z) {
         }
 
         if (h > SEA_LEVEL + 1 && biome !== BIOME.MARITIME && biome !== BIOME.LAKE && biome !== BIOME.VOLCANIC) {
-            if (y <= h + 3) {
-                const floraBlock = getGroundFloraBlockAt(x, y, z);
-                if (floraBlock !== BLOCK.AIR) {
-                    return floraBlock;
-                }
-            }
             if (y <= h + 18) {
                 return getTreeBlockAt(x, y, z);
             }
@@ -10488,6 +10503,243 @@ function buildChunkColumnMeshYRanges(baseX, baseZ) {
     return { minYByColumn, maxYByColumn };
 }
 
+function pushFloraDecorInstance(instancesByColor, colorHex, x, y, z, sx, sy, sz, rx = 0, ry = 0, rz = 0) {
+    const key = Number(colorHex) >>> 0;
+    let instances = instancesByColor.get(key);
+    if (!instances) {
+        instances = [];
+        instancesByColor.set(key, instances);
+    }
+    instances.push(x, y, z, sx, sy, sz, rx, ry, rz);
+}
+
+function emitFloraDecorForColumn(instancesByColor, x, z, column) {
+    const floraType = String(column?.floraType || "none");
+    if (floraType === "none") {
+        return;
+    }
+
+    const groundY = Number(column?.height);
+    if (!Number.isFinite(groundY)) {
+        return;
+    }
+
+    const groundBlockY = clampInt(Math.floor(groundY), 0, WORLD_MAX_Y - 2);
+    if (getBlock(x, groundBlockY + 1, z) !== BLOCK.AIR) {
+        return;
+    }
+
+    const floraHeight = clampInt(Number(column?.floraHeight) || 1, 1, 3);
+    const scale = 0.82 + hashUnit(x, z, 1821) * 0.62;
+    const yawJitter = (hashUnit(x, z, 1822) - 0.5) * 0.46;
+    const rootX = x + 0.5;
+    const rootY = groundY + 0.02;
+    const rootZ = z + 0.5;
+    const blossomPalette = [
+        FLORA_DECOR_COLORS.petalBlue,
+        FLORA_DECOR_COLORS.petalPink,
+        FLORA_DECOR_COLORS.petalRed,
+        FLORA_DECOR_COLORS.petalYellow,
+        FLORA_DECOR_COLORS.petalWhite
+    ];
+    const blossomColor = blossomPalette[hash2D(x, z, 1823) % blossomPalette.length];
+
+    const pushPart = (colorHex, sizeX, sizeY, sizeZ, offsetX, offsetY, offsetZ, rotationY = 0, rotationX = 0, rotationZ = 0) => {
+        pushFloraDecorInstance(
+            instancesByColor,
+            colorHex,
+            rootX + offsetX * scale,
+            rootY + offsetY * scale,
+            rootZ + offsetZ * scale,
+            Math.max(0.02, sizeX * scale),
+            Math.max(0.02, sizeY * scale),
+            Math.max(0.02, sizeZ * scale),
+            rotationX,
+            rotationY + yawJitter,
+            rotationZ
+        );
+    };
+
+    if (floraType === "dry_shrub") {
+        const trunkHeight = 0.5 + floraHeight * 0.2;
+        pushPart(FLORA_DECOR_COLORS.dryStem, 0.11, trunkHeight, 0.11, 0, trunkHeight * 0.5, 0, 0);
+        pushPart(FLORA_DECOR_COLORS.dryStem, 0.08, 0.26, 0.08, 0, trunkHeight + 0.12, 0, 0);
+        for (let i = 0; i < 4; i += 1) {
+            const angle = i * (Math.PI * 0.5) + (hashUnit(x, z, 1830 + i) - 0.5) * 0.36;
+            const branchLen = 0.54 + (hashUnit(x, z, 1840 + i) - 0.5) * 0.16;
+            pushPart(
+                FLORA_DECOR_COLORS.dryLeaf,
+                0.08,
+                0.11,
+                branchLen,
+                Math.cos(angle) * 0.14,
+                trunkHeight * 0.58 + (i % 2) * 0.05,
+                Math.sin(angle) * 0.14,
+                angle
+            );
+        }
+        return;
+    }
+
+    if (floraType === "cold_shrub") {
+        const trunkHeight = 0.58 + floraHeight * 0.16;
+        pushPart(FLORA_DECOR_COLORS.stemDark, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+        const leafHeight = 0.46 + floraHeight * 0.1;
+        for (const angle of [0, Math.PI * 0.5, Math.PI * 0.25, -Math.PI * 0.25]) {
+            pushPart(FLORA_DECOR_COLORS.leafCold, 0.08, leafHeight, 0.84, 0, 0.36 + floraHeight * 0.06, 0, angle);
+        }
+        for (let i = 0; i < 3; i += 1) {
+            const angle = i * ((Math.PI * 2) / 3) + 0.35;
+            pushPart(
+                FLORA_DECOR_COLORS.petalWhite,
+                0.18,
+                0.16,
+                0.18,
+                Math.cos(angle) * 0.13,
+                trunkHeight + 0.18,
+                Math.sin(angle) * 0.13,
+                angle
+            );
+        }
+        pushPart(FLORA_DECOR_COLORS.petalPink, 0.18, 0.18, 0.18, 0, trunkHeight + 0.26, 0, 0);
+        return;
+    }
+
+    if (floraType === "coastal_bush") {
+        const trunkHeight = 0.64 + floraHeight * 0.22;
+        pushPart(FLORA_DECOR_COLORS.stemFresh, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+        for (let i = 0; i < 5; i += 1) {
+            const angle = i * ((Math.PI * 2) / 5);
+            const radius = 0.12 + (i % 2) * 0.05;
+            pushPart(
+                FLORA_DECOR_COLORS.leafCoastal,
+                0.08,
+                0.78 + (i % 2) * 0.14,
+                0.74,
+                Math.cos(angle) * radius,
+                trunkHeight * 0.58,
+                Math.sin(angle) * radius,
+                angle
+            );
+        }
+        if (hashUnit(x, z, 1857) > 0.55) {
+            pushPart(blossomColor, 0.2, 0.22, 0.2, 0, trunkHeight + 0.22, 0, 0);
+        }
+        return;
+    }
+
+    if (floraType === "berry_shrub") {
+        const trunkHeight = 0.52 + floraHeight * 0.2;
+        pushPart(FLORA_DECOR_COLORS.stemDark, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+        for (const angle of [0, Math.PI * 0.5, Math.PI * 0.25, -Math.PI * 0.25]) {
+            pushPart(FLORA_DECOR_COLORS.leafSoft, 0.09, 0.68, 0.86, 0, 0.38 + floraHeight * 0.06, 0, angle);
+        }
+        for (let i = 0; i < 4; i += 1) {
+            const angle = i * (Math.PI * 0.5) + 0.22;
+            pushPart(
+                FLORA_DECOR_COLORS.berry,
+                0.16,
+                0.14,
+                0.16,
+                Math.cos(angle) * 0.22,
+                0.46 + (i % 2) * 0.08,
+                Math.sin(angle) * 0.22,
+                angle
+            );
+        }
+        pushPart(blossomColor, 0.18, 0.18, 0.18, 0, trunkHeight + 0.18, 0, 0);
+        return;
+    }
+
+    const trunkHeight = 0.54 + floraHeight * 0.18;
+    pushPart(FLORA_DECOR_COLORS.stemDark, 0.1, trunkHeight, 0.1, 0, trunkHeight * 0.5, 0, 0);
+    for (const angle of [0, Math.PI * 0.5, Math.PI * 0.25, -Math.PI * 0.25]) {
+        pushPart(FLORA_DECOR_COLORS.leafDense, 0.08, 0.66, 0.84, 0, 0.34 + floraHeight * 0.08, 0, angle);
+    }
+    if (hashUnit(x, z, 1860) > 0.4) {
+        for (let i = 0; i < 3; i += 1) {
+            const angle = i * ((Math.PI * 2) / 3) + 0.18;
+            pushPart(
+                blossomColor,
+                0.2,
+                0.18,
+                0.2,
+                Math.cos(angle) * 0.11,
+                trunkHeight + 0.18,
+                Math.sin(angle) * 0.11,
+                angle
+            );
+        }
+    } else {
+        pushPart(FLORA_DECOR_COLORS.leafSoft, 0.24, 0.14, 0.24, 0, trunkHeight + 0.16, 0, 0);
+    }
+}
+
+function addChunkDecorativeFloraMeshes(chunk, baseX, baseZ) {
+    if (!chunk) {
+        return;
+    }
+
+    const instancesByColor = new Map();
+    for (let lx = 0; lx < CHUNK_SIZE; lx += 1) {
+        for (let lz = 0; lz < CHUNK_SIZE; lz += 1) {
+            const x = baseX + lx;
+            const z = baseZ + lz;
+            const column = getColumnInfo(x, z);
+            emitFloraDecorForColumn(instancesByColor, x, z, column);
+        }
+    }
+
+    if (instancesByColor.size === 0) {
+        return;
+    }
+
+    const matrix = chunkBuildMatrixScratch;
+    instancesByColor.forEach((instances, colorHex) => {
+        const count = Math.floor(instances.length / 9);
+        if (count <= 0) {
+            return;
+        }
+
+        const material = getDetailMaterial(colorHex);
+        const mesh = new THREE.InstancedMesh(detailUnitGeometry, material, count);
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+        mesh.renderOrder = 2;
+        mesh.userData.lookupKeys = [];
+
+        for (let index = 0; index < count; index += 1) {
+            const base = index * 9;
+            floraInstancePositionScratch.set(
+                instances[base],
+                instances[base + 1],
+                instances[base + 2]
+            );
+            floraInstanceScaleScratch.set(
+                instances[base + 3],
+                instances[base + 4],
+                instances[base + 5]
+            );
+            floraInstanceEulerScratch.set(
+                instances[base + 6],
+                instances[base + 7],
+                instances[base + 8]
+            );
+            floraInstanceQuaternionScratch.setFromEuler(floraInstanceEulerScratch);
+            matrix.compose(
+                floraInstancePositionScratch,
+                floraInstanceQuaternionScratch,
+                floraInstanceScaleScratch
+            );
+            mesh.setMatrixAt(index, matrix);
+        }
+
+        mesh.instanceMatrix.needsUpdate = true;
+        worldRoot.add(mesh);
+        chunk.meshes.push(mesh);
+    });
+}
+
 function addChunkInstancedMeshesFromPositions(chunk, positionsByBlock, options = {}) {
     if (!chunk || !(positionsByBlock instanceof Map)) {
         return;
@@ -10600,6 +10852,7 @@ function rebuildChunkMeshFull(chunk) {
         useLiquidSurfaceMesh: true,
         allowShadows: true
     });
+    addChunkDecorativeFloraMeshes(chunk, baseX, baseZ);
 }
 
 function rebuildChunkMeshFar(chunk, sampleStep = 2) {
