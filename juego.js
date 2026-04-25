@@ -138,6 +138,7 @@ const HOTBAR_STORAGE_KEY = "girasolHotbarSlotsV1";
 const SUNFLOWER_CURRENCY_STORAGE_KEY = "girasolSunflowerCurrencyV1";
 const MAP_PIN_STORAGE_KEY_PREFIX = "girasolMapPinV1";
 const MAP_HOME_PIN_STORAGE_KEY_PREFIX = "girasolMapHomePinV1";
+const JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY_PREFIX = "girasolJukeboxTracksV2";
 const GRAPHICS_MODE = Object.freeze({
     AUTO: "auto",
     DEDICATED: "dedicated",
@@ -276,6 +277,7 @@ const MAX_PLACED_PROPS = clampInt(Number(gameConfig.maxPlacedProps) || 2400, 100
 const WORLD_SAVE_KEY = `girasolWorldEdits:${ACTIVE_ROOM_ID}`;
 const PLAYER_STATE_STORAGE_KEY = `girasolPlayerStateV1:${ACTIVE_ROOM_ID}`;
 const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${ACTIVE_ROOM_ID}`;
+const JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY = `${JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const MAP_PIN_STORAGE_KEY = `${MAP_PIN_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const MAP_HOME_PIN_STORAGE_KEY = `${MAP_HOME_PIN_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const WORLD_SAVE_VERSION = 2;
@@ -303,6 +305,15 @@ const LAMP_SHADOW_REFRESH_SECONDS = 0.45;
 const LAMP_SHADOW_MIN_LEVEL = 3;
 const SIGN_TEXT_MAX_LENGTH = 52;
 const JUKEBOX_TRACK_COUNT = 4;
+const JUKEBOX_SOURCE_DEFAULT = "local-playlist-v1";
+const JUKEBOX_SOURCE_PREFIX_SPOTIFY = "spotify-uri:";
+const JUKEBOX_SOURCE_PREFIX_RECORDING = "recording-track:";
+const JUKEBOX_SPATIAL_MAX_DISTANCE = 36;
+const JUKEBOX_SPATIAL_NEAR_DISTANCE = 2.6;
+const JUKEBOX_SPATIAL_GAIN_SMOOTHING = 0.12;
+const JUKEBOX_SPOTIFY_ACTIVE_DISTANCE = 20;
+const JUKEBOX_RECORDING_MAX_SECONDS = 18;
+const JUKEBOX_RECORDING_MAX_DATA_URL_CHARS = 1200000;
 const INTERACTION_KEY = "KeyE";
 const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
@@ -601,6 +612,9 @@ renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
 const controls = new PointerLockControls(camera, document.body);
 controls.pointerSpeed = DEFAULT_POINTER_SPEED;
+controls.pointerSmoothing = 0.32;
+controls.maxMouseDelta = 130;
+controls.maxJumpDelta = 420;
 scene.add(controls.getObject());
 
 const hemiLight = new THREE.HemisphereLight(0xcfe7ff, 0x5f6177, 0.32);
@@ -1408,7 +1422,18 @@ const interactionState = {
     panelRefreshTick: 0,
     remoteUsingByProp: new Map(),
     previousRemoteUsingByProp: new Map(),
-    localAudioContext: null
+    localAudioContext: null,
+    jukeboxSpotifyDraftByProp: new Map()
+};
+
+const jukeboxState = {
+    customTracksByProp: new Map(),
+    activeRuntimes: new Map(),
+    recordingSession: null,
+    spotifyApi: null,
+    spotifyApiPromise: null,
+    spotifyApiBootstrapDone: false,
+    spotifyNoticeShown: false
 };
 
 let draggedInventoryItemId = "";
@@ -1584,6 +1609,256 @@ function loadHotbarConfiguration() {
     }
 
     state.hotbarItemIds = sanitizeHotbarItemIds(parsed);
+}
+
+function createDefaultJukeboxTrackSlot() {
+    return {
+        type: "local",
+        value: "",
+        label: ""
+    };
+}
+
+function sanitizeJukeboxTrackLabel(value) {
+    return String(value || "").replace(/\s+/g, " ").trim().slice(0, 64);
+}
+
+function sanitizeJukeboxTrackSlot(rawSlot) {
+    const fallback = createDefaultJukeboxTrackSlot();
+    if (!rawSlot || typeof rawSlot !== "object") {
+        return fallback;
+    }
+
+    const rawType = String(rawSlot.type || "local").toLowerCase();
+    const label = sanitizeJukeboxTrackLabel(rawSlot.label);
+    if (rawType === "recording") {
+        const dataUrl = String(rawSlot.value || rawSlot.dataUrl || "").trim();
+        if (
+            dataUrl.startsWith("data:audio/")
+            && dataUrl.length > 32
+            && dataUrl.length <= JUKEBOX_RECORDING_MAX_DATA_URL_CHARS
+        ) {
+            return {
+                type: "recording",
+                value: dataUrl,
+                label: label || "Grabacion"
+            };
+        }
+        return fallback;
+    }
+
+    if (rawType === "spotify") {
+        const spotifyUri = sanitizeSpotifyUri(rawSlot.value || rawSlot.uri || rawSlot.url || "");
+        if (spotifyUri) {
+            return {
+                type: "spotify",
+                value: spotifyUri,
+                label: label || `Spotify ${spotifyUri.split(":").pop()}`
+            };
+        }
+        return fallback;
+    }
+
+    return {
+        type: "local",
+        value: "",
+        label
+    };
+}
+
+function sanitizeJukeboxTrackSlots(rawSlots) {
+    const normalized = [];
+    for (let i = 0; i < JUKEBOX_TRACK_COUNT; i += 1) {
+        normalized.push(sanitizeJukeboxTrackSlot(Array.isArray(rawSlots) ? rawSlots[i] : null));
+    }
+    return normalized;
+}
+
+function loadJukeboxCustomTracksFromStorage() {
+    jukeboxState.customTracksByProp.clear();
+
+    let parsed = null;
+    try {
+        const raw = window.localStorage.getItem(JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY);
+        if (raw) {
+            parsed = JSON.parse(raw);
+        }
+    } catch (error) {
+        parsed = null;
+    }
+
+    if (!parsed || typeof parsed !== "object") {
+        return;
+    }
+
+    for (const [propId, rawSlots] of Object.entries(parsed)) {
+        const id = String(propId || "");
+        if (!id) {
+            continue;
+        }
+        const slots = sanitizeJukeboxTrackSlots(rawSlots);
+        const hasCustomSlot = slots.some((slot) => slot.type !== "local" || Boolean(slot.label));
+        if (hasCustomSlot) {
+            jukeboxState.customTracksByProp.set(id, slots);
+        }
+    }
+}
+
+function persistJukeboxCustomTracksToStorage() {
+    try {
+        if (jukeboxState.customTracksByProp.size === 0) {
+            window.localStorage.removeItem(JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY);
+            return;
+        }
+
+        const payload = {};
+        for (const [propId, slots] of jukeboxState.customTracksByProp.entries()) {
+            const id = String(propId || "");
+            if (!id) {
+                continue;
+            }
+            const sanitizedSlots = sanitizeJukeboxTrackSlots(slots);
+            const hasCustomSlot = sanitizedSlots.some((slot) => slot.type !== "local" || Boolean(slot.label));
+            if (hasCustomSlot) {
+                payload[id] = sanitizedSlots;
+            }
+        }
+
+        if (Object.keys(payload).length === 0) {
+            window.localStorage.removeItem(JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY);
+            return;
+        }
+        window.localStorage.setItem(JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY, JSON.stringify(payload));
+    } catch (error) {
+    }
+}
+
+function getJukeboxTrackSlotsForProp(propId, createIfMissing = true) {
+    const id = String(propId || "");
+    if (!id) {
+        return sanitizeJukeboxTrackSlots(null);
+    }
+    if (!jukeboxState.customTracksByProp.has(id)) {
+        if (!createIfMissing) {
+            return sanitizeJukeboxTrackSlots(null);
+        }
+        jukeboxState.customTracksByProp.set(id, sanitizeJukeboxTrackSlots(null));
+    }
+    return jukeboxState.customTracksByProp.get(id);
+}
+
+function getJukeboxTrackSlot(propId, track) {
+    const trackIndex = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT) - 1;
+    const slots = getJukeboxTrackSlotsForProp(propId, false);
+    return sanitizeJukeboxTrackSlot(slots[trackIndex]);
+}
+
+function setJukeboxTrackSlot(propId, track, rawSlot) {
+    const id = String(propId || "");
+    if (!id) {
+        return false;
+    }
+
+    const trackIndex = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT) - 1;
+    const slots = getJukeboxTrackSlotsForProp(id, true);
+    slots[trackIndex] = sanitizeJukeboxTrackSlot(rawSlot);
+    const hasCustomSlot = slots.some((slot) => slot.type !== "local" || Boolean(slot.label));
+    if (!hasCustomSlot) {
+        jukeboxState.customTracksByProp.delete(id);
+    } else {
+        jukeboxState.customTracksByProp.set(id, slots);
+    }
+    persistJukeboxCustomTracksToStorage();
+    if (state.interactionPanelOpen && interactionState.panelPropId === id) {
+        markInteractionPanelDirty();
+    }
+    return true;
+}
+
+function clearJukeboxTrackSlot(propId, track) {
+    return setJukeboxTrackSlot(propId, track, createDefaultJukeboxTrackSlot());
+}
+
+function encodeJukeboxSourceFromTrackSlot(slot, track) {
+    const safeTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT);
+    if (slot?.type === "spotify") {
+        const spotifyUri = sanitizeSpotifyUri(slot.value);
+        if (spotifyUri) {
+            return `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}`;
+        }
+    }
+    if (slot?.type === "recording") {
+        return `${JUKEBOX_SOURCE_PREFIX_RECORDING}${safeTrack}`;
+    }
+    return JUKEBOX_SOURCE_DEFAULT;
+}
+
+function getJukeboxTrackDisplayLabel(slot, track) {
+    const safeTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT);
+    const safeSlot = sanitizeJukeboxTrackSlot(slot);
+    if (safeSlot.type === "recording") {
+        return safeSlot.label || `Grabacion ${safeTrack}`;
+    }
+    if (safeSlot.type === "spotify") {
+        return safeSlot.label || `Spotify ${safeTrack}`;
+    }
+    return `Pista ${safeTrack}`;
+}
+
+function resolveJukeboxTrackDescriptor(propId, track, sourceValue = JUKEBOX_SOURCE_DEFAULT) {
+    const safeTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT);
+    const slot = getJukeboxTrackSlot(propId, safeTrack);
+    const normalizedSource = sanitizeJukeboxSource(sourceValue, JUKEBOX_SOURCE_DEFAULT);
+    if (normalizedSource.startsWith(JUKEBOX_SOURCE_PREFIX_SPOTIFY)) {
+        const spotifyUri = sanitizeSpotifyUri(normalizedSource.slice(JUKEBOX_SOURCE_PREFIX_SPOTIFY.length));
+        if (spotifyUri) {
+            return {
+                type: "spotify",
+                sourceKey: `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}`,
+                spotifyUri,
+                label: slot.type === "spotify" ? getJukeboxTrackDisplayLabel(slot, safeTrack) : `Spotify ${safeTrack}`
+            };
+        }
+    }
+
+    if (normalizedSource.startsWith(JUKEBOX_SOURCE_PREFIX_RECORDING)) {
+        const sourceTrack = sanitizeJukeboxTrack(normalizedSource.slice(JUKEBOX_SOURCE_PREFIX_RECORDING.length));
+        if (sourceTrack === safeTrack && slot.type === "recording" && slot.value) {
+            return {
+                type: "recording",
+                sourceKey: `${JUKEBOX_SOURCE_PREFIX_RECORDING}${safeTrack}`,
+                dataUrl: slot.value,
+                label: getJukeboxTrackDisplayLabel(slot, safeTrack)
+            };
+        }
+    }
+
+    if (slot.type === "spotify") {
+        const spotifyUri = sanitizeSpotifyUri(slot.value);
+        if (spotifyUri) {
+            return {
+                type: "spotify",
+                sourceKey: `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}`,
+                spotifyUri,
+                label: getJukeboxTrackDisplayLabel(slot, safeTrack)
+            };
+        }
+    }
+
+    if (slot.type === "recording" && slot.value) {
+        return {
+            type: "recording",
+            sourceKey: `${JUKEBOX_SOURCE_PREFIX_RECORDING}${safeTrack}`,
+            dataUrl: slot.value,
+            label: getJukeboxTrackDisplayLabel(slot, safeTrack)
+        };
+    }
+
+    return {
+        type: "local",
+        sourceKey: JUKEBOX_SOURCE_DEFAULT,
+        label: getJukeboxTrackDisplayLabel(slot, safeTrack)
+    };
 }
 
 function sanitizeStoredPlayerState(rawPayload) {
@@ -3236,7 +3511,10 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
             } else if (kind === INTERACTION_KIND.JUKEBOX_CONTROL) {
                 const playing = Boolean(propHit.placed.state?.playing);
                 const track = sanitizeJukeboxTrack(propHit.placed.state?.track);
-                const modeLabel = playing ? `Reproduciendo pista ${track || 1}` : "Detenida";
+                const descriptor = resolveJukeboxTrackDescriptor(propHit.placed.id, track || 1, propHit.placed.state?.source || JUKEBOX_SOURCE_DEFAULT);
+                const modeLabel = playing
+                    ? `Reproduciendo ${descriptor.label || `pista ${track || 1}`}`
+                    : "Detenida";
                 const actionHint = canInteract ? "E controlar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (${actionHint} | click izq quitar)`;
             } else if (kind === INTERACTION_KIND.FURNACE_OPEN) {
@@ -4539,9 +4817,19 @@ const PROP_INTERACTION_CONFIG = Object.freeze({
         hudHint: "E cambiar intensidad",
         persistentSync: ["lampLevel"]
     }),
+    [PROP_TYPE.TORCH]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar",
+        persistentSync: ["lampLevel"]
+    }),
     [PROP_TYPE.WALL_LANTERN]: Object.freeze({
         kind: INTERACTION_KIND.LIGHT_CYCLE,
         hudHint: "E cambiar intensidad",
+        persistentSync: ["lampLevel"]
+    }),
+    [PROP_TYPE.WALL_TORCH]: Object.freeze({
+        kind: INTERACTION_KIND.LIGHT_CYCLE,
+        hudHint: "E encender/apagar",
         persistentSync: ["lampLevel"]
     }),
     [PROP_TYPE.LIGHT_POST]: Object.freeze({
@@ -5091,6 +5379,71 @@ function sanitizeJukeboxTrack(value) {
     return Math.min(numeric, JUKEBOX_TRACK_COUNT);
 }
 
+const SPOTIFY_RESOURCE_TYPES = new Set(["track", "album", "playlist", "episode"]);
+
+function sanitizeSpotifyUri(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+        return "";
+    }
+
+    const directMatch = raw.match(/^spotify:(track|album|playlist|episode):([a-z0-9]+)$/i);
+    if (directMatch) {
+        return `spotify:${directMatch[1].toLowerCase()}:${directMatch[2]}`;
+    }
+
+    let parsedUrl = null;
+    try {
+        parsedUrl = new URL(raw);
+    } catch (error) {
+        return "";
+    }
+
+    const host = String(parsedUrl.hostname || "").toLowerCase();
+    if (!host.endsWith("spotify.com")) {
+        return "";
+    }
+
+    const pathParts = String(parsedUrl.pathname || "").split("/").filter(Boolean);
+    if (pathParts.length < 2) {
+        return "";
+    }
+
+    let typeIndex = 0;
+    if (!SPOTIFY_RESOURCE_TYPES.has(String(pathParts[0]).toLowerCase()) && pathParts.length >= 3) {
+        typeIndex = 1;
+    }
+
+    const type = String(pathParts[typeIndex] || "").toLowerCase();
+    const idRaw = String(pathParts[typeIndex + 1] || "");
+    const id = idRaw.replace(/[^a-z0-9]/gi, "");
+    if (!SPOTIFY_RESOURCE_TYPES.has(type) || !id) {
+        return "";
+    }
+
+    return `spotify:${type}:${id}`;
+}
+
+function sanitizeJukeboxSource(value, fallback = JUKEBOX_SOURCE_DEFAULT) {
+    const fallbackText = String(fallback || JUKEBOX_SOURCE_DEFAULT).trim() || JUKEBOX_SOURCE_DEFAULT;
+    const raw = String(value ?? fallbackText).trim();
+    if (!raw) {
+        return fallbackText;
+    }
+    if (raw === JUKEBOX_SOURCE_DEFAULT) {
+        return JUKEBOX_SOURCE_DEFAULT;
+    }
+    if (raw.startsWith(JUKEBOX_SOURCE_PREFIX_RECORDING)) {
+        const recordingTrack = sanitizeJukeboxTrack(raw.slice(JUKEBOX_SOURCE_PREFIX_RECORDING.length));
+        return recordingTrack > 0 ? `${JUKEBOX_SOURCE_PREFIX_RECORDING}${recordingTrack}` : fallbackText;
+    }
+    if (raw.startsWith(JUKEBOX_SOURCE_PREFIX_SPOTIFY)) {
+        const spotifyUri = sanitizeSpotifyUri(raw.slice(JUKEBOX_SOURCE_PREFIX_SPOTIFY.length));
+        return spotifyUri ? `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}` : fallbackText;
+    }
+    return fallbackText;
+}
+
 function buildLegacyPropStateCandidate(rawEntry) {
     if (!rawEntry || typeof rawEntry !== "object") {
         return {};
@@ -5100,7 +5453,8 @@ function buildLegacyPropStateCandidate(rawEntry) {
         lit: rawEntry.lit,
         text: rawEntry.text,
         playing: rawEntry.playing,
-        track: rawEntry.track
+        track: rawEntry.track,
+        source: rawEntry.source
     };
 }
 
@@ -5142,8 +5496,7 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
             continue;
         }
         if (key === "source") {
-            const sourceText = String((incoming ?? defaultValue) || "local-playlist-v1");
-            normalized[key] = sourceText || "local-playlist-v1";
+            normalized[key] = sanitizeJukeboxSource(incoming ?? defaultValue, defaultValue);
             continue;
         }
 
@@ -5259,11 +5612,13 @@ function applyPropSharedVisualState(placed) {
     if (propType === PROP_TYPE.JUKEBOX) {
         const playing = Boolean(placed.state?.playing);
         const track = sanitizeJukeboxTrack(placed.state?.track);
-        if (!placed.state || placed.state.playing !== playing || placed.state.track !== track) {
+        const source = sanitizeJukeboxSource(placed.state?.source, JUKEBOX_SOURCE_DEFAULT);
+        if (!placed.state || placed.state.playing !== playing || placed.state.track !== track || placed.state.source !== source) {
             placed.state = {
                 ...(placed.state || {}),
                 playing,
-                track
+                track,
+                source
             };
         }
 
@@ -5554,6 +5909,117 @@ function buildLanternNode(root) {
         pointLightColor: 0xffd892,
         bulbScale: { x: 0.1, y: 0.1, z: 0.1 },
         bulbPosition: { x: 0, y: 0.39, z: 0 }
+    });
+}
+
+function addTorchFlameRig(root, {
+    flamePosition = { x: 0, y: 0.78, z: 0 },
+    smokePosition = null,
+    pointLightColor = 0xffcf86
+} = {}) {
+    const smokePos = smokePosition || {
+        x: flamePosition.x,
+        y: flamePosition.y + 0.14,
+        z: flamePosition.z - 0.01
+    };
+
+    const emberMaterial = createDisposableStandardMaterial({
+        color: 0x2a1f17,
+        roughness: 0.85,
+        metalness: 0,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    emberMaterial.userData.lampTorchEmberColor = 0x2b1e17;
+    root.add(createDynamicPart(
+        { x: 0.07, y: 0.08, z: 0.07 },
+        { x: flamePosition.x, y: flamePosition.y - 0.01, z: flamePosition.z },
+        emberMaterial
+    ));
+
+    const flameOuterMaterial = createDisposableStandardMaterial({
+        color: 0xffa42e,
+        roughness: 0.48,
+        metalness: 0,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    flameOuterMaterial.userData.lampFlameEmissiveColor = 0xff8d30;
+    root.add(createDynamicPart(
+        { x: 0.08, y: 0.16, z: 0.08 },
+        { x: flamePosition.x, y: flamePosition.y + 0.06, z: flamePosition.z },
+        flameOuterMaterial
+    ));
+
+    const flameCoreMaterial = createDisposableStandardMaterial({
+        color: 0xfff4ba,
+        roughness: 0.22,
+        metalness: 0,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    flameCoreMaterial.userData.lampFlameEmissiveColor = 0xffefae;
+    root.add(createDynamicPart(
+        { x: 0.04, y: 0.1, z: 0.04 },
+        { x: flamePosition.x, y: flamePosition.y + 0.055, z: flamePosition.z + 0.005 },
+        flameCoreMaterial
+    ));
+
+    const smokeMaterial = createDisposableStandardMaterial({
+        color: 0x474b52,
+        roughness: 0.98,
+        metalness: 0,
+        emissive: 0x000000,
+        emissiveIntensity: 0
+    });
+    smokeMaterial.userData.lampSmokeColor = 0x5a5f68;
+    root.add(createDynamicPart(
+        { x: 0.07, y: 0.14, z: 0.07 },
+        smokePos,
+        smokeMaterial
+    ));
+
+    createLampPointLightRig(root, {
+        baseColor: 0x3f3126,
+        emissiveColor: 0xffca6f,
+        pointLightColor,
+        bulbScale: { x: 0.07, y: 0.07, z: 0.07 },
+        bulbPosition: { x: flamePosition.x, y: flamePosition.y + 0.05, z: flamePosition.z }
+    });
+
+    root.userData.lampFlameMaterial = flameOuterMaterial;
+    root.userData.lampFlameCoreMaterial = flameCoreMaterial;
+    root.userData.lampSmokeMaterial = smokeMaterial;
+    root.userData.lampTorchEmberMaterial = emberMaterial;
+}
+
+function buildTorchNode(root) {
+    root.add(createDetailPart(
+        { x: 0.08, y: 0.72, z: 0.08 },
+        { x: 0, y: 0.36, z: 0 },
+        0x8b653f,
+        { x: 0.06, y: 0.08, z: -0.04 }
+    ));
+    root.add(createDetailPart({ x: 0.09, y: 0.06, z: 0.09 }, { x: 0, y: 0.02, z: 0 }, 0x4d3a29));
+    addTorchFlameRig(root, {
+        flamePosition: { x: 0.02, y: 0.74, z: -0.01 },
+        smokePosition: { x: 0.03, y: 0.93, z: -0.02 },
+        pointLightColor: 0xffd189
+    });
+}
+
+function buildWallTorchNode(root) {
+    root.add(createDetailPart({ x: 0.12, y: 0.18, z: 0.08 }, { x: 0, y: 0.38, z: -0.22 }, 0x4f3929));
+    root.add(createDetailPart(
+        { x: 0.08, y: 0.7, z: 0.08 },
+        { x: 0, y: 0.44, z: 0.02 },
+        0x87623d,
+        { x: -0.36, y: 0, z: 0.07 }
+    ));
+    addTorchFlameRig(root, {
+        flamePosition: { x: 0, y: 0.77, z: 0.17 },
+        smokePosition: { x: 0, y: 0.96, z: 0.18 },
+        pointLightColor: 0xffcf86
     });
 }
 
@@ -5873,6 +6339,7 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.BED]: buildBedNode,
     [PROP_TYPE.FENCE]: buildFenceNode,
     [PROP_TYPE.LANTERN]: buildLanternNode,
+    [PROP_TYPE.TORCH]: buildTorchNode,
     [PROP_TYPE.BOOKSHELF]: buildBookshelfNode,
     [PROP_TYPE.BARREL]: buildBarrelNode,
     [PROP_TYPE.WOOD_CRATE]: buildWoodCrateNode,
@@ -5880,6 +6347,7 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.PAINTING]: buildPaintingNode,
     [PROP_TYPE.CURTAINS]: buildCurtainsNode,
     [PROP_TYPE.WALL_LANTERN]: buildWallLanternNode,
+    [PROP_TYPE.WALL_TORCH]: buildWallTorchNode,
     [PROP_TYPE.LIGHT_POST]: buildLightPostNode,
     [PROP_TYPE.BENCH]: buildBenchNode,
     [PROP_TYPE.PICNIC_TABLE]: buildPicnicTableNode,
@@ -5934,6 +6402,34 @@ function applyLampVisualState(placed, lampLevel, persist = true) {
         const emissiveColor = Number(bulbMaterial.userData?.lampEmissiveColor ?? 0xffd185);
         bulbMaterial.emissive.setHex(emissiveColor);
         bulbMaterial.emissiveIntensity = LAMP_BULB_EMISSIVE_LEVELS[normalizedLevel];
+    }
+
+    const flameMaterial = placed.node?.userData?.lampFlameMaterial || null;
+    const flameCoreMaterial = placed.node?.userData?.lampFlameCoreMaterial || null;
+    const smokeMaterial = placed.node?.userData?.lampSmokeMaterial || null;
+    const emberMaterial = placed.node?.userData?.lampTorchEmberMaterial || null;
+    if (flameMaterial) {
+        const flameEmissive = Number(flameMaterial.userData?.lampFlameEmissiveColor ?? 0xff8d30);
+        flameMaterial.color.setHex(normalizedLevel > 0 ? 0xffa42e : 0x1f1c1b);
+        flameMaterial.emissive.setHex(flameEmissive);
+        flameMaterial.emissiveIntensity = normalizedLevel > 0 ? 0.5 + normalizedLevel * 0.25 : 0;
+    }
+    if (flameCoreMaterial) {
+        const flameCoreEmissive = Number(flameCoreMaterial.userData?.lampFlameEmissiveColor ?? 0xffefae);
+        flameCoreMaterial.color.setHex(normalizedLevel > 0 ? 0xfff4ba : 0x262321);
+        flameCoreMaterial.emissive.setHex(flameCoreEmissive);
+        flameCoreMaterial.emissiveIntensity = normalizedLevel > 0 ? 0.38 + normalizedLevel * 0.2 : 0;
+    }
+    if (smokeMaterial) {
+        smokeMaterial.color.setHex(normalizedLevel > 0 ? 0x4d525b : 0x656b74);
+        smokeMaterial.emissive.setHex(0x000000);
+        smokeMaterial.emissiveIntensity = normalizedLevel > 0 ? 0 : 0.02;
+    }
+    if (emberMaterial) {
+        const emberColor = Number(emberMaterial.userData?.lampTorchEmberColor ?? 0x2b1e17);
+        emberMaterial.color.setHex(normalizedLevel > 0 ? 0x4a2a1a : 0x2a1f17);
+        emberMaterial.emissive.setHex(emberColor);
+        emberMaterial.emissiveIntensity = normalizedLevel > 0 ? 0.08 + normalizedLevel * 0.08 : 0;
     }
 
     markLampShadowsDirty();
@@ -6263,6 +6759,16 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
     if (interactionState.pose?.propId === id) {
         exitLocalPose(false);
     }
+    if (placed.propType === PROP_TYPE.JUKEBOX) {
+        if (jukeboxState.recordingSession?.propId === id) {
+            stopJukeboxTrackRecording(false);
+        }
+        stopJukeboxRuntimeById(id);
+        interactionState.jukeboxSpotifyDraftByProp.delete(id);
+        if (jukeboxState.customTracksByProp.delete(id)) {
+            persistJukeboxCustomTracksToStorage();
+        }
+    }
 
     const supportY = getPlacedPropSupportY(placed);
     const supportBounds = getPlacedPropBounds(placed, 0.02);
@@ -6324,6 +6830,11 @@ function clearPlacedProps() {
     for (const propId of Array.from(placedProps.keys())) {
         removePlacedPropEntry(propId, "remote", false);
     }
+    stopAllJukeboxRuntimes();
+    if (jukeboxState.recordingSession) {
+        stopJukeboxTrackRecording(false);
+    }
+    interactionState.jukeboxSpotifyDraftByProp.clear();
     markLampShadowsDirty();
 }
 
@@ -11902,6 +12413,9 @@ function closeInteractionPanel(showFeedback = false, preservePose = false) {
     const previousPropId = String(interactionState.panelPropId || "");
     state.interactionPanelOpen = false;
     clearInteractionPanelState();
+    if (jukeboxState.recordingSession && (!previousPropId || jukeboxState.recordingSession.propId === previousPropId)) {
+        stopJukeboxTrackRecording(true);
+    }
 
     if (interactionPanelEl) {
         interactionPanelEl.classList.add("hidden");
@@ -12015,17 +12529,22 @@ function resolveDraggedInventoryItemId(event) {
     return droppedId;
 }
 
-function playJukeboxTrackPreview(track = 1) {
-    const clampedTrack = THREE.MathUtils.clamp(Math.floor(Number(track) || 1), 1, JUKEBOX_TRACK_COUNT);
+function ensureInteractionAudioContext() {
     let context = interactionState.localAudioContext || null;
     if (!context) {
         try {
             context = new (window.AudioContext || window.webkitAudioContext)();
             interactionState.localAudioContext = context;
         } catch (error) {
-            return;
+            return null;
         }
     }
+    return context;
+}
+
+function playJukeboxTrackPreview(track = 1) {
+    const clampedTrack = THREE.MathUtils.clamp(Math.floor(Number(track) || 1), 1, JUKEBOX_TRACK_COUNT);
+    const context = ensureInteractionAudioContext();
     if (!context) {
         return;
     }
@@ -12046,6 +12565,581 @@ function playJukeboxTrackPreview(track = 1) {
     gain.connect(context.destination);
     oscillator.start(now);
     oscillator.stop(now + 0.24);
+}
+
+function ensureJukeboxSpotifyApi() {
+    if (jukeboxState.spotifyApi) {
+        return Promise.resolve(jukeboxState.spotifyApi);
+    }
+    if (jukeboxState.spotifyApiPromise) {
+        return jukeboxState.spotifyApiPromise;
+    }
+
+    jukeboxState.spotifyApiPromise = new Promise((resolve, reject) => {
+        const previousReadyHandler = window.onSpotifyIframeApiReady;
+        const timeoutId = window.setTimeout(() => {
+            reject(new Error("spotify_iframe_timeout"));
+        }, 12000);
+
+        window.onSpotifyIframeApiReady = (api) => {
+            window.clearTimeout(timeoutId);
+            if (typeof previousReadyHandler === "function") {
+                try {
+                    previousReadyHandler(api);
+                } catch (error) {
+                }
+            }
+            jukeboxState.spotifyApi = api || null;
+            resolve(jukeboxState.spotifyApi);
+        };
+
+        if (!jukeboxState.spotifyApiBootstrapDone) {
+            jukeboxState.spotifyApiBootstrapDone = true;
+            const script = document.createElement("script");
+            script.src = "https://open.spotify.com/embed/iframe-api/v1";
+            script.async = true;
+            script.onerror = () => {
+                window.clearTimeout(timeoutId);
+                reject(new Error("spotify_iframe_load_error"));
+            };
+            document.head.appendChild(script);
+        }
+    }).catch((error) => {
+        jukeboxState.spotifyApiPromise = null;
+        return Promise.reject(error);
+    });
+
+    return jukeboxState.spotifyApiPromise;
+}
+
+function disposeJukeboxRuntime(runtime) {
+    if (!runtime) {
+        return;
+    }
+
+    runtime.disposed = true;
+    if (runtime.timeoutId !== undefined && runtime.timeoutId !== null) {
+        window.clearTimeout(runtime.timeoutId);
+    }
+    if (runtime.oscillator) {
+        try {
+            runtime.oscillator.stop();
+        } catch (error) {
+        }
+    }
+    if (runtime.modulator) {
+        try {
+            runtime.modulator.stop();
+        } catch (error) {
+        }
+    }
+    if (runtime.mediaElement) {
+        try {
+            runtime.mediaElement.pause();
+            runtime.mediaElement.src = "";
+        } catch (error) {
+        }
+    }
+    if (runtime.controller?.pause) {
+        try {
+            runtime.controller.pause();
+        } catch (error) {
+        }
+    }
+    if (runtime.controller?.destroy) {
+        try {
+            runtime.controller.destroy();
+        } catch (error) {
+        }
+    }
+    if (runtime.gainNode) {
+        try {
+            runtime.gainNode.disconnect();
+        } catch (error) {
+        }
+    }
+    if (runtime.sourceNode) {
+        try {
+            runtime.sourceNode.disconnect();
+        } catch (error) {
+        }
+    }
+    if (runtime.modGainNode) {
+        try {
+            runtime.modGainNode.disconnect();
+        } catch (error) {
+        }
+    }
+    if (runtime.hostEl?.parentElement) {
+        runtime.hostEl.parentElement.removeChild(runtime.hostEl);
+    }
+}
+
+function stopJukeboxRuntimeById(propId) {
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+    const runtime = jukeboxState.activeRuntimes.get(id);
+    if (!runtime) {
+        return;
+    }
+    disposeJukeboxRuntime(runtime);
+    jukeboxState.activeRuntimes.delete(id);
+}
+
+function stopAllJukeboxRuntimes() {
+    for (const [propId, runtime] of jukeboxState.activeRuntimes.entries()) {
+        disposeJukeboxRuntime(runtime);
+        jukeboxState.activeRuntimes.delete(propId);
+    }
+}
+
+function createJukeboxLocalRuntime(propId, descriptor, track) {
+    const context = ensureInteractionAudioContext();
+    if (!context) {
+        return null;
+    }
+
+    const safeTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT);
+    if (context.state === "suspended") {
+        context.resume().catch(() => {
+        });
+    }
+
+    const oscillator = context.createOscillator();
+    oscillator.type = safeTrack % 2 === 0 ? "triangle" : "sawtooth";
+    oscillator.frequency.value = 120 + safeTrack * 70;
+
+    const modulator = context.createOscillator();
+    modulator.type = "sine";
+    modulator.frequency.value = 0.45 + safeTrack * 0.07;
+
+    const modGainNode = context.createGain();
+    modGainNode.gain.value = 6.5 + safeTrack * 0.9;
+    modulator.connect(modGainNode);
+    modGainNode.connect(oscillator.frequency);
+
+    const gainNode = context.createGain();
+    gainNode.gain.value = 0.0001;
+    oscillator.connect(gainNode);
+    gainNode.connect(context.destination);
+
+    const now = context.currentTime;
+    oscillator.start(now);
+    modulator.start(now);
+
+    return {
+        propId,
+        type: "local",
+        sourceKey: descriptor.sourceKey,
+        gainNode,
+        oscillator,
+        modulator,
+        modGainNode,
+        context,
+        playing: true
+    };
+}
+
+function createJukeboxRecordingRuntime(propId, descriptor) {
+    const context = ensureInteractionAudioContext();
+    if (!context || !descriptor?.dataUrl) {
+        return null;
+    }
+    if (context.state === "suspended") {
+        context.resume().catch(() => {
+        });
+    }
+
+    const mediaElement = new Audio(descriptor.dataUrl);
+    mediaElement.loop = true;
+    mediaElement.preload = "auto";
+    mediaElement.crossOrigin = "anonymous";
+
+    let sourceNode = null;
+    try {
+        sourceNode = context.createMediaElementSource(mediaElement);
+    } catch (error) {
+        return null;
+    }
+
+    const gainNode = context.createGain();
+    gainNode.gain.value = 0.0001;
+    sourceNode.connect(gainNode);
+    gainNode.connect(context.destination);
+
+    mediaElement.play().catch(() => {
+    });
+
+    return {
+        propId,
+        type: "recording",
+        sourceKey: descriptor.sourceKey,
+        gainNode,
+        sourceNode,
+        mediaElement,
+        context,
+        playing: true
+    };
+}
+
+function createJukeboxSpotifyRuntime(propId, descriptor) {
+    const hostEl = document.createElement("div");
+    hostEl.className = "jukebox-spotify-host";
+    hostEl.setAttribute("aria-hidden", "true");
+    document.body.appendChild(hostEl);
+
+    const runtime = {
+        propId,
+        type: "spotify",
+        sourceKey: descriptor.sourceKey,
+        spotifyUri: descriptor.spotifyUri,
+        hostEl,
+        controller: null,
+        controllerReady: false,
+        spotifyPlaying: false,
+        playing: true,
+        disposed: false
+    };
+
+    ensureJukeboxSpotifyApi().then((api) => {
+        if (runtime.disposed || !api?.createController) {
+            return;
+        }
+        api.createController(hostEl, { uri: descriptor.spotifyUri, width: 300, height: 80 }, (controller) => {
+            if (runtime.disposed) {
+                if (controller?.destroy) {
+                    try {
+                        controller.destroy();
+                    } catch (error) {
+                    }
+                }
+                return;
+            }
+            runtime.controller = controller || null;
+            runtime.controllerReady = Boolean(controller);
+            if (controller?.loadUri) {
+                try {
+                    controller.loadUri(descriptor.spotifyUri);
+                } catch (error) {
+                }
+            }
+        });
+    }).catch(() => {
+    });
+
+    return runtime;
+}
+
+function createJukeboxRuntime(propId, descriptor, track) {
+    if (!descriptor) {
+        return null;
+    }
+    if (descriptor.type === "recording") {
+        return createJukeboxRecordingRuntime(propId, descriptor);
+    }
+    if (descriptor.type === "spotify") {
+        return createJukeboxSpotifyRuntime(propId, descriptor);
+    }
+    return createJukeboxLocalRuntime(propId, descriptor, track);
+}
+
+function getJukeboxSpatialGain(placed) {
+    const dx = placed.x - state.playerPosition.x;
+    const dy = placed.y - (state.playerPosition.y + 0.3);
+    const dz = placed.z - state.playerPosition.z;
+    const distance = Math.hypot(dx, dy, dz);
+    if (distance <= JUKEBOX_SPATIAL_NEAR_DISTANCE) {
+        return 0.95;
+    }
+    if (distance >= JUKEBOX_SPATIAL_MAX_DISTANCE) {
+        return 0;
+    }
+    const normalized = 1 - (distance - JUKEBOX_SPATIAL_NEAR_DISTANCE) / Math.max(0.001, JUKEBOX_SPATIAL_MAX_DISTANCE - JUKEBOX_SPATIAL_NEAR_DISTANCE);
+    return normalized * normalized * 0.95;
+}
+
+function updateJukeboxSpatialAudio() {
+    const jukeboxIds = propTypeIndex.get(PROP_TYPE.JUKEBOX);
+    const wantedIds = new Set();
+    if (!jukeboxIds || jukeboxIds.size === 0) {
+        if (jukeboxState.activeRuntimes.size > 0) {
+            stopAllJukeboxRuntimes();
+        }
+        return;
+    }
+
+    for (const propId of jukeboxIds) {
+        const placed = placedProps.get(propId);
+        if (!placed) {
+            continue;
+        }
+
+        const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
+        const track = THREE.MathUtils.clamp(sanitizeJukeboxTrack(safeState.track) || 1, 1, JUKEBOX_TRACK_COUNT);
+        const playing = Boolean(safeState.playing);
+        if (!playing) {
+            stopJukeboxRuntimeById(propId);
+            continue;
+        }
+
+        const descriptor = resolveJukeboxTrackDescriptor(propId, track, safeState.source || JUKEBOX_SOURCE_DEFAULT);
+        const runtime = jukeboxState.activeRuntimes.get(propId);
+        if (!runtime || runtime.type !== descriptor.type || runtime.sourceKey !== descriptor.sourceKey) {
+            stopJukeboxRuntimeById(propId);
+            const created = createJukeboxRuntime(propId, descriptor, track);
+            if (created) {
+                jukeboxState.activeRuntimes.set(propId, created);
+            }
+        }
+
+        const activeRuntime = jukeboxState.activeRuntimes.get(propId);
+        if (!activeRuntime) {
+            continue;
+        }
+
+        wantedIds.add(propId);
+        if (activeRuntime.type === "spotify") {
+            const dx = placed.x - state.playerPosition.x;
+            const dy = placed.y - state.playerPosition.y;
+            const dz = placed.z - state.playerPosition.z;
+            const distance = Math.hypot(dx, dy, dz);
+            const shouldPlay = distance <= JUKEBOX_SPOTIFY_ACTIVE_DISTANCE;
+            if (activeRuntime.controllerReady && activeRuntime.controller) {
+                if (activeRuntime.spotifyUri !== descriptor.spotifyUri && activeRuntime.controller.loadUri) {
+                    activeRuntime.spotifyUri = descriptor.spotifyUri;
+                    try {
+                        activeRuntime.controller.loadUri(descriptor.spotifyUri);
+                    } catch (error) {
+                    }
+                }
+                if (shouldPlay !== activeRuntime.spotifyPlaying) {
+                    activeRuntime.spotifyPlaying = shouldPlay;
+                    try {
+                        if (shouldPlay && activeRuntime.controller.play) {
+                            activeRuntime.controller.play();
+                        } else if (!shouldPlay && activeRuntime.controller.pause) {
+                            activeRuntime.controller.pause();
+                        }
+                    } catch (error) {
+                    }
+                }
+            }
+            continue;
+        }
+
+        if (activeRuntime.gainNode && activeRuntime.context) {
+            const gain = getJukeboxSpatialGain(placed);
+            const now = activeRuntime.context.currentTime;
+            activeRuntime.gainNode.gain.setTargetAtTime(Math.max(0.0001, gain), now, JUKEBOX_SPATIAL_GAIN_SMOOTHING);
+            if (activeRuntime.mediaElement && gain > 0.012 && activeRuntime.mediaElement.paused) {
+                activeRuntime.mediaElement.play().catch(() => {
+                });
+            }
+        }
+    }
+
+    for (const activeId of Array.from(jukeboxState.activeRuntimes.keys())) {
+        if (!wantedIds.has(activeId)) {
+            stopJukeboxRuntimeById(activeId);
+        }
+    }
+}
+
+function readBlobAsDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("jukebox_recording_read_failed"));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function stopJukeboxTrackRecording(shouldSave = true) {
+    const session = jukeboxState.recordingSession;
+    if (!session) {
+        return;
+    }
+
+    session.shouldSave = Boolean(shouldSave);
+    if (session.timeoutId !== null) {
+        window.clearTimeout(session.timeoutId);
+        session.timeoutId = null;
+    }
+    if (session.recorder?.state !== "inactive") {
+        try {
+            session.recorder.stop();
+            return;
+        } catch (error) {
+        }
+    }
+
+    for (const track of session.stream?.getTracks?.() || []) {
+        track.stop();
+    }
+    jukeboxState.recordingSession = null;
+    markInteractionPanelDirty();
+}
+
+async function startJukeboxTrackRecording(propId, track) {
+    const id = String(propId || "");
+    const safeTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT);
+    if (!id) {
+        return;
+    }
+    if (jukeboxState.recordingSession) {
+        showToast("Ya hay una grabacion en curso", "warning", 900);
+        return;
+    }
+    if (!navigator.mediaDevices?.getUserMedia || typeof window.MediaRecorder !== "function") {
+        showToast("Tu navegador no permite grabar audio aqui", "warning", 1300);
+        return;
+    }
+
+    let stream = null;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+        showToast("No pude acceder al microfono", "warning", 1300);
+        return;
+    }
+
+    let recorder = null;
+    const preferredTypes = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
+    let selectedType = "";
+    for (const candidate of preferredTypes) {
+        if (typeof window.MediaRecorder.isTypeSupported === "function" && window.MediaRecorder.isTypeSupported(candidate)) {
+            selectedType = candidate;
+            break;
+        }
+    }
+    try {
+        recorder = selectedType
+            ? new window.MediaRecorder(stream, { mimeType: selectedType })
+            : new window.MediaRecorder(stream);
+    } catch (error) {
+        for (const trackItem of stream.getTracks()) {
+            trackItem.stop();
+        }
+        showToast("No pude iniciar la grabacion", "warning", 1300);
+        return;
+    }
+
+    const chunks = [];
+    const session = {
+        propId: id,
+        track: safeTrack,
+        recorder,
+        stream,
+        chunks,
+        shouldSave: true,
+        timeoutId: null
+    };
+    jukeboxState.recordingSession = session;
+
+    recorder.addEventListener("dataavailable", (event) => {
+        if (event?.data && event.data.size > 0) {
+            chunks.push(event.data);
+        }
+    });
+
+    recorder.addEventListener("stop", async () => {
+        const saveResult = Boolean(session.shouldSave);
+        for (const streamTrack of session.stream?.getTracks?.() || []) {
+            streamTrack.stop();
+        }
+
+        if (!saveResult || chunks.length === 0) {
+            if (saveResult) {
+                showToast("No se capturo audio util", "warning", 1200);
+            }
+            jukeboxState.recordingSession = null;
+            markInteractionPanelDirty();
+            return;
+        }
+
+        try {
+            const blob = new Blob(chunks, { type: selectedType || "audio/webm" });
+            const dataUrl = await readBlobAsDataUrl(blob);
+            if (!dataUrl.startsWith("data:audio/") || dataUrl.length > JUKEBOX_RECORDING_MAX_DATA_URL_CHARS) {
+                showToast("La grabacion es muy pesada, intenta una mas corta", "warning", 1500);
+                jukeboxState.recordingSession = null;
+                markInteractionPanelDirty();
+                return;
+            }
+            setJukeboxTrackSlot(id, safeTrack, {
+                type: "recording",
+                value: dataUrl,
+                label: `Grabacion ${safeTrack}`
+            });
+            const placed = placedProps.get(id);
+            const safeState = placed
+                ? (normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {})
+                : {};
+            const currentTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(safeState.track) || 1, 1, JUKEBOX_TRACK_COUNT);
+            if (currentTrack === safeTrack) {
+                updatePropSharedState(id, { source: `${JUKEBOX_SOURCE_PREFIX_RECORDING}${safeTrack}` }, `Grabacion asignada a pista ${safeTrack}`);
+            } else {
+                showToast(`Grabacion guardada en pista ${safeTrack}`, "success", 1300);
+            }
+        } catch (error) {
+            showToast("No pude guardar la grabacion", "warning", 1300);
+        }
+
+        jukeboxState.recordingSession = null;
+        markInteractionPanelDirty();
+    });
+
+    try {
+        recorder.start(260);
+    } catch (error) {
+        for (const streamTrack of stream.getTracks()) {
+            streamTrack.stop();
+        }
+        jukeboxState.recordingSession = null;
+        showToast("No pude iniciar la captura de audio", "warning", 1300);
+        return;
+    }
+
+    session.timeoutId = window.setTimeout(() => {
+        stopJukeboxTrackRecording(true);
+    }, JUKEBOX_RECORDING_MAX_SECONDS * 1000);
+    showToast(`Grabando pista ${safeTrack} (${JUKEBOX_RECORDING_MAX_SECONDS}s max)`, "info", 1500);
+    markInteractionPanelDirty();
+}
+
+function applySpotifyLinkToJukeboxTrack(propId, track, rawLinkValue) {
+    const id = String(propId || "");
+    const safeTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT);
+    const spotifyUri = sanitizeSpotifyUri(rawLinkValue);
+    if (!id || !spotifyUri) {
+        showToast("Link de Spotify invalido", "warning", 1200);
+        return false;
+    }
+
+    setJukeboxTrackSlot(id, safeTrack, {
+        type: "spotify",
+        value: spotifyUri,
+        label: `Spotify ${safeTrack}`
+    });
+
+    const placed = placedProps.get(id);
+    const safeState = placed
+        ? (normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {})
+        : {};
+    const currentTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(safeState.track) || 1, 1, JUKEBOX_TRACK_COUNT);
+    if (currentTrack === safeTrack) {
+        updatePropSharedState(id, { source: `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}` }, "Spotify asignado");
+    } else {
+        showToast(`Spotify asignado a pista ${safeTrack}`, "success", 1200);
+    }
+
+    if (!jukeboxState.spotifyNoticeShown) {
+        jukeboxState.spotifyNoticeShown = true;
+        showToast("Spotify se atenúa por cercania con pausa/reanudar por limitaciones del navegador", "info", 2200);
+    }
+    return true;
 }
 
 function renderContainerInteractionPanel(placed) {
@@ -12186,19 +13280,42 @@ function renderJukeboxInteractionPanel(placed) {
     const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
     const playing = Boolean(safeState.playing);
     const track = sanitizeJukeboxTrack(safeState.track) || 1;
+    const descriptor = resolveJukeboxTrackDescriptor(placed.id, track, safeState.source || JUKEBOX_SOURCE_DEFAULT);
+    const isRecordingThis = Boolean(
+        jukeboxState.recordingSession
+        && jukeboxState.recordingSession.propId === placed.id
+        && sanitizeJukeboxTrack(jukeboxState.recordingSession.track) === track
+    );
+
     appendInteractionInfoLine(`Estado: ${playing ? "Reproduciendo" : "Detenida"}`);
-    appendInteractionInfoLine(`Pista activa: ${track}`);
+    appendInteractionInfoLine(`Pista activa: ${track} (${descriptor.label || "Local"})`);
+    appendInteractionInfoLine(`Fuente: ${descriptor.type === "spotify" ? "Spotify" : descriptor.type === "recording" ? "Grabacion local" : "Local sintetica"}`);
+    appendInteractionInfoLine("El audio sigue sonando al cerrar el panel y se atenúa por distancia.");
 
     const row = document.createElement("div");
     row.className = "interaction-row";
     for (let i = 1; i <= JUKEBOX_TRACK_COUNT; i += 1) {
+        const slot = getJukeboxTrackSlot(placed.id, i);
         const trackButton = document.createElement("button");
         trackButton.type = "button";
         trackButton.className = "interaction-action";
-        trackButton.textContent = `Pista ${i}`;
+        const label = getJukeboxTrackDisplayLabel(slot, i);
+        trackButton.textContent = `${i}. ${label}`;
+        if (i === track) {
+            trackButton.classList.add("active");
+        }
         trackButton.addEventListener("click", () => {
-            if (updatePropSharedState(placed.id, { track: i, playing: true, source: "local-playlist-v1" }, `Jukebox: pista ${i}`)) {
-                playJukeboxTrackPreview(i);
+            const selectedSlot = getJukeboxTrackSlot(placed.id, i);
+            const nextSource = encodeJukeboxSourceFromTrackSlot(selectedSlot, i);
+            if (updatePropSharedState(placed.id, { track: i, playing: true, source: nextSource }, `Jukebox: pista ${i}`)) {
+                const context = ensureInteractionAudioContext();
+                if (context?.state === "suspended") {
+                    context.resume().catch(() => {
+                    });
+                }
+                if (selectedSlot.type === "local") {
+                    playJukeboxTrackPreview(i);
+                }
                 markInteractionPanelDirty();
             }
         });
@@ -12208,13 +13325,88 @@ function renderJukeboxInteractionPanel(placed) {
 
     appendInteractionAction(playing ? "Detener" : "Reproducir", () => {
         const nextPlaying = !playing;
-        if (updatePropSharedState(placed.id, { playing: nextPlaying, track, source: "local-playlist-v1" }, nextPlaying ? "Jukebox iniciada" : "Jukebox detenida")) {
+        const activeSlot = getJukeboxTrackSlot(placed.id, track);
+        const nextSource = encodeJukeboxSourceFromTrackSlot(activeSlot, track);
+        if (updatePropSharedState(placed.id, { playing: nextPlaying, track, source: nextSource }, nextPlaying ? "Jukebox iniciada" : "Jukebox detenida")) {
             if (nextPlaying) {
+                const context = ensureInteractionAudioContext();
+                if (context?.state === "suspended") {
+                    context.resume().catch(() => {
+                    });
+                }
+            }
+            if (nextPlaying && activeSlot.type === "local") {
                 playJukeboxTrackPreview(track);
             }
             markInteractionPanelDirty();
         }
     });
+
+    const customRow = document.createElement("div");
+    customRow.className = "interaction-row";
+
+    const recordButton = document.createElement("button");
+    recordButton.type = "button";
+    recordButton.className = "interaction-action";
+    recordButton.textContent = isRecordingThis ? `Detener grabacion pista ${track}` : `Grabar pista ${track}`;
+    recordButton.addEventListener("click", () => {
+        if (isRecordingThis) {
+            stopJukeboxTrackRecording(true);
+            return;
+        }
+        startJukeboxTrackRecording(placed.id, track);
+    });
+    customRow.appendChild(recordButton);
+
+    const clearCustomButton = document.createElement("button");
+    clearCustomButton.type = "button";
+    clearCustomButton.className = "interaction-action";
+    clearCustomButton.textContent = `Restaurar pista ${track}`;
+    clearCustomButton.addEventListener("click", () => {
+        if (isRecordingThis) {
+            stopJukeboxTrackRecording(false);
+        }
+        if (!clearJukeboxTrackSlot(placed.id, track)) {
+            return;
+        }
+        const fallbackSource = JUKEBOX_SOURCE_DEFAULT;
+        updatePropSharedState(placed.id, { source: fallbackSource }, `Pista ${track} restaurada`);
+        markInteractionPanelDirty();
+    });
+    customRow.appendChild(clearCustomButton);
+    interactionPanelBodyEl?.appendChild(customRow);
+
+    const spotifyWrap = document.createElement("div");
+    spotifyWrap.className = "interaction-source";
+    const spotifyInput = document.createElement("input");
+    spotifyInput.type = "text";
+    spotifyInput.className = "interaction-input";
+    spotifyInput.placeholder = "Pega link de Spotify (track/playlist/album)";
+    spotifyInput.value = interactionState.jukeboxSpotifyDraftByProp.get(placed.id) || "";
+    spotifyInput.addEventListener("input", () => {
+        interactionState.jukeboxSpotifyDraftByProp.set(placed.id, spotifyInput.value);
+    });
+
+    const spotifyButton = document.createElement("button");
+    spotifyButton.type = "button";
+    spotifyButton.className = "interaction-action";
+    spotifyButton.textContent = `Guardar Spotify en pista ${track}`;
+    spotifyButton.addEventListener("click", () => {
+        const draft = spotifyInput.value;
+        if (applySpotifyLinkToJukeboxTrack(placed.id, track, draft)) {
+            interactionState.jukeboxSpotifyDraftByProp.set(placed.id, "");
+            spotifyInput.value = "";
+            markInteractionPanelDirty();
+        }
+    });
+
+    spotifyWrap.appendChild(spotifyInput);
+    spotifyWrap.appendChild(spotifyButton);
+    interactionPanelBodyEl?.appendChild(spotifyWrap);
+
+    if (isRecordingThis) {
+        appendInteractionInfoLine(`Grabando pista ${track}... vuelve a pulsar para detener.`);
+    }
 }
 
 function renderInteractionPanelNow() {
@@ -12377,7 +13569,37 @@ function selectedPropType() {
 }
 
 function isWallMountedPropType(propType) {
-    return propType === PROP_TYPE.CURTAINS;
+    return propType === PROP_TYPE.CURTAINS
+        || propType === PROP_TYPE.WALL_LANTERN
+        || propType === PROP_TYPE.WALL_TORCH;
+}
+
+function resolveContextualPropTypeForPlacement(basePropType, worldNormal) {
+    const baseType = String(basePropType || "");
+    if (baseType !== PROP_TYPE.TORCH && baseType !== PROP_TYPE.WALL_TORCH) {
+        return baseType;
+    }
+
+    if (!worldNormal) {
+        return PROP_TYPE.TORCH;
+    }
+
+    const horizontalStrength = Math.hypot(Number(worldNormal.x) || 0, Number(worldNormal.z) || 0);
+    const isWallFace = horizontalStrength >= 0.55 && Math.abs(Number(worldNormal.y) || 0) <= 0.4;
+    return isWallFace ? PROP_TYPE.WALL_TORCH : PROP_TYPE.TORCH;
+}
+
+function getWallPlacementWarning(propType) {
+    if (propType === PROP_TYPE.CURTAINS) {
+        return "Las cortinas se colocan sobre paredes";
+    }
+    if (propType === PROP_TYPE.WALL_TORCH) {
+        return "La antorcha de pared requiere una pared";
+    }
+    if (propType === PROP_TYPE.WALL_LANTERN) {
+        return "El farol de pared requiere una pared";
+    }
+    return "Este objeto se coloca sobre paredes";
 }
 
 function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
@@ -12576,19 +13798,27 @@ function attemptMineOrPlace(isPlacing) {
         return;
     }
 
-    const propType = selectedPropType();
-    if (propType) {
+    const selectedType = selectedPropType();
+    if (selectedType) {
+        let propTypeToPlace = selectedType;
         let propX = 0;
         let propY = 0;
         let propZ = 0;
         let hasAnchor = false;
         let forcedPropYaw = null;
-        const wantsWallPlacement = isWallMountedPropType(propType);
+        let wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
 
         if (targetedProp && targetedProp.distance <= blockDistance + 0.001) {
             const worldNormal = getWorldNormalFromRayHit(targetedProp.hit);
             if (!worldNormal || worldNormal.y < 0.45) {
                 showToast("Ese objeto no tiene una cara superior para apoyar", "warning", 1000);
+                return;
+            }
+
+            propTypeToPlace = resolveContextualPropTypeForPlacement(propTypeToPlace, worldNormal);
+            wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
+            if (wantsWallPlacement) {
+                showToast(getWallPlacementWarning(propTypeToPlace), "warning", 1000);
                 return;
             }
 
@@ -12603,13 +13833,16 @@ function attemptMineOrPlace(isPlacing) {
                 return;
             }
 
+            propTypeToPlace = resolveContextualPropTypeForPlacement(propTypeToPlace, normal);
+            wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
+
             let placeX = 0;
             let placeY = 0;
             let placeZ = 0;
             if (wantsWallPlacement) {
                 const horizontalStrength = Math.hypot(normal.x, normal.z);
                 if (horizontalStrength < 0.55 || Math.abs(normal.y) > 0.4) {
-                    showToast("Las cortinas se colocan sobre paredes", "warning", 1000);
+                    showToast(getWallPlacementWarning(propTypeToPlace), "warning", 1000);
                     return;
                 }
                 const wallX = Math.sign(normal.x);
@@ -12668,7 +13901,7 @@ function attemptMineOrPlace(isPlacing) {
 
         const propYaw = Number.isFinite(forcedPropYaw)
             ? snapYawToStep(forcedPropYaw)
-            : resolvePropPlacementYaw(propType, propX, propZ);
+            : resolvePropPlacementYaw(propTypeToPlace, propX, propZ);
         const playerBounds = {
             minX: state.playerPosition.x - PLAYER_RADIUS,
             maxX: state.playerPosition.x + PLAYER_RADIUS,
@@ -12677,22 +13910,22 @@ function attemptMineOrPlace(isPlacing) {
             minZ: state.playerPosition.z - PLAYER_RADIUS,
             maxZ: state.playerPosition.z + PLAYER_RADIUS
         };
-        const nextPropBounds = getPlacedPropBoundsAt(propType, propX, propY, propZ, propYaw, 0.001);
+        const nextPropBounds = getPlacedPropBoundsAt(propTypeToPlace, propX, propY, propZ, propYaw, 0.001);
         if (intersectsAabb(playerBounds, nextPropBounds)) {
             return;
         }
 
         const propId = addPlacedPropEntry({
-            propType,
+            propType: propTypeToPlace,
             x: propX,
             y: propY,
             z: propZ,
-            lampLevel: isLightPropType(propType) ? 0 : undefined,
+            lampLevel: isLightPropType(propTypeToPlace) ? 0 : undefined,
             yaw: propYaw
         }, "local");
 
         if (propId) {
-            showToast(`${getPropLabel(propType)} colocada`, "success", 900);
+            showToast(`${getPropLabel(propTypeToPlace)} colocada`, "success", 900);
         }
         return;
     }
@@ -13627,6 +14860,7 @@ function animate() {
     }
     if (state.worldStarted && state.worldReady) {
         updateActiveLampShadowCasters(delta);
+        updateJukeboxSpatialAudio();
     }
 
     updateChunkStreaming(false);
@@ -13687,6 +14921,7 @@ function init() {
     setPauseSettingsOpen(false);
     setDebugVisible(loadDebugVisibility(), false);
     loadGameplayPreferences();
+    loadJukeboxCustomTracksFromStorage();
     loadMapPinFromStorage();
     populateInventoryCategoryQuickFillOptions();
     updateMapModeButtons();

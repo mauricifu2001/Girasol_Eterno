@@ -548,6 +548,40 @@ body {
     font-size: 0.72rem;
 }
 
+.interaction-action.active {
+    border-color: rgba(255, 220, 142, 0.54);
+    background: rgba(255, 208, 118, 0.14);
+    color: #ffe8bc;
+}
+
+.interaction-source {
+    display: grid;
+    gap: 8px;
+}
+
+.interaction-input {
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 10px;
+    background: rgba(10, 14, 20, 0.72);
+    color: #efe9db;
+    padding: 7px 10px;
+    font-size: 0.72rem;
+}
+
+.interaction-input::placeholder {
+    color: rgba(239, 233, 219, 0.56);
+}
+
+.jukebox-spotify-host {
+    position: fixed;
+    left: -9999px;
+    top: -9999px;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
 .interaction-slots {
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 10px;
