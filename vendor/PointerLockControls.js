@@ -13,6 +13,12 @@ const _unlockEvent = { type: 'unlock' };
 
 const _PI_2 = Math.PI / 2;
 
+function clamp( value, min, max ) {
+
+	return Math.max( min, Math.min( max, value ) );
+
+}
+
 class PointerLockControls extends EventDispatcher {
 
 	constructor( camera, domElement ) {
@@ -30,6 +36,11 @@ class PointerLockControls extends EventDispatcher {
 		this.maxPolarAngle = Math.PI; // radians
 
 		this.pointerSpeed = 1.0;
+		this.pointerSmoothing = 0.35;
+		this.maxMouseDelta = 130;
+		this.maxJumpDelta = 420;
+		this._smoothedMovementX = 0;
+		this._smoothedMovementY = 0;
 
 		this._onMouseMove = onMouseMove.bind( this );
 		this._onPointerlockChange = onPointerlockChange.bind( this );
@@ -118,14 +129,36 @@ function onMouseMove( event ) {
 
 	if ( this.isLocked === false ) return;
 
-	const movementX = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
-	const movementY = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+	const movementXRaw = event.movementX || event.mozMovementX || event.webkitMovementX || 0;
+	const movementYRaw = event.movementY || event.mozMovementY || event.webkitMovementY || 0;
+	if ( ! Number.isFinite( movementXRaw ) || ! Number.isFinite( movementYRaw ) ) {
+
+		return;
+
+	}
+
+	const maxJumpDelta = Math.max( this.maxJumpDelta || 0, this.maxMouseDelta || 0 );
+	if ( Math.abs( movementXRaw ) > maxJumpDelta || Math.abs( movementYRaw ) > maxJumpDelta ) {
+
+		this._smoothedMovementX = 0;
+		this._smoothedMovementY = 0;
+		return;
+
+	}
+
+	const maxMouseDelta = Math.max( 1, this.maxMouseDelta || 130 );
+	const movementX = clamp( movementXRaw, - maxMouseDelta, maxMouseDelta );
+	const movementY = clamp( movementYRaw, - maxMouseDelta, maxMouseDelta );
+	const smoothing = clamp( this.pointerSmoothing ?? 0.35, 0, 0.85 );
+	const smoothingLerp = 1 - smoothing;
+	this._smoothedMovementX += ( movementX - this._smoothedMovementX ) * smoothingLerp;
+	this._smoothedMovementY += ( movementY - this._smoothedMovementY ) * smoothingLerp;
 
 	const camera = this.camera;
 	_euler.setFromQuaternion( camera.quaternion );
 
-	_euler.y -= movementX * 0.002 * this.pointerSpeed;
-	_euler.x -= movementY * 0.002 * this.pointerSpeed;
+	_euler.y -= this._smoothedMovementX * 0.002 * this.pointerSpeed;
+	_euler.x -= this._smoothedMovementY * 0.002 * this.pointerSpeed;
 
 	_euler.x = Math.max( _PI_2 - this.maxPolarAngle, Math.min( _PI_2 - this.minPolarAngle, _euler.x ) );
 
@@ -142,12 +175,16 @@ function onPointerlockChange() {
 		this.dispatchEvent( _lockEvent );
 
 		this.isLocked = true;
+		this._smoothedMovementX = 0;
+		this._smoothedMovementY = 0;
 
 	} else {
 
 		this.dispatchEvent( _unlockEvent );
 
 		this.isLocked = false;
+		this._smoothedMovementX = 0;
+		this._smoothedMovementY = 0;
 
 	}
 

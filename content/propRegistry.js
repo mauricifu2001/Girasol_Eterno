@@ -7,6 +7,7 @@ export const PROP_TYPE = Object.freeze({
     BED: "bed",
     FENCE: "fence",
     LANTERN: "lantern",
+    TORCH: "torch",
     BOOKSHELF: "bookshelf",
     BARREL: "barrel",
     WOOD_CRATE: "wood_crate",
@@ -14,6 +15,7 @@ export const PROP_TYPE = Object.freeze({
     PAINTING: "painting",
     CURTAINS: "curtains",
     WALL_LANTERN: "wall_lantern",
+    WALL_TORCH: "wall_torch",
     LIGHT_POST: "light_post",
     BENCH: "bench",
     PICNIC_TABLE: "picnic_table",
@@ -146,6 +148,17 @@ const RAW_PROP_DEFINITIONS = [
         profile: { halfExtents: { x: 0.2, z: 0.2 }, minY: 0, maxY: 1.04, supportY: 1 }
     },
     {
+        id: PROP_TYPE.TORCH,
+        label: "Antorcha",
+        category: "utility",
+        tags: ["light", "torch", "outdoor"],
+        emitsLight: true,
+        lightCycle: true,
+        interaction: "light-cycle",
+        visual: { tint: "rgba(233, 181, 96, 0.44)" },
+        profile: { halfExtents: { x: 0.12, z: 0.12 }, minY: 0, maxY: 0.96, supportY: 0.94 }
+    },
+    {
         id: PROP_TYPE.BOOKSHELF,
         label: "Estanteria",
         category: "furniture",
@@ -210,6 +223,18 @@ const RAW_PROP_DEFINITIONS = [
         interaction: "light-cycle",
         visual: { tint: "rgba(220, 178, 98, 0.44)" },
         profile: { halfExtents: { x: 0.2, z: 0.15 }, minY: 0, maxY: 0.92, supportY: 0.88 }
+    },
+    {
+        id: PROP_TYPE.WALL_TORCH,
+        label: "Antorcha de pared",
+        category: "utility",
+        tags: ["light", "wall", "torch"],
+        emitsLight: true,
+        lightCycle: true,
+        interaction: "light-cycle",
+        visual: { tint: "rgba(233, 175, 93, 0.44)" },
+        profile: { halfExtents: { x: 0.14, z: 0.11 }, minY: 0, maxY: 0.92, supportY: 0.88 },
+        inventory: { enabled: false }
     },
     {
         id: PROP_TYPE.LIGHT_POST,

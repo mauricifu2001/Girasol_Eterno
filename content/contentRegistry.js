@@ -97,6 +97,7 @@ const HOTBAR_DEFAULT_CANDIDATES = Object.freeze([
     "snow",
     "chair",
     "lamp",
+    "torch",
     "chest",
     "furnace",
     "wall_lantern"
