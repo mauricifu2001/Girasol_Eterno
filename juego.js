@@ -5697,7 +5697,7 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
             continue;
         }
         if (key === "title") {
-            normalized[key] = String(incoming ?? defaultValue || "").slice(0, 120);
+            normalized[key] = String((incoming ?? defaultValue) || "").slice(0, 120);
             continue;
         }
 
