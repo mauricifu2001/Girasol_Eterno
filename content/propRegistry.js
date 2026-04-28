@@ -341,7 +341,17 @@ const RAW_PROP_DEFINITIONS = [
         category: "utility",
         tags: ["interactive", "music"],
         interaction: "jukebox-control",
-        stateDefaults: { playing: false, track: 0, source: "local-playlist-v1" },
+        stateDefaults: {
+            playing: false,
+            track: 0,
+            source: "local-playlist-v1",
+            tracks: [
+                { type: "local", value: "", label: "" },
+                { type: "local", value: "", label: "" },
+                { type: "local", value: "", label: "" },
+                { type: "local", value: "", label: "" }
+            ]
+        },
         visual: { tint: "rgba(128, 88, 64, 0.44)" },
         profile: { halfExtents: { x: 0.34, z: 0.34 }, minY: 0, maxY: 0.62, supportY: 0.6 }
     },
