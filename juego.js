@@ -324,6 +324,9 @@ const TV_EMBED_OFFSCREEN_MARGIN_PX = 120;
 const TV_EMBED_CLIP_INSET_PX = 2;
 const TV_MODEL_SCALE = 10;
 const TV_SIZE_OPTIONS = Object.freeze([200, 100, 70]);
+const TV_WALL_BASE_MIN_Y = 5.5;
+const TV_WALL_BASE_MAX_Y = 15.8;
+const TV_WALL_BASE_SUPPORT_Y = 10.6;
 const INTERACTION_KEY = "KeyE";
 const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
@@ -4881,6 +4884,31 @@ function getPropProfile(propType) {
     return getPropDefinition(propType)?.profile || fallbackProfile;
 }
 
+function getPropProfileForState(propType, sharedState = null) {
+    const baseProfile = getPropProfile(propType);
+    if (propType !== PROP_TYPE.TV_SCREEN && propType !== PROP_TYPE.TV_WALL) {
+        return baseProfile;
+    }
+
+    const sizeInches = sanitizeTvSizeInches(sharedState?.sizeInches, 200);
+    const scaleFactor = getTvScaleFactorFromSize(sizeInches);
+    const baseHalfExtents = baseProfile.halfExtents || { x: 0.25, z: 0.25 };
+    const profileMinY = propType === PROP_TYPE.TV_WALL ? TV_WALL_BASE_MIN_Y : (Number(baseProfile.minY) || 0);
+    const profileMaxY = propType === PROP_TYPE.TV_WALL ? TV_WALL_BASE_MAX_Y : (Number(baseProfile.maxY) || 1);
+    const profileSupportY = propType === PROP_TYPE.TV_WALL ? TV_WALL_BASE_SUPPORT_Y : (Number(baseProfile.supportY) || 0.5);
+
+    return {
+        ...baseProfile,
+        halfExtents: {
+            x: (Number(baseHalfExtents.x) || 0.25) * scaleFactor,
+            z: (Number(baseHalfExtents.z) || 0.25) * scaleFactor
+        },
+        minY: profileMinY * scaleFactor,
+        maxY: profileMaxY * scaleFactor,
+        supportY: profileSupportY * scaleFactor
+    };
+}
+
 const INTERACTION_KIND = Object.freeze({
     NONE: "none",
     SIT: "sit",
@@ -5214,8 +5242,8 @@ function isPropBeingTemporarilyUsed(propId, usageKind = "") {
     return usage.usageKinds.has(String(usageKind));
 }
 
-function getRotatedPropHalfExtents(propType, yaw = 0) {
-    const profile = getPropProfile(propType);
+function getRotatedPropHalfExtents(propType, yaw = 0, sharedState = null) {
+    const profile = getPropProfileForState(propType, sharedState);
     const base = profile.halfExtents || { x: 0.25, z: 0.25 };
     const normalized = Math.abs(Math.round(normalizeYawRadians(yaw) / PROP_ROTATION_STEP)) % 2;
     if (normalized === 1) {
@@ -5225,9 +5253,9 @@ function getRotatedPropHalfExtents(propType, yaw = 0) {
     return { x: base.x, z: base.z };
 }
 
-function getPlacedPropBoundsAt(propType, x, y, z, yaw = 0, expand = 0) {
-    const profile = getPropProfile(propType);
-    const extents = getRotatedPropHalfExtents(propType, yaw);
+function getPlacedPropBoundsAt(propType, x, y, z, yaw = 0, expand = 0, sharedState = null) {
+    const profile = getPropProfileForState(propType, sharedState);
+    const extents = getRotatedPropHalfExtents(propType, yaw, sharedState);
     return {
         minX: x - extents.x - expand,
         maxX: x + extents.x + expand,
@@ -5248,7 +5276,8 @@ function getPlacedPropBounds(placed, expand = 0) {
         Number(placed.y) || 0,
         Number(placed.z) || 0,
         Number(placed.yaw) || 0,
-        expand
+        expand,
+        placed.state
     );
 }
 
@@ -5256,7 +5285,7 @@ function getPlacedPropSupportY(placed) {
     if (!placed) {
         return 0;
     }
-    const profile = getPropProfile(placed.propType);
+    const profile = getPropProfileForState(placed.propType, placed.state);
     return (Number(placed.y) || 0) + profile.supportY;
 }
 
@@ -6016,12 +6045,45 @@ function applyPropSharedVisualState(placed) {
             };
         }
 
+        const previousSizeInches = sanitizeTvSizeInches(placed.node.userData?.tvSizeInchesApplied, sizeInches);
+        const previousProfile = getPropProfileForState(propType, { sizeInches: previousSizeInches });
+        const nextProfile = getPropProfileForState(propType, { sizeInches });
+        const previousMinY = Number(previousProfile.minY) || 0;
+        const nextMinY = Number(nextProfile.minY) || 0;
         const scaleFactor = getTvScaleFactorFromSize(sizeInches);
         const currentScaleFactor = Number(placed.node.userData?.tvScaleFactor || 0);
-        if (!Number.isFinite(currentScaleFactor) || Math.abs(currentScaleFactor - scaleFactor) > 1e-4) {
+        const scaleChanged = !Number.isFinite(currentScaleFactor) || Math.abs(currentScaleFactor - scaleFactor) > 1e-4;
+        if (scaleChanged) {
+            const currentY = Number(placed.y) || 0;
+            let wallReindexedFromYOffset = false;
+            if (propType === PROP_TYPE.TV_WALL) {
+                const savedBottomY = Number(placed.node.userData?.tvWallBottomY);
+                const fixedBottomY = Number.isFinite(savedBottomY) ? savedBottomY : (currentY + previousMinY);
+                placed.node.userData.tvWallBottomY = fixedBottomY;
+                const nextY = fixedBottomY - nextMinY;
+                if (Math.abs(nextY - currentY) > 1e-4) {
+                    unindexPlacedProp(placed);
+                    placed.y = nextY;
+                    placed.node.position.y = nextY;
+                    indexPlacedProp(placed);
+                    wallReindexedFromYOffset = true;
+                }
+            } else {
+                placed.node.userData.tvWallBottomY = undefined;
+            }
             placed.node.scale.setScalar(scaleFactor);
             placed.node.userData.tvScaleFactor = scaleFactor;
+            placed.node.userData.tvSizeInchesApplied = sizeInches;
+            if (propType !== PROP_TYPE.TV_WALL || !wallReindexedFromYOffset) {
+                unindexPlacedProp(placed);
+                indexPlacedProp(placed);
+            }
             propState.cullingDirty = true;
+        } else {
+            placed.node.userData.tvSizeInchesApplied = sizeInches;
+            if (propType === PROP_TYPE.TV_WALL && !Number.isFinite(Number(placed.node.userData?.tvWallBottomY))) {
+                placed.node.userData.tvWallBottomY = (Number(placed.y) || 0) + nextMinY;
+            }
         }
 
         const screenMaterial = placed.node.userData?.tvScreenMaterial || null;
@@ -6700,7 +6762,7 @@ function buildJukeboxNode(root) {
     root.userData.jukeboxLedMaterial = ledMaterial;
 }
 
-function createTvBrandPlate(scale = 1) {
+function createTvBrandPlate(scale = 1, options = {}) {
     const brandCanvas = document.createElement("canvas");
     brandCanvas.width = 512;
     brandCanvas.height = 128;
@@ -6709,12 +6771,14 @@ function createTvBrandPlate(scale = 1) {
         return null;
     }
     brandContext.clearRect(0, 0, brandCanvas.width, brandCanvas.height);
-    brandContext.fillStyle = "#0c1118";
-    brandContext.fillRect(0, 0, brandCanvas.width, brandCanvas.height);
-    brandContext.fillStyle = "#dfe8f5";
-    brandContext.font = "700 56px Sora, sans-serif";
+    brandContext.font = "800 62px Sora, sans-serif";
     brandContext.textAlign = "center";
     brandContext.textBaseline = "middle";
+    brandContext.lineJoin = "round";
+    brandContext.strokeStyle = "rgba(0, 0, 0, 0.86)";
+    brandContext.lineWidth = 16;
+    brandContext.strokeText("PaMeKaChi", brandCanvas.width * 0.5, brandCanvas.height * 0.54);
+    brandContext.fillStyle = "#ecf7ff";
     brandContext.fillText("PaMeKaChi", brandCanvas.width * 0.5, brandCanvas.height * 0.54);
 
     const brandTexture = new THREE.CanvasTexture(brandCanvas);
@@ -6722,13 +6786,27 @@ function createTvBrandPlate(scale = 1) {
     brandTexture.userData.disposeOnRemove = true;
     const brandMaterial = createDisposableStandardMaterial({
         color: 0xffffff,
-        roughness: 0.3,
-        metalness: 0.05,
-        map: brandTexture
+        roughness: 0.24,
+        metalness: 0.02,
+        emissive: 0xb7e7ff,
+        emissiveIntensity: 0.24,
+        map: brandTexture,
+        transparent: true,
+        alphaTest: 0.12
     });
+    const widthScale = Number(options.widthScale) || 0.52;
+    const heightScale = Number(options.heightScale) || 0.08;
+    const depthScale = Number(options.depthScale) || 0.01;
+    const posXScale = Number(options.positionXScale);
+    const posYScale = Number(options.positionYScale);
+    const posZScale = Number(options.positionZScale);
     const brandMesh = createDynamicPart(
-        { x: 0.28 * scale, y: 0.06 * scale, z: 0.012 * scale },
-        { x: 0.56 * scale, y: 0.61 * scale, z: 0.034 * scale },
+        { x: widthScale * scale, y: heightScale * scale, z: depthScale * scale },
+        {
+            x: Number.isFinite(posXScale) ? posXScale * scale : 0,
+            y: Number.isFinite(posYScale) ? posYScale * scale : (0.58 * scale),
+            z: Number.isFinite(posZScale) ? posZScale * scale : (0.056 * scale)
+        },
         brandMaterial
     );
     brandMesh.castShadow = false;
@@ -6773,7 +6851,11 @@ function buildTvScreenNode(root) {
         indicatorMaterial
     );
     root.add(indicator);
-    const brandPlate = createTvBrandPlate(s);
+    const brandPlate = createTvBrandPlate(s, {
+        positionXScale: 0,
+        positionYScale: 0.58,
+        positionZScale: 0.056
+    });
     if (brandPlate) {
         root.add(brandPlate);
     }
@@ -6818,7 +6900,11 @@ function buildTvWallNode(root) {
         indicatorMaterial
     );
     root.add(indicator);
-    const brandPlate = createTvBrandPlate(s);
+    const brandPlate = createTvBrandPlate(s, {
+        positionXScale: 0,
+        positionYScale: 0.58,
+        positionZScale: 0.039
+    });
     if (brandPlate) {
         root.add(brandPlate);
     }
@@ -15066,6 +15152,31 @@ function getWallMountBaseYOffset(propType) {
     return 0;
 }
 
+function findColumnSurfaceYAtOrBelow(x, z, startY = WORLD_MAX_Y - 1) {
+    let sampleY = Math.floor(Number(startY));
+    if (!Number.isFinite(sampleY)) {
+        sampleY = WORLD_MAX_Y - 1;
+    }
+    sampleY = THREE.MathUtils.clamp(sampleY, 0, WORLD_MAX_Y - 1);
+    const sampleX = Math.floor(Number(x) || 0);
+    const sampleZ = Math.floor(Number(z) || 0);
+    for (let y = sampleY; y >= 0; y -= 1) {
+        if (isSolidBlock(getBlock(sampleX, y, sampleZ))) {
+            return y;
+        }
+    }
+    return null;
+}
+
+function resolveWallTvPlacementY(anchorY, wallFaceCellX, wallFaceCellZ, tvState = null) {
+    const profile = getPropProfileForState(PROP_TYPE.TV_WALL, tvState);
+    const terrainSurfaceY = Math.floor(Number(terrainHeight(wallFaceCellX, wallFaceCellZ)) || 0);
+    const scannedSurfaceY = findColumnSurfaceYAtOrBelow(wallFaceCellX, wallFaceCellZ, anchorY);
+    const supportSurfaceY = Number.isFinite(scannedSurfaceY) ? scannedSurfaceY : terrainSurfaceY;
+    const desiredBottomY = supportSurfaceY + 1;
+    return desiredBottomY - (Number(profile.minY) || 0);
+}
+
 function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
     if (!hit?.point) {
         return null;
@@ -15273,6 +15384,27 @@ function attemptMineOrPlace(isPlacing) {
         let hasAnchor = false;
         let forcedPropYaw = null;
         let wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
+        const ensureTvSizeSelected = () => {
+            if (propTypeToPlace !== PROP_TYPE.TV_SCREEN && propTypeToPlace !== PROP_TYPE.TV_WALL) {
+                return true;
+            }
+            if (selectedTvSizeInches !== null) {
+                return true;
+            }
+            selectedTvSizeInches = promptTvSizeSelection();
+            if (selectedTvSizeInches === null) {
+                showToast("Colocacion TV cancelada", "info", 800);
+                return false;
+            }
+            return true;
+        };
+        const getPendingTvState = () => {
+            if (propTypeToPlace !== PROP_TYPE.TV_SCREEN && propTypeToPlace !== PROP_TYPE.TV_WALL) {
+                return null;
+            }
+            const sizeInches = sanitizeTvSizeInches(selectedTvSizeInches, 200);
+            return { sizeInches };
+        };
 
         if (targetedProp && targetedProp.distance <= blockDistance + 0.001) {
             const worldNormal = getWorldNormalFromRayHit(targetedProp.hit);
@@ -15283,6 +15415,9 @@ function attemptMineOrPlace(isPlacing) {
 
             propTypeToPlace = resolveContextualPropTypeForPlacement(propTypeToPlace, worldNormal);
             wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
+            if (!ensureTvSizeSelected()) {
+                return;
+            }
             if (wantsWallPlacement) {
                 showToast(getWallPlacementWarning(propTypeToPlace), "warning", 1000);
                 return;
@@ -15301,6 +15436,9 @@ function attemptMineOrPlace(isPlacing) {
 
             propTypeToPlace = resolveContextualPropTypeForPlacement(propTypeToPlace, normal);
             wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
+            if (!ensureTvSizeSelected()) {
+                return;
+            }
 
             let placeX = 0;
             let placeY = 0;
@@ -15345,15 +15483,17 @@ function attemptMineOrPlace(isPlacing) {
                 const wallX = Math.sign(normal.x);
                 const wallZ = Math.sign(normal.z);
                 const wallOffset = getWallMountCenterOffset(propTypeToPlace);
+                const pendingTvState = getPendingTvState();
                 propX = placeX + 0.5 - wallX * wallOffset;
-                propY = placeY;
+                propY = propTypeToPlace === PROP_TYPE.TV_WALL
+                    ? resolveWallTvPlacementY(placeY, placeX, placeZ, pendingTvState)
+                    : placeY;
                 propZ = placeZ + 0.5 - wallZ * wallOffset;
             } else {
                 propX = placeX + 0.5;
                 propY = placeY;
                 propZ = placeZ + 0.5;
             }
-            propY = placeY;
             hasAnchor = true;
         }
 
@@ -15377,17 +15517,10 @@ function attemptMineOrPlace(isPlacing) {
             minZ: state.playerPosition.z - PLAYER_RADIUS,
             maxZ: state.playerPosition.z + PLAYER_RADIUS
         };
-        const nextPropBounds = getPlacedPropBoundsAt(propTypeToPlace, propX, propY, propZ, propYaw, 0.001);
+        const pendingState = getPendingTvState();
+        const nextPropBounds = getPlacedPropBoundsAt(propTypeToPlace, propX, propY, propZ, propYaw, 0.001, pendingState);
         if (intersectsAabb(playerBounds, nextPropBounds)) {
             return;
-        }
-
-        if (propTypeToPlace === PROP_TYPE.TV_SCREEN || propTypeToPlace === PROP_TYPE.TV_WALL) {
-            selectedTvSizeInches = promptTvSizeSelection();
-            if (selectedTvSizeInches === null) {
-                showToast("Colocacion TV cancelada", "info", 800);
-                return;
-            }
         }
 
         const propId = addPlacedPropEntry({
@@ -15397,9 +15530,7 @@ function attemptMineOrPlace(isPlacing) {
             z: propZ,
             lampLevel: isLightPropType(propTypeToPlace) ? 0 : undefined,
             yaw: propYaw,
-            state: (propTypeToPlace === PROP_TYPE.TV_SCREEN || propTypeToPlace === PROP_TYPE.TV_WALL)
-                ? { sizeInches: sanitizeTvSizeInches(selectedTvSizeInches, 200) }
-                : undefined
+            state: pendingState || undefined
         }, "local");
 
         if (propId) {
