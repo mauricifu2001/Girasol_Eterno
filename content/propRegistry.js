@@ -28,6 +28,7 @@ export const PROP_TYPE = Object.freeze({
     EDITABLE_SIGN: "editable_sign",
     JUKEBOX: "jukebox",
     TV_SCREEN: "tv_screen",
+    TV_WALL: "tv_wall",
     GIANT_SUNFLOWER: "giant_sunflower",
     RABBIT_HOUSE: "rabbit_house"
 });
@@ -369,7 +370,23 @@ const RAW_PROP_DEFINITIONS = [
             title: ""
         },
         visual: { tint: "rgba(106, 138, 172, 0.42)" },
-        profile: { halfExtents: { x: 0.94, z: 0.22 }, minY: 0, maxY: 1.38, supportY: 0.06 }
+        profile: { halfExtents: { x: 9.4, z: 2.2 }, minY: 0, maxY: 13.8, supportY: 0.6 }
+    },
+    {
+        id: PROP_TYPE.TV_WALL,
+        label: "TV plasma pared",
+        category: "utility",
+        tags: ["interactive", "video", "screen", "wall"],
+        interaction: "tv-control",
+        stateDefaults: {
+            powered: false,
+            youtubeId: "",
+            playbackStartedAtMs: 0,
+            title: ""
+        },
+        visual: { tint: "rgba(106, 138, 172, 0.42)" },
+        profile: { halfExtents: { x: 9.4, z: 0.7 }, minY: 0, maxY: 10.8, supportY: 5.2 },
+        inventory: { enabled: false }
     },
     {
         id: PROP_TYPE.GIANT_SUNFLOWER,

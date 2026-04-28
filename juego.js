@@ -320,6 +320,8 @@ const TV_SPATIAL_NEAR_DISTANCE = 4;
 const TV_SYNC_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const TV_EMBED_MIN_SIZE_PX = 16;
 const TV_EMBED_OFFSCREEN_MARGIN_PX = 120;
+const TV_EMBED_CLIP_INSET_PX = 2;
+const TV_MODEL_SCALE = 10;
 const INTERACTION_KEY = "KeyE";
 const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
@@ -4980,6 +4982,12 @@ const PROP_INTERACTION_CONFIG = Object.freeze({
         persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title"],
         usageKind: INTERACTION_USAGE_KIND.TV
     }),
+    [PROP_TYPE.TV_WALL]: Object.freeze({
+        kind: INTERACTION_KIND.TV_CONTROL,
+        hudHint: "E abrir controles TV",
+        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title"],
+        usageKind: INTERACTION_USAGE_KIND.TV
+    }),
     [PROP_TYPE.CHEST]: Object.freeze({
         kind: INTERACTION_KIND.CONTAINER_OPEN,
         hudHint: "E abrir cofre",
@@ -5925,7 +5933,7 @@ function applyPropSharedVisualState(placed) {
         return;
     }
 
-    if (propType === PROP_TYPE.TV_SCREEN) {
+    if (propType === PROP_TYPE.TV_SCREEN || propType === PROP_TYPE.TV_WALL) {
         const powered = Boolean(placed.state?.powered);
         const youtubeId = sanitizeYouTubeVideoId(placed.state?.youtubeId || "");
         const playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(placed.state?.playbackStartedAtMs, 0);
@@ -6623,13 +6631,14 @@ function buildJukeboxNode(root) {
 }
 
 function buildTvScreenNode(root) {
-    root.add(createDetailPart({ x: 0.78, y: 0.08, z: 0.44 }, { x: 0, y: 0.04, z: 0 }, 0x21242c));
-    root.add(createDetailPart({ x: 0.22, y: 0.18, z: 0.18 }, { x: 0, y: 0.14, z: 0 }, 0x2f333b));
-    root.add(createDetailPart({ x: 0.1, y: 0.38, z: 0.1 }, { x: 0, y: 0.38, z: 0 }, 0x323846));
+    const s = TV_MODEL_SCALE;
+    root.add(createDetailPart({ x: 0.78 * s, y: 0.08 * s, z: 0.44 * s }, { x: 0, y: 0.04 * s, z: 0 }, 0x21242c));
+    root.add(createDetailPart({ x: 0.22 * s, y: 0.18 * s, z: 0.18 * s }, { x: 0, y: 0.14 * s, z: 0 }, 0x2f333b));
+    root.add(createDetailPart({ x: 0.1 * s, y: 0.38 * s, z: 0.1 * s }, { x: 0, y: 0.38 * s, z: 0 }, 0x323846));
 
-    root.add(createDetailPart({ x: 1.72, y: 1.02, z: 0.08 }, { x: 0, y: 1.06, z: 0.02 }, 0x12161c));
-    root.add(createDetailPart({ x: 1.64, y: 0.94, z: 0.04 }, { x: 0, y: 1.06, z: 0.04 }, 0x090b0f));
-    root.add(createDetailPart({ x: 1.7, y: 0.02, z: 0.1 }, { x: 0, y: 1.57, z: 0.02 }, 0x2e3542));
+    root.add(createDetailPart({ x: 1.72 * s, y: 1.02 * s, z: 0.08 * s }, { x: 0, y: 1.06 * s, z: 0.02 * s }, 0x12161c));
+    root.add(createDetailPart({ x: 1.64 * s, y: 0.94 * s, z: 0.04 * s }, { x: 0, y: 1.06 * s, z: 0.04 * s }, 0x090b0f));
+    root.add(createDetailPart({ x: 1.7 * s, y: 0.02 * s, z: 0.1 * s }, { x: 0, y: 1.57 * s, z: 0.02 * s }, 0x2e3542));
 
     const screenMaterial = createDisposableStandardMaterial({
         color: 0x0f1216,
@@ -6639,8 +6648,8 @@ function buildTvScreenNode(root) {
         emissiveIntensity: 0.01
     });
     const screenMesh = createDynamicPart(
-        { x: 1.54, y: 0.84, z: 0.02 },
-        { x: 0, y: 1.06, z: 0.045 },
+        { x: 1.54 * s, y: 0.84 * s, z: 0.02 * s },
+        { x: 0, y: 1.06 * s, z: 0.045 * s },
         screenMaterial
     );
     root.add(screenMesh);
@@ -6653,8 +6662,48 @@ function buildTvScreenNode(root) {
         emissiveIntensity: 0.28
     });
     const indicator = createDynamicPart(
-        { x: 0.04, y: 0.02, z: 0.016 },
-        { x: 0.76, y: 0.58, z: 0.056 },
+        { x: 0.04 * s, y: 0.02 * s, z: 0.016 * s },
+        { x: 0.76 * s, y: 0.58 * s, z: 0.056 * s },
+        indicatorMaterial
+    );
+    root.add(indicator);
+
+    root.userData.tvScreenMaterial = screenMaterial;
+    root.userData.tvScreenMesh = screenMesh;
+    root.userData.tvIndicatorMaterial = indicatorMaterial;
+}
+
+function buildTvWallNode(root) {
+    const s = TV_MODEL_SCALE;
+    root.add(createDetailPart({ x: 0.54 * s, y: 0.08 * s, z: 0.14 * s }, { x: 0, y: 0.56 * s, z: -0.22 * s }, 0x242a35));
+    root.add(createDetailPart({ x: 1.72 * s, y: 1.02 * s, z: 0.08 * s }, { x: 0, y: 1.06 * s, z: 0.02 * s }, 0x12161c));
+    root.add(createDetailPart({ x: 1.64 * s, y: 0.94 * s, z: 0.04 * s }, { x: 0, y: 1.06 * s, z: 0.04 * s }, 0x090b0f));
+    root.add(createDetailPart({ x: 1.7 * s, y: 0.02 * s, z: 0.1 * s }, { x: 0, y: 1.57 * s, z: 0.02 * s }, 0x2e3542));
+
+    const screenMaterial = createDisposableStandardMaterial({
+        color: 0x0f1216,
+        roughness: 0.2,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0.01
+    });
+    const screenMesh = createDynamicPart(
+        { x: 1.54 * s, y: 0.84 * s, z: 0.02 * s },
+        { x: 0, y: 1.06 * s, z: 0.045 * s },
+        screenMaterial
+    );
+    root.add(screenMesh);
+
+    const indicatorMaterial = createDisposableStandardMaterial({
+        color: 0x12161a,
+        roughness: 0.42,
+        metalness: 0,
+        emissive: 0xff5f5f,
+        emissiveIntensity: 0.28
+    });
+    const indicator = createDynamicPart(
+        { x: 0.04 * s, y: 0.02 * s, z: 0.016 * s },
+        { x: 0.76 * s, y: 0.58 * s, z: 0.056 * s },
         indicatorMaterial
     );
     root.add(indicator);
@@ -6713,6 +6762,7 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.EDITABLE_SIGN]: buildEditableSignNode,
     [PROP_TYPE.JUKEBOX]: buildJukeboxNode,
     [PROP_TYPE.TV_SCREEN]: buildTvScreenNode,
+    [PROP_TYPE.TV_WALL]: buildTvWallNode,
     [PROP_TYPE.GIANT_SUNFLOWER]: buildGiantSunflowerNode,
     [PROP_TYPE.RABBIT_HOUSE]: buildRabbitHouseNode
 });
@@ -7123,7 +7173,7 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
             persistJukeboxCustomTracksToStorage();
         }
     }
-    if (placed.propType === PROP_TYPE.TV_SCREEN) {
+    if (placed.propType === PROP_TYPE.TV_SCREEN || placed.propType === PROP_TYPE.TV_WALL) {
         stopTvRuntimeById(id);
     }
 
@@ -13537,6 +13587,7 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
     let minY = Number.POSITIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
     let anyCornerInFront = false;
+    const projectedPoints = [];
 
     for (let i = 0; i < 4; i += 1) {
         const cornerWorld = tvProjectionCornerWorldScratch[i];
@@ -13552,6 +13603,7 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
         cornerCamera.copy(cornerWorld).project(camera);
         const px = (cornerCamera.x * 0.5 + 0.5) * window.innerWidth;
         const py = (-cornerCamera.y * 0.5 + 0.5) * window.innerHeight;
+        projectedPoints.push([px, py]);
         minX = Math.min(minX, px);
         maxX = Math.max(maxX, px);
         minY = Math.min(minY, py);
@@ -13588,6 +13640,17 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
     runtime.overlayEl.style.top = `${minY}px`;
     runtime.overlayEl.style.width = `${width}px`;
     runtime.overlayEl.style.height = `${height}px`;
+
+    const insetXPct = Math.min(8, (TV_EMBED_CLIP_INSET_PX / Math.max(1, width)) * 100);
+    const insetYPct = Math.min(8, (TV_EMBED_CLIP_INSET_PX / Math.max(1, height)) * 100);
+    const clipPoints = projectedPoints.map(([px, py]) => {
+        const nx = THREE.MathUtils.clamp(((px - minX) / Math.max(1e-3, width)) * 100, insetXPct, 100 - insetXPct);
+        const ny = THREE.MathUtils.clamp(((py - minY) / Math.max(1e-3, height)) * 100, insetYPct, 100 - insetYPct);
+        return `${nx.toFixed(3)}% ${ny.toFixed(3)}%`;
+    });
+    const clipPolygon = `polygon(${clipPoints.join(", ")})`;
+    runtime.overlayEl.style.clipPath = clipPolygon;
+    runtime.overlayEl.style.webkitClipPath = clipPolygon;
     setTvOverlayVisible(runtime, true);
 }
 
@@ -13727,7 +13790,19 @@ function stopAllTvRuntimes() {
 }
 
 function updateTvScreens() {
-    const tvIds = propTypeIndex.get(PROP_TYPE.TV_SCREEN);
+    const tvFloorIds = propTypeIndex.get(PROP_TYPE.TV_SCREEN);
+    const tvWallIds = propTypeIndex.get(PROP_TYPE.TV_WALL);
+    const tvIds = new Set();
+    if (tvFloorIds?.size) {
+        for (const id of tvFloorIds) {
+            tvIds.add(id);
+        }
+    }
+    if (tvWallIds?.size) {
+        for (const id of tvWallIds) {
+            tvIds.add(id);
+        }
+    }
     const wantedIds = new Set();
     if (!tvIds || tvIds.size === 0) {
         if (tvState.activeRuntimes.size > 0) {
@@ -14628,21 +14703,33 @@ function selectedPropType() {
 function isWallMountedPropType(propType) {
     return propType === PROP_TYPE.CURTAINS
         || propType === PROP_TYPE.WALL_LANTERN
-        || propType === PROP_TYPE.WALL_TORCH;
+        || propType === PROP_TYPE.WALL_TORCH
+        || propType === PROP_TYPE.TV_WALL;
 }
 
 function resolveContextualPropTypeForPlacement(basePropType, worldNormal) {
     const baseType = String(basePropType || "");
-    if (baseType !== PROP_TYPE.TORCH && baseType !== PROP_TYPE.WALL_TORCH) {
+    if (
+        baseType !== PROP_TYPE.TORCH
+        && baseType !== PROP_TYPE.WALL_TORCH
+        && baseType !== PROP_TYPE.TV_SCREEN
+        && baseType !== PROP_TYPE.TV_WALL
+    ) {
         return baseType;
     }
 
     if (!worldNormal) {
+        if (baseType === PROP_TYPE.TV_WALL || baseType === PROP_TYPE.TV_SCREEN) {
+            return PROP_TYPE.TV_SCREEN;
+        }
         return PROP_TYPE.TORCH;
     }
 
     const horizontalStrength = Math.hypot(Number(worldNormal.x) || 0, Number(worldNormal.z) || 0);
     const isWallFace = horizontalStrength >= 0.55 && Math.abs(Number(worldNormal.y) || 0) <= 0.4;
+    if (baseType === PROP_TYPE.TV_WALL || baseType === PROP_TYPE.TV_SCREEN) {
+        return isWallFace ? PROP_TYPE.TV_WALL : PROP_TYPE.TV_SCREEN;
+    }
     return isWallFace ? PROP_TYPE.WALL_TORCH : PROP_TYPE.TORCH;
 }
 
@@ -14656,7 +14743,24 @@ function getWallPlacementWarning(propType) {
     if (propType === PROP_TYPE.WALL_LANTERN) {
         return "El farol de pared requiere una pared";
     }
+    if (propType === PROP_TYPE.TV_WALL) {
+        return "El TV de pared requiere una pared";
+    }
     return "Este objeto se coloca sobre paredes";
+}
+
+function getWallMountCenterOffset(propType) {
+    if (propType === PROP_TYPE.TV_WALL) {
+        return 0.29 * TV_MODEL_SCALE;
+    }
+    return 0.44;
+}
+
+function getWallMountBaseYOffset(propType) {
+    if (propType === PROP_TYPE.TV_WALL) {
+        return Math.floor(0.52 * TV_MODEL_SCALE);
+    }
+    return 0;
 }
 
 function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
@@ -14905,7 +15009,7 @@ function attemptMineOrPlace(isPlacing) {
                 const wallX = Math.sign(normal.x);
                 const wallZ = Math.sign(normal.z);
                 placeX = lookup.x + wallX;
-                placeY = lookup.y;
+                placeY = lookup.y - getWallMountBaseYOffset(propTypeToPlace);
                 placeZ = lookup.z + wallZ;
                 forcedPropYaw = snapYawToStep(Math.atan2(wallX, wallZ));
             } else {
@@ -14935,9 +15039,10 @@ function attemptMineOrPlace(isPlacing) {
             if (wantsWallPlacement) {
                 const wallX = Math.sign(normal.x);
                 const wallZ = Math.sign(normal.z);
-                propX = placeX + 0.5 - wallX * 0.44;
+                const wallOffset = getWallMountCenterOffset(propTypeToPlace);
+                propX = placeX + 0.5 - wallX * wallOffset;
                 propY = placeY;
-                propZ = placeZ + 0.5 - wallZ * 0.44;
+                propZ = placeZ + 0.5 - wallZ * wallOffset;
             } else {
                 propX = placeX + 0.5;
                 propY = placeY;

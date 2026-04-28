@@ -592,8 +592,9 @@ body {
     pointer-events: none;
     z-index: 12;
     background: #020305;
-    border-radius: 2px;
+    border-radius: 0;
     box-shadow: 0 0 12px rgba(10, 16, 28, 0.6);
+    will-change: left, top, width, height, clip-path;
 }
 
 .tv-screen-overlay-host {
