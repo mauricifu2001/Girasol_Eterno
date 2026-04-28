@@ -315,6 +315,13 @@ const JUKEBOX_SPATIAL_GAIN_SMOOTHING = 0.12;
 const JUKEBOX_SPOTIFY_ACTIVE_DISTANCE = 20;
 const JUKEBOX_RECORDING_MAX_SECONDS = 18;
 const JUKEBOX_RECORDING_MAX_DATA_URL_CHARS = 1200000;
+const TV_SPATIAL_MAX_DISTANCE = 72;
+const TV_SPATIAL_NEAR_DISTANCE = 4;
+const TV_SYNC_MAX_AGE_MS = 6 * 60 * 60 * 1000;
+const TV_EMBED_MIN_SIZE_PX = 16;
+const TV_EMBED_OFFSCREEN_MARGIN_PX = 120;
+const TV_EMBED_CLIP_INSET_PX = 2;
+const TV_MODEL_SCALE = 10;
 const INTERACTION_KEY = "KeyE";
 const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
@@ -1437,6 +1444,33 @@ const jukeboxState = {
     spotifyNoticeShown: false,
     youtubeApiPromise: null
 };
+
+const tvState = {
+    activeRuntimes: new Map()
+};
+
+const tvProjectionCenterScratch = new THREE.Vector3();
+const tvProjectionCameraScratch = new THREE.Vector3();
+const tvProjectionScreenNormalScratch = new THREE.Vector3();
+const tvProjectionToCameraScratch = new THREE.Vector3();
+const tvProjectionCornerWorldScratch = [
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3()
+];
+const tvProjectionCornerScreenScratch = [
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3()
+];
+const TV_SCREEN_LOCAL_CORNERS = Object.freeze([
+    Object.freeze([-0.5, -0.5, 0.5]),
+    Object.freeze([0.5, -0.5, 0.5]),
+    Object.freeze([0.5, 0.5, 0.5]),
+    Object.freeze([-0.5, 0.5, 0.5])
+]);
 
 let draggedInventoryItemId = "";
 
@@ -3591,6 +3625,12 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
                 const lit = Boolean(propHit.placed.state?.lit);
                 const actionHint = canInteract ? "E abrir" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${lit ? "Encendido" : "Apagado"} (${actionHint} | click izq quitar)`;
+            } else if (kind === INTERACTION_KIND.TV_CONTROL) {
+                const powered = Boolean(propHit.placed.state?.powered);
+                const hasSignal = Boolean(sanitizeYouTubeVideoId(propHit.placed.state?.youtubeId || ""));
+                const modeLabel = powered ? (hasSignal ? "Reproduciendo" : "Encendida sin senal") : "Apagada";
+                const actionHint = canInteract ? "E controlar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (${actionHint} | click izq quitar)`;
             } else if (kind !== INTERACTION_KIND.NONE) {
                 const hint = canInteract
                     ? (config?.hudHint || "E interactuar")
@@ -4845,6 +4885,7 @@ const INTERACTION_KIND = Object.freeze({
     CONTAINER_OPEN: "container-open",
     FURNACE_OPEN: "furnace-open",
     JUKEBOX_CONTROL: "jukebox-control",
+    TV_CONTROL: "tv-control",
     CYCLE_VARIANT: "cycle-variant",
     TOGGLE_STATE: "toggle-state"
 });
@@ -4853,6 +4894,7 @@ const INTERACTION_USAGE_KIND = Object.freeze({
     CONTAINER: "container",
     FURNACE: "furnace",
     JUKEBOX: "jukebox",
+    TV: "tv",
     SIGN: "sign"
 });
 
@@ -4933,6 +4975,18 @@ const PROP_INTERACTION_CONFIG = Object.freeze({
         hudHint: "E abrir controles jukebox",
         persistentSync: ["state.playing", "state.track", "state.source", "state.tracks"],
         usageKind: INTERACTION_USAGE_KIND.JUKEBOX
+    }),
+    [PROP_TYPE.TV_SCREEN]: Object.freeze({
+        kind: INTERACTION_KIND.TV_CONTROL,
+        hudHint: "E abrir controles TV",
+        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title"],
+        usageKind: INTERACTION_USAGE_KIND.TV
+    }),
+    [PROP_TYPE.TV_WALL]: Object.freeze({
+        kind: INTERACTION_KIND.TV_CONTROL,
+        hudHint: "E abrir controles TV",
+        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title"],
+        usageKind: INTERACTION_USAGE_KIND.TV
     }),
     [PROP_TYPE.CHEST]: Object.freeze({
         kind: INTERACTION_KIND.CONTAINER_OPEN,
@@ -5545,6 +5599,15 @@ function sanitizeYouTubeVideoId(value) {
     return YOUTUBE_ID_PATTERN.test(candidate) ? candidate : "";
 }
 
+function sanitizeTvPlaybackStartAtMs(value, fallback = 0) {
+    const numeric = Math.floor(Number(value));
+    if (Number.isFinite(numeric) && numeric > 0) {
+        return numeric;
+    }
+    const fallbackNumeric = Math.floor(Number(fallback));
+    return Number.isFinite(fallbackNumeric) && fallbackNumeric > 0 ? fallbackNumeric : 0;
+}
+
 function sanitizeJukeboxSource(value, fallback = JUKEBOX_SOURCE_DEFAULT) {
     const fallbackText = String(fallback || JUKEBOX_SOURCE_DEFAULT).trim() || JUKEBOX_SOURCE_DEFAULT;
     const raw = String(value ?? fallbackText).trim();
@@ -5580,7 +5643,11 @@ function buildLegacyPropStateCandidate(rawEntry) {
         playing: rawEntry.playing,
         track: rawEntry.track,
         source: rawEntry.source,
-        tracks: rawEntry.tracks
+        tracks: rawEntry.tracks,
+        powered: rawEntry.powered,
+        youtubeId: rawEntry.youtubeId,
+        playbackStartedAtMs: rawEntry.playbackStartedAtMs,
+        title: rawEntry.title
     };
 }
 
@@ -5627,6 +5694,18 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
         }
         if (key === "tracks") {
             normalized[key] = sanitizeJukeboxTrackSlots(incoming ?? defaultValue);
+            continue;
+        }
+        if (key === "youtubeId") {
+            normalized[key] = sanitizeYouTubeVideoId(incoming ?? defaultValue);
+            continue;
+        }
+        if (key === "playbackStartedAtMs") {
+            normalized[key] = sanitizeTvPlaybackStartAtMs(incoming ?? defaultValue, defaultValue);
+            continue;
+        }
+        if (key === "title") {
+            normalized[key] = String((incoming ?? defaultValue) || "").slice(0, 120);
             continue;
         }
 
@@ -5850,6 +5929,41 @@ function applyPropSharedVisualState(placed) {
                 ledMaterialMuted.emissive.setHex(ledColor);
                 ledMaterialMuted.emissiveIntensity = 0.22;
             }
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.TV_SCREEN || propType === PROP_TYPE.TV_WALL) {
+        const powered = Boolean(placed.state?.powered);
+        const youtubeId = sanitizeYouTubeVideoId(placed.state?.youtubeId || "");
+        const playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(placed.state?.playbackStartedAtMs, 0);
+        const title = String(placed.state?.title || "").slice(0, 120);
+        if (
+            !placed.state
+            || placed.state.powered !== powered
+            || placed.state.youtubeId !== youtubeId
+            || placed.state.playbackStartedAtMs !== playbackStartedAtMs
+            || placed.state.title !== title
+        ) {
+            placed.state = {
+                ...(placed.state || {}),
+                powered,
+                youtubeId,
+                playbackStartedAtMs,
+                title
+            };
+        }
+
+        const screenMaterial = placed.node.userData?.tvScreenMaterial || null;
+        if (screenMaterial) {
+            screenMaterial.color.setHex(powered ? 0xc3d3e6 : 0x0f1216);
+            screenMaterial.emissive.setHex(0x8ec8ff);
+            screenMaterial.emissiveIntensity = powered ? 0.45 : 0.01;
+        }
+        const indicatorMaterial = placed.node.userData?.tvIndicatorMaterial || null;
+        if (indicatorMaterial) {
+            indicatorMaterial.emissive.setHex(powered ? 0x58ff9a : 0xff5f5f);
+            indicatorMaterial.emissiveIntensity = powered ? 0.62 : 0.28;
         }
         return;
     }
@@ -6516,6 +6630,89 @@ function buildJukeboxNode(root) {
     root.userData.jukeboxLedMaterial = ledMaterial;
 }
 
+function buildTvScreenNode(root) {
+    const s = TV_MODEL_SCALE;
+    root.add(createDetailPart({ x: 0.78 * s, y: 0.08 * s, z: 0.44 * s }, { x: 0, y: 0.04 * s, z: 0 }, 0x21242c));
+    root.add(createDetailPart({ x: 0.22 * s, y: 0.18 * s, z: 0.18 * s }, { x: 0, y: 0.14 * s, z: 0 }, 0x2f333b));
+    root.add(createDetailPart({ x: 0.1 * s, y: 0.38 * s, z: 0.1 * s }, { x: 0, y: 0.38 * s, z: 0 }, 0x323846));
+
+    root.add(createDetailPart({ x: 1.72 * s, y: 1.02 * s, z: 0.08 * s }, { x: 0, y: 1.06 * s, z: 0.02 * s }, 0x12161c));
+    root.add(createDetailPart({ x: 1.64 * s, y: 0.94 * s, z: 0.04 * s }, { x: 0, y: 1.06 * s, z: 0.04 * s }, 0x090b0f));
+    root.add(createDetailPart({ x: 1.7 * s, y: 0.02 * s, z: 0.1 * s }, { x: 0, y: 1.57 * s, z: 0.02 * s }, 0x2e3542));
+
+    const screenMaterial = createDisposableStandardMaterial({
+        color: 0x0f1216,
+        roughness: 0.2,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0.01
+    });
+    const screenMesh = createDynamicPart(
+        { x: 1.54 * s, y: 0.84 * s, z: 0.02 * s },
+        { x: 0, y: 1.06 * s, z: 0.045 * s },
+        screenMaterial
+    );
+    root.add(screenMesh);
+
+    const indicatorMaterial = createDisposableStandardMaterial({
+        color: 0x12161a,
+        roughness: 0.42,
+        metalness: 0,
+        emissive: 0xff5f5f,
+        emissiveIntensity: 0.28
+    });
+    const indicator = createDynamicPart(
+        { x: 0.04 * s, y: 0.02 * s, z: 0.016 * s },
+        { x: 0.76 * s, y: 0.58 * s, z: 0.056 * s },
+        indicatorMaterial
+    );
+    root.add(indicator);
+
+    root.userData.tvScreenMaterial = screenMaterial;
+    root.userData.tvScreenMesh = screenMesh;
+    root.userData.tvIndicatorMaterial = indicatorMaterial;
+}
+
+function buildTvWallNode(root) {
+    const s = TV_MODEL_SCALE;
+    root.add(createDetailPart({ x: 0.54 * s, y: 0.08 * s, z: 0.14 * s }, { x: 0, y: 0.56 * s, z: -0.22 * s }, 0x242a35));
+    root.add(createDetailPart({ x: 1.72 * s, y: 1.02 * s, z: 0.08 * s }, { x: 0, y: 1.06 * s, z: 0.02 * s }, 0x12161c));
+    root.add(createDetailPart({ x: 1.64 * s, y: 0.94 * s, z: 0.04 * s }, { x: 0, y: 1.06 * s, z: 0.04 * s }, 0x090b0f));
+    root.add(createDetailPart({ x: 1.7 * s, y: 0.02 * s, z: 0.1 * s }, { x: 0, y: 1.57 * s, z: 0.02 * s }, 0x2e3542));
+
+    const screenMaterial = createDisposableStandardMaterial({
+        color: 0x0f1216,
+        roughness: 0.2,
+        metalness: 0.02,
+        emissive: 0x000000,
+        emissiveIntensity: 0.01
+    });
+    const screenMesh = createDynamicPart(
+        { x: 1.54 * s, y: 0.84 * s, z: 0.02 * s },
+        { x: 0, y: 1.06 * s, z: 0.045 * s },
+        screenMaterial
+    );
+    root.add(screenMesh);
+
+    const indicatorMaterial = createDisposableStandardMaterial({
+        color: 0x12161a,
+        roughness: 0.42,
+        metalness: 0,
+        emissive: 0xff5f5f,
+        emissiveIntensity: 0.28
+    });
+    const indicator = createDynamicPart(
+        { x: 0.04 * s, y: 0.02 * s, z: 0.016 * s },
+        { x: 0.76 * s, y: 0.58 * s, z: 0.056 * s },
+        indicatorMaterial
+    );
+    root.add(indicator);
+
+    root.userData.tvScreenMaterial = screenMaterial;
+    root.userData.tvScreenMesh = screenMesh;
+    root.userData.tvIndicatorMaterial = indicatorMaterial;
+}
+
 function buildGiantSunflowerNode(root) {
     root.add(createDetailPart({ x: 0.08, y: 1.7, z: 0.08 }, { x: 0, y: 0.85, z: 0 }, 0x4d8f43));
     root.add(createDetailPart({ x: 0.24, y: 0.12, z: 0.08 }, { x: -0.14, y: 0.92, z: 0.02 }, 0x4d8f43, { x: 0, y: 0, z: 0.55 }));
@@ -6564,6 +6761,8 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.FURNACE]: buildFurnaceNode,
     [PROP_TYPE.EDITABLE_SIGN]: buildEditableSignNode,
     [PROP_TYPE.JUKEBOX]: buildJukeboxNode,
+    [PROP_TYPE.TV_SCREEN]: buildTvScreenNode,
+    [PROP_TYPE.TV_WALL]: buildTvWallNode,
     [PROP_TYPE.GIANT_SUNFLOWER]: buildGiantSunflowerNode,
     [PROP_TYPE.RABBIT_HOUSE]: buildRabbitHouseNode
 });
@@ -6974,6 +7173,9 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
             persistJukeboxCustomTracksToStorage();
         }
     }
+    if (placed.propType === PROP_TYPE.TV_SCREEN || placed.propType === PROP_TYPE.TV_WALL) {
+        stopTvRuntimeById(id);
+    }
 
     const supportY = getPlacedPropSupportY(placed);
     const supportBounds = getPlacedPropBounds(placed, 0.02);
@@ -7036,6 +7238,7 @@ function clearPlacedProps() {
         removePlacedPropEntry(propId, "remote", false);
     }
     stopAllJukeboxRuntimes();
+    stopAllTvRuntimes();
     if (jukeboxState.recordingSession) {
         stopJukeboxTrackRecording(false);
     }
@@ -13270,7 +13473,7 @@ function updateJukeboxSpatialAudio() {
 
         if (activeRuntime.type === "youtube") {
             const gain = getJukeboxSpatialGain(placed);
-            const shouldPlay = gain > 0.012;
+            const shouldPlay = true;
             const targetVolume = Math.round(THREE.MathUtils.clamp(gain * 100, 0, 100));
             activeRuntime.pendingVolume = targetVolume;
             activeRuntime.pendingShouldPlay = shouldPlay;
@@ -13298,8 +13501,6 @@ function updateJukeboxSpatialAudio() {
                     try {
                         if (shouldPlay && activeRuntime.player.playVideo) {
                             activeRuntime.player.playVideo();
-                        } else if (!shouldPlay && activeRuntime.player.pauseVideo) {
-                            activeRuntime.player.pauseVideo();
                         }
                     } catch (error) {
                     }
@@ -13322,6 +13523,367 @@ function updateJukeboxSpatialAudio() {
     for (const activeId of Array.from(jukeboxState.activeRuntimes.keys())) {
         if (!wantedIds.has(activeId)) {
             stopJukeboxRuntimeById(activeId);
+        }
+    }
+}
+
+function getTvSpatialGain(placed) {
+    const dx = placed.x - state.playerPosition.x;
+    const dy = (placed.y + 1.06) - (state.playerPosition.y + 0.3);
+    const dz = placed.z - state.playerPosition.z;
+    const distance = Math.hypot(dx, dy, dz);
+    if (distance <= TV_SPATIAL_NEAR_DISTANCE) {
+        return 0.98;
+    }
+    if (distance >= TV_SPATIAL_MAX_DISTANCE) {
+        return 0;
+    }
+    const normalized = 1 - (distance - TV_SPATIAL_NEAR_DISTANCE) / Math.max(0.001, TV_SPATIAL_MAX_DISTANCE - TV_SPATIAL_NEAR_DISTANCE);
+    return normalized * normalized * 0.98;
+}
+
+function computeTvPlaybackStartSeconds(startedAtMs) {
+    const safeStartedAt = sanitizeTvPlaybackStartAtMs(startedAtMs, 0);
+    if (!safeStartedAt) {
+        return 0;
+    }
+    const ageMs = Date.now() - safeStartedAt;
+    if (!Number.isFinite(ageMs) || ageMs < 0 || ageMs > TV_SYNC_MAX_AGE_MS) {
+        return 0;
+    }
+    return Math.max(0, ageMs / 1000);
+}
+
+function setTvOverlayVisible(runtime, visible) {
+    if (!runtime?.overlayEl) {
+        return;
+    }
+    runtime.overlayEl.style.display = visible ? "block" : "none";
+}
+
+function updateTvRuntimeOverlayPosition(runtime, placed) {
+    const screenMesh = placed?.node?.userData?.tvScreenMesh || null;
+    if (!screenMesh || !runtime?.overlayEl) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+
+    screenMesh.getWorldPosition(tvProjectionCenterScratch);
+    tvProjectionCameraScratch.copy(tvProjectionCenterScratch).applyMatrix4(camera.matrixWorldInverse);
+    if (tvProjectionCameraScratch.z > -0.01) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+
+    screenMesh.getWorldDirection(tvProjectionScreenNormalScratch).normalize();
+    tvProjectionToCameraScratch.copy(camera.position).sub(tvProjectionCenterScratch).normalize();
+    if (tvProjectionScreenNormalScratch.dot(tvProjectionToCameraScratch) <= 0.05) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
+    let minY = Number.POSITIVE_INFINITY;
+    let maxY = Number.NEGATIVE_INFINITY;
+    let anyCornerInFront = false;
+    const projectedPoints = [];
+
+    for (let i = 0; i < 4; i += 1) {
+        const cornerWorld = tvProjectionCornerWorldScratch[i];
+        cornerWorld.set(TV_SCREEN_LOCAL_CORNERS[i][0], TV_SCREEN_LOCAL_CORNERS[i][1], TV_SCREEN_LOCAL_CORNERS[i][2]);
+        screenMesh.localToWorld(cornerWorld);
+
+        const cornerCamera = tvProjectionCornerScreenScratch[i];
+        cornerCamera.copy(cornerWorld).applyMatrix4(camera.matrixWorldInverse);
+        if (cornerCamera.z < -0.01) {
+            anyCornerInFront = true;
+        }
+
+        cornerCamera.copy(cornerWorld).project(camera);
+        const px = (cornerCamera.x * 0.5 + 0.5) * window.innerWidth;
+        const py = (-cornerCamera.y * 0.5 + 0.5) * window.innerHeight;
+        projectedPoints.push([px, py]);
+        minX = Math.min(minX, px);
+        maxX = Math.max(maxX, px);
+        minY = Math.min(minY, py);
+        maxY = Math.max(maxY, py);
+    }
+
+    if (!anyCornerInFront) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+
+    const width = maxX - minX;
+    const height = maxY - minY;
+    if (width < TV_EMBED_MIN_SIZE_PX || height < TV_EMBED_MIN_SIZE_PX) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+    if (width > window.innerWidth * 2.4 || height > window.innerHeight * 2.4) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+
+    if (
+        maxX < -TV_EMBED_OFFSCREEN_MARGIN_PX
+        || minX > window.innerWidth + TV_EMBED_OFFSCREEN_MARGIN_PX
+        || maxY < -TV_EMBED_OFFSCREEN_MARGIN_PX
+        || minY > window.innerHeight + TV_EMBED_OFFSCREEN_MARGIN_PX
+    ) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+
+    runtime.overlayEl.style.left = `${minX}px`;
+    runtime.overlayEl.style.top = `${minY}px`;
+    runtime.overlayEl.style.width = `${width}px`;
+    runtime.overlayEl.style.height = `${height}px`;
+
+    const insetXPct = Math.min(8, (TV_EMBED_CLIP_INSET_PX / Math.max(1, width)) * 100);
+    const insetYPct = Math.min(8, (TV_EMBED_CLIP_INSET_PX / Math.max(1, height)) * 100);
+    const clipPoints = projectedPoints.map(([px, py]) => {
+        const nx = THREE.MathUtils.clamp(((px - minX) / Math.max(1e-3, width)) * 100, insetXPct, 100 - insetXPct);
+        const ny = THREE.MathUtils.clamp(((py - minY) / Math.max(1e-3, height)) * 100, insetYPct, 100 - insetYPct);
+        return `${nx.toFixed(3)}% ${ny.toFixed(3)}%`;
+    });
+    const clipPolygon = `polygon(${clipPoints.join(", ")})`;
+    runtime.overlayEl.style.clipPath = clipPolygon;
+    runtime.overlayEl.style.webkitClipPath = clipPolygon;
+    setTvOverlayVisible(runtime, true);
+}
+
+function createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs) {
+    const overlayEl = document.createElement("div");
+    overlayEl.className = "tv-screen-overlay";
+    overlayEl.style.display = "none";
+
+    const hostEl = document.createElement("div");
+    hostEl.className = "tv-screen-overlay-host";
+    overlayEl.appendChild(hostEl);
+    document.body.appendChild(overlayEl);
+
+    const runtime = {
+        propId,
+        type: "youtube",
+        youtubeId: "",
+        playbackStartedAtMs: 0,
+        overlayEl,
+        hostEl,
+        player: null,
+        playerReady: false,
+        youtubePlaying: false,
+        pendingVideoId: sanitizeYouTubeVideoId(youtubeId || ""),
+        pendingStartSeconds: computeTvPlaybackStartSeconds(playbackStartedAtMs),
+        pendingVolume: 0,
+        pendingShouldPlay: false,
+        disposed: false
+    };
+
+    ensureJukeboxYouTubeApi().then((YT) => {
+        if (runtime.disposed || !YT?.Player) {
+            return;
+        }
+
+        runtime.player = new YT.Player(hostEl, {
+            width: "100%",
+            height: "100%",
+            videoId: runtime.pendingVideoId || undefined,
+            playerVars: {
+                autoplay: 0,
+                controls: 0,
+                disablekb: 1,
+                playsinline: 1,
+                rel: 0,
+                modestbranding: 1,
+                iv_load_policy: 3,
+                fs: 0
+            },
+            events: {
+                onReady: () => {
+                    if (runtime.disposed || !runtime.player) {
+                        return;
+                    }
+                    runtime.playerReady = true;
+                    const pendingId = sanitizeYouTubeVideoId(runtime.pendingVideoId || "");
+                    const startSeconds = Math.max(0, Number(runtime.pendingStartSeconds) || 0);
+                    if (pendingId && runtime.player.loadVideoById) {
+                        try {
+                            runtime.player.loadVideoById({
+                                videoId: pendingId,
+                                startSeconds
+                            });
+                            runtime.youtubeId = pendingId;
+                            runtime.playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(playbackStartedAtMs, 0);
+                            runtime.youtubePlaying = true;
+                        } catch (error) {
+                        }
+                    }
+                    try {
+                        runtime.player.setVolume(Math.round(runtime.pendingVolume));
+                    } catch (error) {
+                    }
+                    if (runtime.pendingShouldPlay) {
+                        try {
+                            runtime.player.playVideo();
+                            runtime.youtubePlaying = true;
+                        } catch (error) {
+                        }
+                    }
+                }
+            }
+        });
+    }).catch(() => {
+    });
+
+    return runtime;
+}
+
+function disposeTvRuntime(runtime) {
+    if (!runtime) {
+        return;
+    }
+    runtime.disposed = true;
+
+    if (runtime.player?.pauseVideo) {
+        try {
+            runtime.player.pauseVideo();
+        } catch (error) {
+        }
+    }
+    if (runtime.player?.stopVideo) {
+        try {
+            runtime.player.stopVideo();
+        } catch (error) {
+        }
+    }
+    if (runtime.player?.destroy) {
+        try {
+            runtime.player.destroy();
+        } catch (error) {
+        }
+    }
+    if (runtime.overlayEl?.parentElement) {
+        runtime.overlayEl.parentElement.removeChild(runtime.overlayEl);
+    }
+}
+
+function stopTvRuntimeById(propId) {
+    const id = String(propId || "");
+    if (!id) {
+        return;
+    }
+    const runtime = tvState.activeRuntimes.get(id);
+    if (!runtime) {
+        return;
+    }
+    disposeTvRuntime(runtime);
+    tvState.activeRuntimes.delete(id);
+}
+
+function stopAllTvRuntimes() {
+    for (const [propId, runtime] of tvState.activeRuntimes.entries()) {
+        disposeTvRuntime(runtime);
+        tvState.activeRuntimes.delete(propId);
+    }
+}
+
+function updateTvScreens() {
+    const tvFloorIds = propTypeIndex.get(PROP_TYPE.TV_SCREEN);
+    const tvWallIds = propTypeIndex.get(PROP_TYPE.TV_WALL);
+    const tvIds = new Set();
+    if (tvFloorIds?.size) {
+        for (const id of tvFloorIds) {
+            tvIds.add(id);
+        }
+    }
+    if (tvWallIds?.size) {
+        for (const id of tvWallIds) {
+            tvIds.add(id);
+        }
+    }
+    const wantedIds = new Set();
+    if (!tvIds || tvIds.size === 0) {
+        if (tvState.activeRuntimes.size > 0) {
+            stopAllTvRuntimes();
+        }
+        return;
+    }
+
+    for (const propId of tvIds) {
+        const placed = placedProps.get(propId);
+        if (!placed) {
+            continue;
+        }
+
+        const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
+        const powered = Boolean(safeState.powered);
+        const youtubeId = sanitizeYouTubeVideoId(safeState.youtubeId || "");
+        const playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(safeState.playbackStartedAtMs, 0);
+        if (!powered || !youtubeId) {
+            stopTvRuntimeById(propId);
+            continue;
+        }
+
+        let runtime = tvState.activeRuntimes.get(propId);
+        if (!runtime) {
+            runtime = createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs);
+            if (runtime) {
+                tvState.activeRuntimes.set(propId, runtime);
+            }
+        }
+
+        const activeRuntime = tvState.activeRuntimes.get(propId);
+        if (!activeRuntime) {
+            continue;
+        }
+        wantedIds.add(propId);
+
+        const gain = getTvSpatialGain(placed);
+        const targetVolume = Math.round(THREE.MathUtils.clamp(gain * 100, 0, 100));
+        const startSeconds = computeTvPlaybackStartSeconds(playbackStartedAtMs);
+        activeRuntime.pendingVolume = targetVolume;
+        activeRuntime.pendingShouldPlay = true;
+        activeRuntime.pendingVideoId = youtubeId;
+        activeRuntime.pendingStartSeconds = startSeconds;
+
+        if (activeRuntime.playerReady && activeRuntime.player) {
+            const sourceChanged = activeRuntime.youtubeId !== youtubeId || activeRuntime.playbackStartedAtMs !== playbackStartedAtMs;
+            if (sourceChanged && activeRuntime.player.loadVideoById) {
+                try {
+                    activeRuntime.player.loadVideoById({
+                        videoId: youtubeId,
+                        startSeconds
+                    });
+                    activeRuntime.youtubeId = youtubeId;
+                    activeRuntime.playbackStartedAtMs = playbackStartedAtMs;
+                    activeRuntime.youtubePlaying = true;
+                } catch (error) {
+                }
+            }
+
+            if (activeRuntime.player.setVolume) {
+                try {
+                    activeRuntime.player.setVolume(targetVolume);
+                } catch (error) {
+                }
+            }
+            if (!activeRuntime.youtubePlaying && activeRuntime.player.playVideo) {
+                try {
+                    activeRuntime.player.playVideo();
+                    activeRuntime.youtubePlaying = true;
+                } catch (error) {
+                }
+            }
+        }
+
+        updateTvRuntimeOverlayPosition(activeRuntime, placed);
+    }
+
+    for (const activeId of Array.from(tvState.activeRuntimes.keys())) {
+        if (!wantedIds.has(activeId)) {
+            stopTvRuntimeById(activeId);
         }
     }
 }
@@ -13510,6 +14072,62 @@ function resolveJukeboxExternalSource(rawLinkValue) {
     }
 
     return null;
+}
+
+function extractFirstHttpUrlFromText(rawText) {
+    const text = String(rawText || "");
+    if (!text) {
+        return "";
+    }
+    const matches = text.match(/https?:\/\/[^\s|]+/gi);
+    return matches?.[0] ? String(matches[0]).trim() : "";
+}
+
+async function fetchLatestMuseumEpisodeLink() {
+    const museumConfig = window.appConfig?.story?.museum || {};
+    const autoFeedConfig = museumConfig.autoFeed || {};
+    const channelId = String(autoFeedConfig.channelId || "").trim();
+
+    if (channelId) {
+        try {
+            const params = new URLSearchParams({
+                channelId,
+                limit: "1",
+                series: String(museumConfig.seriesLabel || "Fucknews Fridays"),
+                note: String(museumConfig.defaultNote || "Otro viernes guardado.")
+            });
+            const response = await fetch(`/.netlify/functions/youtube-feed?${params.toString()}`, { cache: "no-store" });
+            if (response.ok) {
+                const payload = await response.json();
+                const latestEntry = Array.isArray(payload?.entries) ? payload.entries[0] : null;
+                const latestUrl = String(latestEntry?.url || "").trim();
+                if (latestUrl) {
+                    return {
+                        url: latestUrl,
+                        title: String(latestEntry?.title || "Episodio reciente")
+                    };
+                }
+            }
+        } catch (error) {
+        }
+    }
+
+    const sourcePath = String(museumConfig.source || "").trim();
+    if (sourcePath) {
+        const response = await fetch(sourcePath, { cache: "no-store" });
+        if (response.ok) {
+            const sourceText = await response.text();
+            const sourceUrl = extractFirstHttpUrlFromText(sourceText);
+            if (sourceUrl) {
+                return {
+                    url: sourceUrl,
+                    title: "Episodio cargado del archivo"
+                };
+            }
+        }
+    }
+
+    throw new Error("museum_feed_unavailable");
 }
 
 function applyExternalLinkToJukeboxTrack(propId, track, rawLinkValue) {
@@ -13810,9 +14428,96 @@ function renderJukeboxInteractionPanel(placed) {
     linkWrap.appendChild(linkButton);
     interactionPanelBodyEl?.appendChild(linkWrap);
 
+    const quickFeedButton = document.createElement("button");
+    quickFeedButton.type = "button";
+    quickFeedButton.className = "interaction-action";
+    quickFeedButton.textContent = "Usar ultimo capitulo (API)";
+    quickFeedButton.addEventListener("click", async () => {
+        quickFeedButton.disabled = true;
+        quickFeedButton.textContent = "Cargando...";
+        try {
+            const latest = await fetchLatestMuseumEpisodeLink();
+            linkInput.value = latest.url;
+            interactionState.jukeboxLinkDraftByProp.set(placed.id, latest.url);
+            showToast(`Cargado: ${latest.title}`, "success", 1300);
+        } catch (error) {
+            showToast("No pude cargar capitulos desde la API/archivo", "warning", 1300);
+        } finally {
+            quickFeedButton.disabled = false;
+            quickFeedButton.textContent = "Usar ultimo capitulo (API)";
+        }
+    });
+    interactionPanelBodyEl?.appendChild(quickFeedButton);
+
     if (isRecordingThis) {
         appendInteractionInfoLine(`Grabando pista ${track}... vuelve a pulsar para detener.`);
     }
+}
+
+function renderTvInteractionPanel(placed) {
+    const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
+    const powered = Boolean(safeState.powered);
+    const youtubeId = sanitizeYouTubeVideoId(safeState.youtubeId || "");
+    const title = String(safeState.title || "").trim();
+    appendInteractionInfoLine(`Estado: ${powered ? "Encendida" : "Apagada"}`);
+    appendInteractionInfoLine(`Canal: ${youtubeId ? (title || "Video sincronizado") : "Sin senal"}`);
+    appendInteractionInfoLine("Audio espacial: si te alejas, baja el volumen.");
+
+    appendInteractionAction(powered ? "Apagar TV" : "Encender TV", () => {
+        const nextPowered = !powered;
+        if (updatePropSharedState(placed.id, { powered: nextPowered }, `TV ${nextPowered ? "encendida" : "apagada"}`)) {
+            markInteractionPanelDirty();
+        }
+    });
+
+    if (youtubeId) {
+        appendInteractionAction("Reiniciar video", () => {
+            if (updatePropSharedState(placed.id, { powered: true, playbackStartedAtMs: Date.now() }, "TV reiniciada")) {
+                markInteractionPanelDirty();
+            }
+        });
+        appendInteractionAction("Apagar y limpiar senal", () => {
+            if (updatePropSharedState(placed.id, {
+                powered: false,
+                youtubeId: "",
+                playbackStartedAtMs: 0,
+                title: ""
+            }, "TV apagada")) {
+                markInteractionPanelDirty();
+            }
+        });
+    }
+
+    const latestButton = document.createElement("button");
+    latestButton.type = "button";
+    latestButton.className = "interaction-action";
+    latestButton.textContent = "Reproducir ultimo capitulo (Fucknews)";
+    latestButton.addEventListener("click", async () => {
+        latestButton.disabled = true;
+        latestButton.textContent = "Buscando capitulo...";
+        try {
+            const latest = await fetchLatestMuseumEpisodeLink();
+            const youtubeIdFromFeed = sanitizeYouTubeVideoId(latest?.url || "");
+            if (!youtubeIdFromFeed) {
+                throw new Error("latest_episode_not_youtube");
+            }
+            const normalizedTitle = String(latest?.title || "Ultimo episodio").slice(0, 120);
+            if (updatePropSharedState(placed.id, {
+                powered: true,
+                youtubeId: youtubeIdFromFeed,
+                playbackStartedAtMs: Date.now(),
+                title: normalizedTitle
+            }, `TV: ${normalizedTitle}`)) {
+                markInteractionPanelDirty();
+            }
+        } catch (error) {
+            showToast("No pude obtener el ultimo capitulo desde la API/feed", "warning", 1500);
+        } finally {
+            latestButton.disabled = false;
+            latestButton.textContent = "Reproducir ultimo capitulo (Fucknews)";
+        }
+    });
+    interactionPanelBodyEl?.appendChild(latestButton);
 }
 
 function renderInteractionPanelNow() {
@@ -13844,9 +14549,22 @@ function renderInteractionPanelNow() {
         renderFurnaceInteractionPanel(placed);
     } else if (panelMode === INTERACTION_KIND.JUKEBOX_CONTROL) {
         renderJukeboxInteractionPanel(placed);
+    } else if (panelMode === INTERACTION_KIND.TV_CONTROL) {
+        renderTvInteractionPanel(placed);
     } else {
         appendInteractionInfoLine("Este objeto no tiene panel detallado todavia.");
     }
+}
+
+function isInteractionPanelEditingInputActive() {
+    const active = document.activeElement;
+    if (!active || !interactionPanelEl) {
+        return false;
+    }
+    if (!interactionPanelEl.contains(active)) {
+        return false;
+    }
+    return isTypingIntoEditableTarget(active);
 }
 
 function updateInteractionPanel(deltaSeconds = 0) {
@@ -13861,6 +14579,14 @@ function updateInteractionPanel(deltaSeconds = 0) {
     }
 
     interactionState.panelRefreshTick -= Math.max(0, deltaSeconds);
+    const editingInput = isInteractionPanelEditingInputActive();
+    if (editingInput) {
+        if (interactionState.panelRefreshTick <= 0) {
+            interactionState.panelRefreshTick = 0.2;
+        }
+        return;
+    }
+
     if (interactionState.panelNeedsRender || interactionState.panelRefreshTick <= 0) {
         interactionState.panelNeedsRender = false;
         interactionState.panelRefreshTick = 0.2;
@@ -13977,21 +14703,33 @@ function selectedPropType() {
 function isWallMountedPropType(propType) {
     return propType === PROP_TYPE.CURTAINS
         || propType === PROP_TYPE.WALL_LANTERN
-        || propType === PROP_TYPE.WALL_TORCH;
+        || propType === PROP_TYPE.WALL_TORCH
+        || propType === PROP_TYPE.TV_WALL;
 }
 
 function resolveContextualPropTypeForPlacement(basePropType, worldNormal) {
     const baseType = String(basePropType || "");
-    if (baseType !== PROP_TYPE.TORCH && baseType !== PROP_TYPE.WALL_TORCH) {
+    if (
+        baseType !== PROP_TYPE.TORCH
+        && baseType !== PROP_TYPE.WALL_TORCH
+        && baseType !== PROP_TYPE.TV_SCREEN
+        && baseType !== PROP_TYPE.TV_WALL
+    ) {
         return baseType;
     }
 
     if (!worldNormal) {
+        if (baseType === PROP_TYPE.TV_WALL || baseType === PROP_TYPE.TV_SCREEN) {
+            return PROP_TYPE.TV_SCREEN;
+        }
         return PROP_TYPE.TORCH;
     }
 
     const horizontalStrength = Math.hypot(Number(worldNormal.x) || 0, Number(worldNormal.z) || 0);
     const isWallFace = horizontalStrength >= 0.55 && Math.abs(Number(worldNormal.y) || 0) <= 0.4;
+    if (baseType === PROP_TYPE.TV_WALL || baseType === PROP_TYPE.TV_SCREEN) {
+        return isWallFace ? PROP_TYPE.TV_WALL : PROP_TYPE.TV_SCREEN;
+    }
     return isWallFace ? PROP_TYPE.WALL_TORCH : PROP_TYPE.TORCH;
 }
 
@@ -14005,7 +14743,24 @@ function getWallPlacementWarning(propType) {
     if (propType === PROP_TYPE.WALL_LANTERN) {
         return "El farol de pared requiere una pared";
     }
+    if (propType === PROP_TYPE.TV_WALL) {
+        return "El TV de pared requiere una pared";
+    }
     return "Este objeto se coloca sobre paredes";
+}
+
+function getWallMountCenterOffset(propType) {
+    if (propType === PROP_TYPE.TV_WALL) {
+        return 0.29 * TV_MODEL_SCALE;
+    }
+    return 0.44;
+}
+
+function getWallMountBaseYOffset(propType) {
+    if (propType === PROP_TYPE.TV_WALL) {
+        return Math.floor(0.52 * TV_MODEL_SCALE);
+    }
+    return 0;
 }
 
 function resolveBlockLookupFromRayHit(hit, fallbackBlockId = null) {
@@ -14254,7 +15009,7 @@ function attemptMineOrPlace(isPlacing) {
                 const wallX = Math.sign(normal.x);
                 const wallZ = Math.sign(normal.z);
                 placeX = lookup.x + wallX;
-                placeY = lookup.y;
+                placeY = lookup.y - getWallMountBaseYOffset(propTypeToPlace);
                 placeZ = lookup.z + wallZ;
                 forcedPropYaw = snapYawToStep(Math.atan2(wallX, wallZ));
             } else {
@@ -14284,9 +15039,10 @@ function attemptMineOrPlace(isPlacing) {
             if (wantsWallPlacement) {
                 const wallX = Math.sign(normal.x);
                 const wallZ = Math.sign(normal.z);
-                propX = placeX + 0.5 - wallX * 0.44;
+                const wallOffset = getWallMountCenterOffset(propTypeToPlace);
+                propX = placeX + 0.5 - wallX * wallOffset;
                 propY = placeY;
-                propZ = placeZ + 0.5 - wallZ * 0.44;
+                propZ = placeZ + 0.5 - wallZ * wallOffset;
             } else {
                 propX = placeX + 0.5;
                 propY = placeY;
@@ -14643,6 +15399,9 @@ function tryInteractAtCrosshair() {
     }
     if (config.kind === INTERACTION_KIND.JUKEBOX_CONTROL) {
         return openInteractionPanel(propHit, INTERACTION_KIND.JUKEBOX_CONTROL, config.usageKind || INTERACTION_USAGE_KIND.JUKEBOX);
+    }
+    if (config.kind === INTERACTION_KIND.TV_CONTROL) {
+        return openInteractionPanel(propHit, INTERACTION_KIND.TV_CONTROL, config.usageKind || INTERACTION_USAGE_KIND.TV);
     }
     if (config.kind === INTERACTION_KIND.TOGGLE_STATE && propHit.placed.propType === PROP_TYPE.FURNACE) {
         const nextLit = !Boolean(propHit.placed.state?.lit);
@@ -15273,6 +16032,7 @@ function animate() {
     if (state.worldStarted && state.worldReady) {
         updateActiveLampShadowCasters(delta);
         updateJukeboxSpatialAudio();
+        updateTvScreens();
     }
 
     updateChunkStreaming(false);
