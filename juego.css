@@ -582,6 +582,33 @@ body {
     pointer-events: none;
 }
 
+.tv-screen-overlay {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 12;
+    background: #020305;
+    border-radius: 2px;
+    box-shadow: 0 0 12px rgba(10, 16, 28, 0.6);
+}
+
+.tv-screen-overlay-host {
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    background: #020305;
+}
+
+.tv-screen-overlay iframe {
+    width: 100% !important;
+    height: 100% !important;
+    pointer-events: none;
+}
+
 .interaction-slots {
     border: 1px solid rgba(255, 255, 255, 0.14);
     border-radius: 10px;
