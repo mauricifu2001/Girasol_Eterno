@@ -307,6 +307,7 @@ const SIGN_TEXT_MAX_LENGTH = 52;
 const JUKEBOX_TRACK_COUNT = 4;
 const JUKEBOX_SOURCE_DEFAULT = "local-playlist-v1";
 const JUKEBOX_SOURCE_PREFIX_SPOTIFY = "spotify-uri:";
+const JUKEBOX_SOURCE_PREFIX_YOUTUBE = "youtube-id:";
 const JUKEBOX_SOURCE_PREFIX_RECORDING = "recording-track:";
 const JUKEBOX_SPATIAL_MAX_DISTANCE = 36;
 const JUKEBOX_SPATIAL_NEAR_DISTANCE = 2.6;
@@ -1423,7 +1424,7 @@ const interactionState = {
     remoteUsingByProp: new Map(),
     previousRemoteUsingByProp: new Map(),
     localAudioContext: null,
-    jukeboxSpotifyDraftByProp: new Map()
+    jukeboxLinkDraftByProp: new Map()
 };
 
 const jukeboxState = {
@@ -1433,7 +1434,8 @@ const jukeboxState = {
     spotifyApi: null,
     spotifyApiPromise: null,
     spotifyApiBootstrapDone: false,
-    spotifyNoticeShown: false
+    spotifyNoticeShown: false,
+    youtubeApiPromise: null
 };
 
 let draggedInventoryItemId = "";
@@ -1659,6 +1661,18 @@ function sanitizeJukeboxTrackSlot(rawSlot) {
         return fallback;
     }
 
+    if (rawType === "youtube") {
+        const youtubeId = sanitizeYouTubeVideoId(rawSlot.value || rawSlot.id || rawSlot.url || "");
+        if (youtubeId) {
+            return {
+                type: "youtube",
+                value: youtubeId,
+                label: label || `YouTube ${youtubeId}`
+            };
+        }
+        return fallback;
+    }
+
     return {
         type: "local",
         value: "",
@@ -1738,13 +1752,38 @@ function getJukeboxTrackSlotsForProp(propId, createIfMissing = true) {
     if (!id) {
         return sanitizeJukeboxTrackSlots(null);
     }
-    if (!jukeboxState.customTracksByProp.has(id)) {
+
+    const placed = placedProps.get(id);
+    if (!placed || placed.propType !== PROP_TYPE.JUKEBOX) {
         if (!createIfMissing) {
             return sanitizeJukeboxTrackSlots(null);
         }
-        jukeboxState.customTracksByProp.set(id, sanitizeJukeboxTrackSlots(null));
+        const fallbackSlots = sanitizeJukeboxTrackSlots(jukeboxState.customTracksByProp.get(id));
+        return fallbackSlots;
     }
-    return jukeboxState.customTracksByProp.get(id);
+
+    const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state)
+        || getPropDefaultSharedState(placed.propType)
+        || {};
+    const slots = sanitizeJukeboxTrackSlots(safeState.tracks);
+    const legacySlots = sanitizeJukeboxTrackSlots(jukeboxState.customTracksByProp.get(id));
+    if (hasCustomJukeboxTrackSlots(legacySlots) && !hasCustomJukeboxTrackSlots(slots)) {
+        if (createIfMissing) {
+            updatePropSharedState(id, { tracks: legacySlots }, "");
+            if (jukeboxState.customTracksByProp.delete(id)) {
+                persistJukeboxCustomTracksToStorage();
+            }
+        }
+        return legacySlots;
+    }
+    if (!areStateValuesEqual(placed.state?.tracks, slots)) {
+        placed.state = {
+            ...(placed.state || {}),
+            ...safeState,
+            tracks: slots
+        };
+    }
+    return slots;
 }
 
 function getJukeboxTrackSlot(propId, track) {
@@ -1760,17 +1799,15 @@ function setJukeboxTrackSlot(propId, track, rawSlot) {
     }
 
     const trackIndex = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT) - 1;
-    const slots = getJukeboxTrackSlotsForProp(id, true);
+    const slots = getJukeboxTrackSlotsForProp(id, true).map((slot) => sanitizeJukeboxTrackSlot(slot));
     slots[trackIndex] = sanitizeJukeboxTrackSlot(rawSlot);
-    const hasCustomSlot = slots.some((slot) => slot.type !== "local" || Boolean(slot.label));
-    if (!hasCustomSlot) {
-        jukeboxState.customTracksByProp.delete(id);
-    } else {
-        jukeboxState.customTracksByProp.set(id, slots);
+    const applied = updatePropSharedState(id, { tracks: slots }, "");
+    if (!applied) {
+        return false;
     }
-    persistJukeboxCustomTracksToStorage();
-    if (state.interactionPanelOpen && interactionState.panelPropId === id) {
-        markInteractionPanelDirty();
+
+    if (jukeboxState.customTracksByProp.delete(id)) {
+        persistJukeboxCustomTracksToStorage();
     }
     return true;
 }
@@ -1785,6 +1822,12 @@ function encodeJukeboxSourceFromTrackSlot(slot, track) {
         const spotifyUri = sanitizeSpotifyUri(slot.value);
         if (spotifyUri) {
             return `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}`;
+        }
+    }
+    if (slot?.type === "youtube") {
+        const youtubeId = sanitizeYouTubeVideoId(slot.value);
+        if (youtubeId) {
+            return `${JUKEBOX_SOURCE_PREFIX_YOUTUBE}${youtubeId}`;
         }
     }
     if (slot?.type === "recording") {
@@ -1802,6 +1845,9 @@ function getJukeboxTrackDisplayLabel(slot, track) {
     if (safeSlot.type === "spotify") {
         return safeSlot.label || `Spotify ${safeTrack}`;
     }
+    if (safeSlot.type === "youtube") {
+        return safeSlot.label || `YouTube ${safeTrack}`;
+    }
     return `Pista ${safeTrack}`;
 }
 
@@ -1817,6 +1863,18 @@ function resolveJukeboxTrackDescriptor(propId, track, sourceValue = JUKEBOX_SOUR
                 sourceKey: `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}`,
                 spotifyUri,
                 label: slot.type === "spotify" ? getJukeboxTrackDisplayLabel(slot, safeTrack) : `Spotify ${safeTrack}`
+            };
+        }
+    }
+
+    if (normalizedSource.startsWith(JUKEBOX_SOURCE_PREFIX_YOUTUBE)) {
+        const youtubeId = sanitizeYouTubeVideoId(normalizedSource.slice(JUKEBOX_SOURCE_PREFIX_YOUTUBE.length));
+        if (youtubeId) {
+            return {
+                type: "youtube",
+                sourceKey: `${JUKEBOX_SOURCE_PREFIX_YOUTUBE}${youtubeId}`,
+                youtubeId,
+                label: slot.type === "youtube" ? getJukeboxTrackDisplayLabel(slot, safeTrack) : `YouTube ${safeTrack}`
             };
         }
     }
@@ -1840,6 +1898,18 @@ function resolveJukeboxTrackDescriptor(propId, track, sourceValue = JUKEBOX_SOUR
                 type: "spotify",
                 sourceKey: `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}`,
                 spotifyUri,
+                label: getJukeboxTrackDisplayLabel(slot, safeTrack)
+            };
+        }
+    }
+
+    if (slot.type === "youtube") {
+        const youtubeId = sanitizeYouTubeVideoId(slot.value);
+        if (youtubeId) {
+            return {
+                type: "youtube",
+                sourceKey: `${JUKEBOX_SOURCE_PREFIX_YOUTUBE}${youtubeId}`,
+                youtubeId,
                 label: getJukeboxTrackDisplayLabel(slot, safeTrack)
             };
         }
@@ -4861,7 +4931,7 @@ const PROP_INTERACTION_CONFIG = Object.freeze({
     [PROP_TYPE.JUKEBOX]: Object.freeze({
         kind: INTERACTION_KIND.JUKEBOX_CONTROL,
         hudHint: "E abrir controles jukebox",
-        persistentSync: ["state.playing", "state.track", "state.source"],
+        persistentSync: ["state.playing", "state.track", "state.source", "state.tracks"],
         usageKind: INTERACTION_USAGE_KIND.JUKEBOX
     }),
     [PROP_TYPE.CHEST]: Object.freeze({
@@ -5380,6 +5450,7 @@ function sanitizeJukeboxTrack(value) {
 }
 
 const SPOTIFY_RESOURCE_TYPES = new Set(["track", "album", "playlist", "episode"]);
+const YOUTUBE_ID_PATTERN = /^[a-zA-Z0-9_-]{11}$/;
 
 function sanitizeSpotifyUri(value) {
     const raw = String(value || "").trim();
@@ -5424,6 +5495,56 @@ function sanitizeSpotifyUri(value) {
     return `spotify:${type}:${id}`;
 }
 
+function hasCustomJukeboxTrackSlots(rawSlots) {
+    const slots = sanitizeJukeboxTrackSlots(rawSlots);
+    return slots.some((slot) => slot.type !== "local" || Boolean(slot.label));
+}
+
+function sanitizeYouTubeVideoId(value) {
+    const raw = String(value || "").trim();
+    if (!raw) {
+        return "";
+    }
+
+    if (YOUTUBE_ID_PATTERN.test(raw)) {
+        return raw;
+    }
+
+    let parsedUrl = null;
+    try {
+        parsedUrl = new URL(raw);
+    } catch (error) {
+        return "";
+    }
+
+    const host = String(parsedUrl.hostname || "").toLowerCase();
+    if (
+        host !== "youtu.be"
+        && !host.endsWith("youtube.com")
+        && !host.endsWith("youtube-nocookie.com")
+    ) {
+        return "";
+    }
+
+    if (host === "youtu.be") {
+        const shortId = String(parsedUrl.pathname || "").split("/").filter(Boolean)[0] || "";
+        return YOUTUBE_ID_PATTERN.test(shortId) ? shortId : "";
+    }
+
+    const watchId = parsedUrl.searchParams.get("v") || "";
+    if (YOUTUBE_ID_PATTERN.test(watchId)) {
+        return watchId;
+    }
+
+    const pathParts = String(parsedUrl.pathname || "").split("/").filter(Boolean);
+    const candidate = pathParts[0] === "embed"
+        || pathParts[0] === "shorts"
+        || pathParts[0] === "live"
+        ? (pathParts[1] || "")
+        : "";
+    return YOUTUBE_ID_PATTERN.test(candidate) ? candidate : "";
+}
+
 function sanitizeJukeboxSource(value, fallback = JUKEBOX_SOURCE_DEFAULT) {
     const fallbackText = String(fallback || JUKEBOX_SOURCE_DEFAULT).trim() || JUKEBOX_SOURCE_DEFAULT;
     const raw = String(value ?? fallbackText).trim();
@@ -5441,6 +5562,10 @@ function sanitizeJukeboxSource(value, fallback = JUKEBOX_SOURCE_DEFAULT) {
         const spotifyUri = sanitizeSpotifyUri(raw.slice(JUKEBOX_SOURCE_PREFIX_SPOTIFY.length));
         return spotifyUri ? `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}` : fallbackText;
     }
+    if (raw.startsWith(JUKEBOX_SOURCE_PREFIX_YOUTUBE)) {
+        const youtubeId = sanitizeYouTubeVideoId(raw.slice(JUKEBOX_SOURCE_PREFIX_YOUTUBE.length));
+        return youtubeId ? `${JUKEBOX_SOURCE_PREFIX_YOUTUBE}${youtubeId}` : fallbackText;
+    }
     return fallbackText;
 }
 
@@ -5454,7 +5579,8 @@ function buildLegacyPropStateCandidate(rawEntry) {
         text: rawEntry.text,
         playing: rawEntry.playing,
         track: rawEntry.track,
-        source: rawEntry.source
+        source: rawEntry.source,
+        tracks: rawEntry.tracks
     };
 }
 
@@ -5499,6 +5625,10 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
             normalized[key] = sanitizeJukeboxSource(incoming ?? defaultValue, defaultValue);
             continue;
         }
+        if (key === "tracks") {
+            normalized[key] = sanitizeJukeboxTrackSlots(incoming ?? defaultValue);
+            continue;
+        }
 
         if (typeof defaultValue === "boolean") {
             normalized[key] = incoming === undefined ? Boolean(defaultValue) : Boolean(incoming);
@@ -5540,17 +5670,84 @@ function arePropStatesEqual(a, b) {
     }
 
     for (const key of leftKeys) {
-        if (Array.isArray(left[key]) || Array.isArray(right[key])) {
-            if (!areStringArraysEqual(left[key], right[key])) {
-                return false;
-            }
-            continue;
-        }
-        if (left[key] !== right[key]) {
+        if (!areStateValuesEqual(left[key], right[key])) {
             return false;
         }
     }
     return true;
+}
+
+function isTypingIntoEditableTarget(target) {
+    const node = target || document.activeElement;
+    if (!node || typeof node !== "object") {
+        return false;
+    }
+
+    if (node.isContentEditable) {
+        return true;
+    }
+
+    const tagName = String(node.tagName || "").toLowerCase();
+    if (tagName === "input" || tagName === "textarea" || tagName === "select") {
+        return true;
+    }
+
+    if (typeof node.closest === "function") {
+        return Boolean(node.closest("[contenteditable='true']"));
+    }
+
+    return false;
+}
+
+function isPlainHotkeyEvent(event) {
+    return !event.ctrlKey && !event.metaKey && !event.altKey;
+}
+
+function areStateValuesEqual(leftValue, rightValue) {
+    if (leftValue === rightValue) {
+        return true;
+    }
+    if (Number.isNaN(leftValue) && Number.isNaN(rightValue)) {
+        return true;
+    }
+
+    const leftIsArray = Array.isArray(leftValue);
+    const rightIsArray = Array.isArray(rightValue);
+    if (leftIsArray || rightIsArray) {
+        if (!leftIsArray || !rightIsArray || leftValue.length !== rightValue.length) {
+            return false;
+        }
+        for (let i = 0; i < leftValue.length; i += 1) {
+            if (!areStateValuesEqual(leftValue[i], rightValue[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    const leftIsObject = leftValue && typeof leftValue === "object";
+    const rightIsObject = rightValue && typeof rightValue === "object";
+    if (leftIsObject || rightIsObject) {
+        if (!leftIsObject || !rightIsObject) {
+            return false;
+        }
+        const leftKeys = Object.keys(leftValue);
+        const rightKeys = Object.keys(rightValue);
+        if (leftKeys.length !== rightKeys.length) {
+            return false;
+        }
+        for (const key of leftKeys) {
+            if (!Object.prototype.hasOwnProperty.call(rightValue, key)) {
+                return false;
+            }
+            if (!areStateValuesEqual(leftValue[key], rightValue[key])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    return false;
 }
 
 function drawEditableSignFace(node, text) {
@@ -5613,12 +5810,20 @@ function applyPropSharedVisualState(placed) {
         const playing = Boolean(placed.state?.playing);
         const track = sanitizeJukeboxTrack(placed.state?.track);
         const source = sanitizeJukeboxSource(placed.state?.source, JUKEBOX_SOURCE_DEFAULT);
-        if (!placed.state || placed.state.playing !== playing || placed.state.track !== track || placed.state.source !== source) {
+        const tracks = sanitizeJukeboxTrackSlots(placed.state?.tracks);
+        if (
+            !placed.state
+            || placed.state.playing !== playing
+            || placed.state.track !== track
+            || placed.state.source !== source
+            || !areStateValuesEqual(placed.state.tracks, tracks)
+        ) {
             placed.state = {
                 ...(placed.state || {}),
                 playing,
                 track,
-                source
+                source,
+                tracks
             };
         }
 
@@ -6009,16 +6214,16 @@ function buildTorchNode(root) {
 }
 
 function buildWallTorchNode(root) {
-    root.add(createDetailPart({ x: 0.12, y: 0.18, z: 0.08 }, { x: 0, y: 0.38, z: -0.22 }, 0x4f3929));
+    root.add(createDetailPart({ x: 0.12, y: 0.2, z: 0.08 }, { x: 0, y: 0.34, z: -0.2 }, 0x4f3929));
     root.add(createDetailPart(
         { x: 0.08, y: 0.7, z: 0.08 },
-        { x: 0, y: 0.44, z: 0.02 },
+        { x: 0, y: 0.33, z: 0.03 },
         0x87623d,
-        { x: -0.36, y: 0, z: 0.07 }
+        { x: 0.44, y: 0, z: -0.02 }
     ));
     addTorchFlameRig(root, {
-        flamePosition: { x: 0, y: 0.77, z: 0.17 },
-        smokePosition: { x: 0, y: 0.96, z: 0.18 },
+        flamePosition: { x: 0, y: 0.74, z: 0.24 },
+        smokePosition: { x: 0, y: 0.92, z: 0.24 },
         pointLightColor: 0xffcf86
     });
 }
@@ -6764,7 +6969,7 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
             stopJukeboxTrackRecording(false);
         }
         stopJukeboxRuntimeById(id);
-        interactionState.jukeboxSpotifyDraftByProp.delete(id);
+        interactionState.jukeboxLinkDraftByProp.delete(id);
         if (jukeboxState.customTracksByProp.delete(id)) {
             persistJukeboxCustomTracksToStorage();
         }
@@ -6834,7 +7039,7 @@ function clearPlacedProps() {
     if (jukeboxState.recordingSession) {
         stopJukeboxTrackRecording(false);
     }
-    interactionState.jukeboxSpotifyDraftByProp.clear();
+    interactionState.jukeboxLinkDraftByProp.clear();
     markLampShadowsDirty();
 }
 
@@ -12612,6 +12817,55 @@ function ensureJukeboxSpotifyApi() {
     return jukeboxState.spotifyApiPromise;
 }
 
+function ensureJukeboxYouTubeApi() {
+    if (window.YT?.Player) {
+        return Promise.resolve(window.YT);
+    }
+    if (jukeboxState.youtubeApiPromise) {
+        return jukeboxState.youtubeApiPromise;
+    }
+
+    jukeboxState.youtubeApiPromise = new Promise((resolve, reject) => {
+        const previousReadyHandler = window.onYouTubeIframeAPIReady;
+        const timeoutId = window.setTimeout(() => {
+            reject(new Error("youtube_iframe_timeout"));
+        }, 12000);
+
+        window.onYouTubeIframeAPIReady = () => {
+            window.clearTimeout(timeoutId);
+            if (typeof previousReadyHandler === "function") {
+                try {
+                    previousReadyHandler();
+                } catch (error) {
+                }
+            }
+            if (window.YT?.Player) {
+                resolve(window.YT);
+            } else {
+                reject(new Error("youtube_api_unavailable"));
+            }
+        };
+
+        const existingScript = document.querySelector("script[data-jukebox-youtube='1']");
+        if (!existingScript) {
+            const script = document.createElement("script");
+            script.src = "https://www.youtube.com/iframe_api";
+            script.async = true;
+            script.dataset.jukeboxYoutube = "1";
+            script.onerror = () => {
+                window.clearTimeout(timeoutId);
+                reject(new Error("youtube_iframe_load_error"));
+            };
+            document.head.appendChild(script);
+        }
+    }).catch((error) => {
+        jukeboxState.youtubeApiPromise = null;
+        return Promise.reject(error);
+    });
+
+    return jukeboxState.youtubeApiPromise;
+}
+
 function disposeJukeboxRuntime(runtime) {
     if (!runtime) {
         return;
@@ -12649,6 +12903,24 @@ function disposeJukeboxRuntime(runtime) {
     if (runtime.controller?.destroy) {
         try {
             runtime.controller.destroy();
+        } catch (error) {
+        }
+    }
+    if (runtime.player?.pauseVideo) {
+        try {
+            runtime.player.pauseVideo();
+        } catch (error) {
+        }
+    }
+    if (runtime.player?.stopVideo) {
+        try {
+            runtime.player.stopVideo();
+        } catch (error) {
+        }
+    }
+    if (runtime.player?.destroy) {
+        try {
+            runtime.player.destroy();
         } catch (error) {
         }
     }
@@ -12832,6 +13104,70 @@ function createJukeboxSpotifyRuntime(propId, descriptor) {
     return runtime;
 }
 
+function createJukeboxYouTubeRuntime(propId, descriptor) {
+    const hostEl = document.createElement("div");
+    hostEl.className = "jukebox-spotify-host";
+    hostEl.setAttribute("aria-hidden", "true");
+    document.body.appendChild(hostEl);
+
+    const runtime = {
+        propId,
+        type: "youtube",
+        sourceKey: descriptor.sourceKey,
+        youtubeId: descriptor.youtubeId,
+        hostEl,
+        player: null,
+        playerReady: false,
+        youtubePlaying: false,
+        playing: true,
+        pendingVolume: 0,
+        pendingShouldPlay: false,
+        disposed: false
+    };
+
+    ensureJukeboxYouTubeApi().then((YT) => {
+        if (runtime.disposed || !YT?.Player) {
+            return;
+        }
+
+        runtime.player = new YT.Player(hostEl, {
+            width: "1",
+            height: "1",
+            videoId: descriptor.youtubeId,
+            playerVars: {
+                autoplay: 0,
+                controls: 0,
+                disablekb: 1,
+                playsinline: 1,
+                rel: 0,
+                modestbranding: 1
+            },
+            events: {
+                onReady: () => {
+                    if (runtime.disposed || !runtime.player) {
+                        return;
+                    }
+                    runtime.playerReady = true;
+                    try {
+                        runtime.player.setVolume(Math.round(runtime.pendingVolume));
+                    } catch (error) {
+                    }
+                    if (runtime.pendingShouldPlay) {
+                        try {
+                            runtime.player.playVideo();
+                            runtime.youtubePlaying = true;
+                        } catch (error) {
+                        }
+                    }
+                }
+            }
+        });
+    }).catch(() => {
+    });
+
+    return runtime;
+}
+
 function createJukeboxRuntime(propId, descriptor, track) {
     if (!descriptor) {
         return null;
@@ -12841,6 +13177,9 @@ function createJukeboxRuntime(propId, descriptor, track) {
     }
     if (descriptor.type === "spotify") {
         return createJukeboxSpotifyRuntime(propId, descriptor);
+    }
+    if (descriptor.type === "youtube") {
+        return createJukeboxYouTubeRuntime(propId, descriptor);
     }
     return createJukeboxLocalRuntime(propId, descriptor, track);
 }
@@ -12921,6 +13260,46 @@ function updateJukeboxSpatialAudio() {
                             activeRuntime.controller.play();
                         } else if (!shouldPlay && activeRuntime.controller.pause) {
                             activeRuntime.controller.pause();
+                        }
+                    } catch (error) {
+                    }
+                }
+            }
+            continue;
+        }
+
+        if (activeRuntime.type === "youtube") {
+            const gain = getJukeboxSpatialGain(placed);
+            const shouldPlay = gain > 0.012;
+            const targetVolume = Math.round(THREE.MathUtils.clamp(gain * 100, 0, 100));
+            activeRuntime.pendingVolume = targetVolume;
+            activeRuntime.pendingShouldPlay = shouldPlay;
+
+            if (activeRuntime.playerReady && activeRuntime.player) {
+                if (activeRuntime.youtubeId !== descriptor.youtubeId) {
+                    activeRuntime.youtubeId = descriptor.youtubeId;
+                    if (activeRuntime.player.loadVideoById) {
+                        try {
+                            activeRuntime.player.loadVideoById(descriptor.youtubeId);
+                        } catch (error) {
+                        }
+                    }
+                }
+
+                if (activeRuntime.player.setVolume) {
+                    try {
+                        activeRuntime.player.setVolume(targetVolume);
+                    } catch (error) {
+                    }
+                }
+
+                if (shouldPlay !== activeRuntime.youtubePlaying) {
+                    activeRuntime.youtubePlaying = shouldPlay;
+                    try {
+                        if (shouldPlay && activeRuntime.player.playVideo) {
+                            activeRuntime.player.playVideo();
+                        } else if (!shouldPlay && activeRuntime.player.pauseVideo) {
+                            activeRuntime.player.pauseVideo();
                         }
                     } catch (error) {
                     }
@@ -13109,20 +13488,47 @@ async function startJukeboxTrackRecording(propId, track) {
     markInteractionPanelDirty();
 }
 
-function applySpotifyLinkToJukeboxTrack(propId, track, rawLinkValue) {
+function resolveJukeboxExternalSource(rawLinkValue) {
+    const spotifyUri = sanitizeSpotifyUri(rawLinkValue);
+    if (spotifyUri) {
+        return {
+            type: "spotify",
+            value: spotifyUri,
+            source: `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}`,
+            labelPrefix: "Spotify"
+        };
+    }
+
+    const youtubeId = sanitizeYouTubeVideoId(rawLinkValue);
+    if (youtubeId) {
+        return {
+            type: "youtube",
+            value: youtubeId,
+            source: `${JUKEBOX_SOURCE_PREFIX_YOUTUBE}${youtubeId}`,
+            labelPrefix: "YouTube"
+        };
+    }
+
+    return null;
+}
+
+function applyExternalLinkToJukeboxTrack(propId, track, rawLinkValue) {
     const id = String(propId || "");
     const safeTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(track) || 1, 1, JUKEBOX_TRACK_COUNT);
-    const spotifyUri = sanitizeSpotifyUri(rawLinkValue);
-    if (!id || !spotifyUri) {
-        showToast("Link de Spotify invalido", "warning", 1200);
+    const sourceDescriptor = resolveJukeboxExternalSource(rawLinkValue);
+    if (!id || !sourceDescriptor) {
+        showToast("Link invalido (usa Spotify o YouTube)", "warning", 1300);
         return false;
     }
 
-    setJukeboxTrackSlot(id, safeTrack, {
-        type: "spotify",
-        value: spotifyUri,
-        label: `Spotify ${safeTrack}`
+    const slotSaved = setJukeboxTrackSlot(id, safeTrack, {
+        type: sourceDescriptor.type,
+        value: sourceDescriptor.value,
+        label: `${sourceDescriptor.labelPrefix} ${safeTrack}`
     });
+    if (!slotSaved) {
+        return false;
+    }
 
     const placed = placedProps.get(id);
     const safeState = placed
@@ -13130,12 +13536,12 @@ function applySpotifyLinkToJukeboxTrack(propId, track, rawLinkValue) {
         : {};
     const currentTrack = THREE.MathUtils.clamp(sanitizeJukeboxTrack(safeState.track) || 1, 1, JUKEBOX_TRACK_COUNT);
     if (currentTrack === safeTrack) {
-        updatePropSharedState(id, { source: `${JUKEBOX_SOURCE_PREFIX_SPOTIFY}${spotifyUri}` }, "Spotify asignado");
+        updatePropSharedState(id, { source: sourceDescriptor.source }, `${sourceDescriptor.labelPrefix} asignado`);
     } else {
-        showToast(`Spotify asignado a pista ${safeTrack}`, "success", 1200);
+        showToast(`${sourceDescriptor.labelPrefix} asignado a pista ${safeTrack}`, "success", 1200);
     }
 
-    if (!jukeboxState.spotifyNoticeShown) {
+    if (sourceDescriptor.type === "spotify" && !jukeboxState.spotifyNoticeShown) {
         jukeboxState.spotifyNoticeShown = true;
         showToast("Spotify se atenúa por cercania con pausa/reanudar por limitaciones del navegador", "info", 2200);
     }
@@ -13289,7 +13695,7 @@ function renderJukeboxInteractionPanel(placed) {
 
     appendInteractionInfoLine(`Estado: ${playing ? "Reproduciendo" : "Detenida"}`);
     appendInteractionInfoLine(`Pista activa: ${track} (${descriptor.label || "Local"})`);
-    appendInteractionInfoLine(`Fuente: ${descriptor.type === "spotify" ? "Spotify" : descriptor.type === "recording" ? "Grabacion local" : "Local sintetica"}`);
+    appendInteractionInfoLine(`Fuente: ${descriptor.type === "spotify" ? "Spotify" : descriptor.type === "youtube" ? "YouTube" : descriptor.type === "recording" ? "Grabacion local" : "Local sintetica"}`);
     appendInteractionInfoLine("El audio sigue sonando al cerrar el panel y se atenúa por distancia.");
 
     const row = document.createElement("div");
@@ -13376,33 +13782,33 @@ function renderJukeboxInteractionPanel(placed) {
     customRow.appendChild(clearCustomButton);
     interactionPanelBodyEl?.appendChild(customRow);
 
-    const spotifyWrap = document.createElement("div");
-    spotifyWrap.className = "interaction-source";
-    const spotifyInput = document.createElement("input");
-    spotifyInput.type = "text";
-    spotifyInput.className = "interaction-input";
-    spotifyInput.placeholder = "Pega link de Spotify (track/playlist/album)";
-    spotifyInput.value = interactionState.jukeboxSpotifyDraftByProp.get(placed.id) || "";
-    spotifyInput.addEventListener("input", () => {
-        interactionState.jukeboxSpotifyDraftByProp.set(placed.id, spotifyInput.value);
+    const linkWrap = document.createElement("div");
+    linkWrap.className = "interaction-source";
+    const linkInput = document.createElement("input");
+    linkInput.type = "text";
+    linkInput.className = "interaction-input";
+    linkInput.placeholder = "Pega link de Spotify o YouTube";
+    linkInput.value = interactionState.jukeboxLinkDraftByProp.get(placed.id) || "";
+    linkInput.addEventListener("input", () => {
+        interactionState.jukeboxLinkDraftByProp.set(placed.id, linkInput.value);
     });
 
-    const spotifyButton = document.createElement("button");
-    spotifyButton.type = "button";
-    spotifyButton.className = "interaction-action";
-    spotifyButton.textContent = `Guardar Spotify en pista ${track}`;
-    spotifyButton.addEventListener("click", () => {
-        const draft = spotifyInput.value;
-        if (applySpotifyLinkToJukeboxTrack(placed.id, track, draft)) {
-            interactionState.jukeboxSpotifyDraftByProp.set(placed.id, "");
-            spotifyInput.value = "";
+    const linkButton = document.createElement("button");
+    linkButton.type = "button";
+    linkButton.className = "interaction-action";
+    linkButton.textContent = `Guardar link en pista ${track}`;
+    linkButton.addEventListener("click", () => {
+        const draft = linkInput.value;
+        if (applyExternalLinkToJukeboxTrack(placed.id, track, draft)) {
+            interactionState.jukeboxLinkDraftByProp.set(placed.id, "");
+            linkInput.value = "";
             markInteractionPanelDirty();
         }
     });
 
-    spotifyWrap.appendChild(spotifyInput);
-    spotifyWrap.appendChild(spotifyButton);
-    interactionPanelBodyEl?.appendChild(spotifyWrap);
+    linkWrap.appendChild(linkInput);
+    linkWrap.appendChild(linkButton);
+    interactionPanelBodyEl?.appendChild(linkWrap);
 
     if (isRecordingThis) {
         appendInteractionInfoLine(`Grabando pista ${track}... vuelve a pulsar para detener.`);
@@ -14315,22 +14721,28 @@ function onMouseWheel(event) {
 }
 
 function onKeyDown(event) {
-    if (
+    const typingIntoEditable = isTypingIntoEditableTarget(event.target);
+
+    if (!typingIntoEditable && (
         event.code === "ArrowUp"
         || event.code === "ArrowDown"
         || event.code === "ArrowLeft"
         || event.code === "ArrowRight"
-    ) {
+    )) {
         event.preventDefault();
     }
 
-    if (event.code === "F3" || event.code === "Backquote") {
+    if (!typingIntoEditable && (event.code === "F3" || event.code === "Backquote")) {
         event.preventDefault();
         setDebugVisible(!state.debugVisible, true);
         return;
     }
 
-    if (event.code === "KeyV") {
+    if (typingIntoEditable && event.code !== "Escape") {
+        return;
+    }
+
+    if (event.code === "KeyV" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
 
         if (!state.worldStarted || !state.worldReady) {
@@ -14353,7 +14765,7 @@ function onKeyDown(event) {
         return;
     }
 
-    if (event.code === "KeyI") {
+    if (event.code === "KeyI" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
         if (!state.worldStarted || !state.worldReady) {
             return;
@@ -14375,7 +14787,7 @@ function onKeyDown(event) {
         return;
     }
 
-    if (event.code === "KeyM") {
+    if (event.code === "KeyM" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
         if (state.paused) {
             setPauseSettingsOpen(!state.pauseSettingsOpen);
@@ -14400,7 +14812,7 @@ function onKeyDown(event) {
         return;
     }
 
-    if (event.code === "KeyF") {
+    if (event.code === "KeyF" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
         if (!state.worldStarted || !state.worldReady) {
             return;
