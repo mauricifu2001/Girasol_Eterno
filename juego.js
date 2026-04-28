@@ -13270,7 +13270,7 @@ function updateJukeboxSpatialAudio() {
 
         if (activeRuntime.type === "youtube") {
             const gain = getJukeboxSpatialGain(placed);
-            const shouldPlay = gain > 0.012;
+            const shouldPlay = true;
             const targetVolume = Math.round(THREE.MathUtils.clamp(gain * 100, 0, 100));
             activeRuntime.pendingVolume = targetVolume;
             activeRuntime.pendingShouldPlay = shouldPlay;
@@ -13298,8 +13298,6 @@ function updateJukeboxSpatialAudio() {
                     try {
                         if (shouldPlay && activeRuntime.player.playVideo) {
                             activeRuntime.player.playVideo();
-                        } else if (!shouldPlay && activeRuntime.player.pauseVideo) {
-                            activeRuntime.player.pauseVideo();
                         }
                     } catch (error) {
                     }
@@ -13510,6 +13508,62 @@ function resolveJukeboxExternalSource(rawLinkValue) {
     }
 
     return null;
+}
+
+function extractFirstHttpUrlFromText(rawText) {
+    const text = String(rawText || "");
+    if (!text) {
+        return "";
+    }
+    const matches = text.match(/https?:\/\/[^\s|]+/gi);
+    return matches?.[0] ? String(matches[0]).trim() : "";
+}
+
+async function fetchLatestMuseumEpisodeLink() {
+    const museumConfig = window.appConfig?.story?.museum || {};
+    const autoFeedConfig = museumConfig.autoFeed || {};
+    const channelId = String(autoFeedConfig.channelId || "").trim();
+
+    if (channelId) {
+        try {
+            const params = new URLSearchParams({
+                channelId,
+                limit: "1",
+                series: String(museumConfig.seriesLabel || "Fucknews Fridays"),
+                note: String(museumConfig.defaultNote || "Otro viernes guardado.")
+            });
+            const response = await fetch(`/.netlify/functions/youtube-feed?${params.toString()}`, { cache: "no-store" });
+            if (response.ok) {
+                const payload = await response.json();
+                const latestEntry = Array.isArray(payload?.entries) ? payload.entries[0] : null;
+                const latestUrl = String(latestEntry?.url || "").trim();
+                if (latestUrl) {
+                    return {
+                        url: latestUrl,
+                        title: String(latestEntry?.title || "Episodio reciente")
+                    };
+                }
+            }
+        } catch (error) {
+        }
+    }
+
+    const sourcePath = String(museumConfig.source || "").trim();
+    if (sourcePath) {
+        const response = await fetch(sourcePath, { cache: "no-store" });
+        if (response.ok) {
+            const sourceText = await response.text();
+            const sourceUrl = extractFirstHttpUrlFromText(sourceText);
+            if (sourceUrl) {
+                return {
+                    url: sourceUrl,
+                    title: "Episodio cargado del archivo"
+                };
+            }
+        }
+    }
+
+    throw new Error("museum_feed_unavailable");
 }
 
 function applyExternalLinkToJukeboxTrack(propId, track, rawLinkValue) {
@@ -13810,6 +13864,27 @@ function renderJukeboxInteractionPanel(placed) {
     linkWrap.appendChild(linkButton);
     interactionPanelBodyEl?.appendChild(linkWrap);
 
+    const quickFeedButton = document.createElement("button");
+    quickFeedButton.type = "button";
+    quickFeedButton.className = "interaction-action";
+    quickFeedButton.textContent = "Usar ultimo capitulo (API)";
+    quickFeedButton.addEventListener("click", async () => {
+        quickFeedButton.disabled = true;
+        quickFeedButton.textContent = "Cargando...";
+        try {
+            const latest = await fetchLatestMuseumEpisodeLink();
+            linkInput.value = latest.url;
+            interactionState.jukeboxLinkDraftByProp.set(placed.id, latest.url);
+            showToast(`Cargado: ${latest.title}`, "success", 1300);
+        } catch (error) {
+            showToast("No pude cargar capitulos desde la API/archivo", "warning", 1300);
+        } finally {
+            quickFeedButton.disabled = false;
+            quickFeedButton.textContent = "Usar ultimo capitulo (API)";
+        }
+    });
+    interactionPanelBodyEl?.appendChild(quickFeedButton);
+
     if (isRecordingThis) {
         appendInteractionInfoLine(`Grabando pista ${track}... vuelve a pulsar para detener.`);
     }
@@ -13849,6 +13924,17 @@ function renderInteractionPanelNow() {
     }
 }
 
+function isInteractionPanelEditingInputActive() {
+    const active = document.activeElement;
+    if (!active || !interactionPanelEl) {
+        return false;
+    }
+    if (!interactionPanelEl.contains(active)) {
+        return false;
+    }
+    return isTypingIntoEditableTarget(active);
+}
+
 function updateInteractionPanel(deltaSeconds = 0) {
     if (!state.interactionPanelOpen) {
         return;
@@ -13861,6 +13947,14 @@ function updateInteractionPanel(deltaSeconds = 0) {
     }
 
     interactionState.panelRefreshTick -= Math.max(0, deltaSeconds);
+    const editingInput = isInteractionPanelEditingInputActive();
+    if (editingInput) {
+        if (interactionState.panelRefreshTick <= 0) {
+            interactionState.panelRefreshTick = 0.2;
+        }
+        return;
+    }
+
     if (interactionState.panelNeedsRender || interactionState.panelRefreshTick <= 0) {
         interactionState.panelNeedsRender = false;
         interactionState.panelRefreshTick = 0.2;
