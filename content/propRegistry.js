@@ -367,7 +367,8 @@ const RAW_PROP_DEFINITIONS = [
             powered: false,
             youtubeId: "",
             playbackStartedAtMs: 0,
-            title: ""
+            title: "",
+            sizeInches: 200
         },
         visual: { tint: "rgba(106, 138, 172, 0.42)" },
         profile: { halfExtents: { x: 9.4, z: 2.2 }, minY: 0, maxY: 13.8, supportY: 0.6 }
@@ -382,7 +383,8 @@ const RAW_PROP_DEFINITIONS = [
             powered: false,
             youtubeId: "",
             playbackStartedAtMs: 0,
-            title: ""
+            title: "",
+            sizeInches: 200
         },
         visual: { tint: "rgba(106, 138, 172, 0.42)" },
         profile: { halfExtents: { x: 9.4, z: 0.7 }, minY: 0, maxY: 10.8, supportY: 5.2 },

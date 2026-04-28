@@ -317,11 +317,13 @@ const JUKEBOX_RECORDING_MAX_SECONDS = 18;
 const JUKEBOX_RECORDING_MAX_DATA_URL_CHARS = 1200000;
 const TV_SPATIAL_MAX_DISTANCE = 72;
 const TV_SPATIAL_NEAR_DISTANCE = 4;
+const TV_INTERACTION_MAX_DISTANCE = 26;
 const TV_SYNC_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const TV_EMBED_MIN_SIZE_PX = 16;
 const TV_EMBED_OFFSCREEN_MARGIN_PX = 120;
 const TV_EMBED_CLIP_INSET_PX = 2;
 const TV_MODEL_SCALE = 10;
+const TV_SIZE_OPTIONS = Object.freeze([200, 100, 70]);
 const INTERACTION_KEY = "KeyE";
 const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
@@ -1344,7 +1346,8 @@ const uiState = {
     toastHideTimerId: null,
     noSpaceToastAt: 0,
     lastCoordsText: "",
-    lastChunkInfoText: ""
+    lastChunkInfoText: "",
+    tvPlacementSizeInches: 200
 };
 
 const mapState = {
@@ -1465,12 +1468,13 @@ const tvProjectionCornerScreenScratch = [
     new THREE.Vector3(),
     new THREE.Vector3()
 ];
-const TV_SCREEN_LOCAL_CORNERS = Object.freeze([
+const TV_SCREEN_LOCAL_CORNERS_FALLBACK = Object.freeze([
     Object.freeze([-0.5, -0.5, 0.5]),
     Object.freeze([0.5, -0.5, 0.5]),
     Object.freeze([0.5, 0.5, 0.5]),
     Object.freeze([-0.5, 0.5, 0.5])
 ]);
+const tvProjectionScreenHalfExtentsScratch = new THREE.Vector3(0.5, 0.5, 0.01);
 
 let draggedInventoryItemId = "";
 
@@ -3572,7 +3576,7 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
 
     const blockHit = findTargetedBlockHit();
     const blockDistance = blockHit?.hit?.distance ?? Number.POSITIVE_INFINITY;
-    const propHit = findTargetedPropHit(blockDistance);
+    const propHit = findTargetedPropHit(blockDistance, Math.max(MAX_REACH, TV_INTERACTION_MAX_DISTANCE));
 
     let flowerDistance = Number.POSITIVE_INFINITY;
     let flowerId = "";
@@ -3603,14 +3607,15 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
         if (targetBlockLabelEl) {
             const config = getPropInteractionConfig(propHit.placed.propType);
             const kind = config?.kind || INTERACTION_KIND.NONE;
-            const canInteract = propDistance <= INTERACTION_MAX_DISTANCE + 0.001;
+            const interactionDistanceLimit = getPropInteractionMaxDistance(propHit.placed.propType);
+            const canInteract = propDistance <= interactionDistanceLimit + 0.001;
 
             if (kind === INTERACTION_KIND.LIGHT_CYCLE && isLightPropType(propHit.placed.propType)) {
-                const actionHint = canInteract ? "E cambiar intensidad" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                const actionHint = canInteract ? "E cambiar intensidad" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${getLampIntensityLabel(normalizeLampLevel(propHit.placed.lampLevel))} (${actionHint} | click izq quitar)`;
             } else if (kind === INTERACTION_KIND.EDIT_TEXT) {
                 const textPreview = sanitizeEditableSignText(propHit.placed.state?.text || "").slice(0, 26);
-                const actionHint = canInteract ? "E editar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                const actionHint = canInteract ? "E editar" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)}: "${textPreview}" (${actionHint} | click izq quitar)`;
             } else if (kind === INTERACTION_KIND.JUKEBOX_CONTROL) {
                 const playing = Boolean(propHit.placed.state?.playing);
@@ -3619,22 +3624,22 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
                 const modeLabel = playing
                     ? `Reproduciendo ${descriptor.label || `pista ${track || 1}`}`
                     : "Detenida";
-                const actionHint = canInteract ? "E controlar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                const actionHint = canInteract ? "E controlar" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (${actionHint} | click izq quitar)`;
             } else if (kind === INTERACTION_KIND.FURNACE_OPEN) {
                 const lit = Boolean(propHit.placed.state?.lit);
-                const actionHint = canInteract ? "E abrir" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                const actionHint = canInteract ? "E abrir" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${lit ? "Encendido" : "Apagado"} (${actionHint} | click izq quitar)`;
             } else if (kind === INTERACTION_KIND.TV_CONTROL) {
                 const powered = Boolean(propHit.placed.state?.powered);
                 const hasSignal = Boolean(sanitizeYouTubeVideoId(propHit.placed.state?.youtubeId || ""));
                 const modeLabel = powered ? (hasSignal ? "Reproduciendo" : "Encendida sin senal") : "Apagada";
-                const actionHint = canInteract ? "E controlar" : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                const actionHint = canInteract ? "E controlar" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (${actionHint} | click izq quitar)`;
             } else if (kind !== INTERACTION_KIND.NONE) {
                 const hint = canInteract
                     ? (config?.hudHint || "E interactuar")
-                    : `Acercate (${INTERACTION_MAX_DISTANCE.toFixed(1)}m)`;
+                    : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} (${hint} | click izq quitar)`;
             } else {
                 targetBlockLabelEl.textContent = `Objeto: ${getPropLabel(propHit.placed.propType)} (click izq quitar)`;
@@ -4979,13 +4984,13 @@ const PROP_INTERACTION_CONFIG = Object.freeze({
     [PROP_TYPE.TV_SCREEN]: Object.freeze({
         kind: INTERACTION_KIND.TV_CONTROL,
         hudHint: "E abrir controles TV",
-        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title"],
+        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title", "state.sizeInches"],
         usageKind: INTERACTION_USAGE_KIND.TV
     }),
     [PROP_TYPE.TV_WALL]: Object.freeze({
         kind: INTERACTION_KIND.TV_CONTROL,
         hudHint: "E abrir controles TV",
-        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title"],
+        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title", "state.sizeInches"],
         usageKind: INTERACTION_USAGE_KIND.TV
     }),
     [PROP_TYPE.CHEST]: Object.freeze({
@@ -5025,12 +5030,19 @@ function getPropInteractionConfig(propType) {
     return PROP_INTERACTION_CONFIG[propType] || null;
 }
 
-function isInteractionDistanceValid(distance) {
+function getPropInteractionMaxDistance(propType = "") {
+    if (propType === PROP_TYPE.TV_SCREEN || propType === PROP_TYPE.TV_WALL) {
+        return TV_INTERACTION_MAX_DISTANCE;
+    }
+    return INTERACTION_MAX_DISTANCE;
+}
+
+function isInteractionDistanceValid(distance, propType = "") {
     const numeric = Number(distance);
     if (!Number.isFinite(numeric)) {
         return false;
     }
-    return numeric <= INTERACTION_MAX_DISTANCE + 0.001;
+    return numeric <= getPropInteractionMaxDistance(propType) + 0.001;
 }
 
 function setLocalPoseActivity(propId, mode, forceBroadcast = true) {
@@ -5608,6 +5620,48 @@ function sanitizeTvPlaybackStartAtMs(value, fallback = 0) {
     return Number.isFinite(fallbackNumeric) && fallbackNumeric > 0 ? fallbackNumeric : 0;
 }
 
+function sanitizeTvSizeInches(value, fallback = 200) {
+    const numeric = Math.floor(Number(value));
+    if (TV_SIZE_OPTIONS.includes(numeric)) {
+        return numeric;
+    }
+    const fallbackNumeric = Math.floor(Number(fallback));
+    if (TV_SIZE_OPTIONS.includes(fallbackNumeric)) {
+        return fallbackNumeric;
+    }
+    return 200;
+}
+
+function getTvScaleFactorFromSize(sizeInches) {
+    const size = sanitizeTvSizeInches(sizeInches, 200);
+    if (size === 100) {
+        return 0.5;
+    }
+    if (size === 70) {
+        return 0.35;
+    }
+    return 1;
+}
+
+function promptTvSizeSelection() {
+    const fallbackSize = sanitizeTvSizeInches(uiState.tvPlacementSizeInches, 200);
+    let rawInput = null;
+    try {
+        rawInput = window.prompt("Tamano TV (70, 100, 200):", String(fallbackSize));
+    } catch (error) {
+        rawInput = String(fallbackSize);
+    }
+    if (rawInput === null) {
+        return null;
+    }
+
+    const extracted = String(rawInput).match(/\d+/g);
+    const candidate = extracted?.length ? Number(extracted[0]) : Number(rawInput);
+    const nextSize = sanitizeTvSizeInches(candidate, fallbackSize);
+    uiState.tvPlacementSizeInches = nextSize;
+    return nextSize;
+}
+
 function sanitizeJukeboxSource(value, fallback = JUKEBOX_SOURCE_DEFAULT) {
     const fallbackText = String(fallback || JUKEBOX_SOURCE_DEFAULT).trim() || JUKEBOX_SOURCE_DEFAULT;
     const raw = String(value ?? fallbackText).trim();
@@ -5647,7 +5701,8 @@ function buildLegacyPropStateCandidate(rawEntry) {
         powered: rawEntry.powered,
         youtubeId: rawEntry.youtubeId,
         playbackStartedAtMs: rawEntry.playbackStartedAtMs,
-        title: rawEntry.title
+        title: rawEntry.title,
+        sizeInches: rawEntry.sizeInches
     };
 }
 
@@ -5706,6 +5761,10 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
         }
         if (key === "title") {
             normalized[key] = String((incoming ?? defaultValue) || "").slice(0, 120);
+            continue;
+        }
+        if (key === "sizeInches") {
+            normalized[key] = sanitizeTvSizeInches(incoming ?? defaultValue, defaultValue);
             continue;
         }
 
@@ -5938,20 +5997,31 @@ function applyPropSharedVisualState(placed) {
         const youtubeId = sanitizeYouTubeVideoId(placed.state?.youtubeId || "");
         const playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(placed.state?.playbackStartedAtMs, 0);
         const title = String(placed.state?.title || "").slice(0, 120);
+        const sizeInches = sanitizeTvSizeInches(placed.state?.sizeInches, 200);
         if (
             !placed.state
             || placed.state.powered !== powered
             || placed.state.youtubeId !== youtubeId
             || placed.state.playbackStartedAtMs !== playbackStartedAtMs
             || placed.state.title !== title
+            || placed.state.sizeInches !== sizeInches
         ) {
             placed.state = {
                 ...(placed.state || {}),
                 powered,
                 youtubeId,
                 playbackStartedAtMs,
-                title
+                title,
+                sizeInches
             };
+        }
+
+        const scaleFactor = getTvScaleFactorFromSize(sizeInches);
+        const currentScaleFactor = Number(placed.node.userData?.tvScaleFactor || 0);
+        if (!Number.isFinite(currentScaleFactor) || Math.abs(currentScaleFactor - scaleFactor) > 1e-4) {
+            placed.node.scale.setScalar(scaleFactor);
+            placed.node.userData.tvScaleFactor = scaleFactor;
+            propState.cullingDirty = true;
         }
 
         const screenMaterial = placed.node.userData?.tvScreenMaterial || null;
@@ -6630,6 +6700,42 @@ function buildJukeboxNode(root) {
     root.userData.jukeboxLedMaterial = ledMaterial;
 }
 
+function createTvBrandPlate(scale = 1) {
+    const brandCanvas = document.createElement("canvas");
+    brandCanvas.width = 512;
+    brandCanvas.height = 128;
+    const brandContext = brandCanvas.getContext("2d");
+    if (!brandContext) {
+        return null;
+    }
+    brandContext.clearRect(0, 0, brandCanvas.width, brandCanvas.height);
+    brandContext.fillStyle = "#0c1118";
+    brandContext.fillRect(0, 0, brandCanvas.width, brandCanvas.height);
+    brandContext.fillStyle = "#dfe8f5";
+    brandContext.font = "700 56px Sora, sans-serif";
+    brandContext.textAlign = "center";
+    brandContext.textBaseline = "middle";
+    brandContext.fillText("PaMeKaChi", brandCanvas.width * 0.5, brandCanvas.height * 0.54);
+
+    const brandTexture = new THREE.CanvasTexture(brandCanvas);
+    brandTexture.needsUpdate = true;
+    brandTexture.userData.disposeOnRemove = true;
+    const brandMaterial = createDisposableStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.3,
+        metalness: 0.05,
+        map: brandTexture
+    });
+    const brandMesh = createDynamicPart(
+        { x: 0.28 * scale, y: 0.06 * scale, z: 0.012 * scale },
+        { x: 0.56 * scale, y: 0.61 * scale, z: 0.034 * scale },
+        brandMaterial
+    );
+    brandMesh.castShadow = false;
+    brandMesh.receiveShadow = false;
+    return brandMesh;
+}
+
 function buildTvScreenNode(root) {
     const s = TV_MODEL_SCALE;
     root.add(createDetailPart({ x: 0.78 * s, y: 0.08 * s, z: 0.44 * s }, { x: 0, y: 0.04 * s, z: 0 }, 0x21242c));
@@ -6667,6 +6773,10 @@ function buildTvScreenNode(root) {
         indicatorMaterial
     );
     root.add(indicator);
+    const brandPlate = createTvBrandPlate(s);
+    if (brandPlate) {
+        root.add(brandPlate);
+    }
 
     root.userData.tvScreenMaterial = screenMaterial;
     root.userData.tvScreenMesh = screenMesh;
@@ -6675,10 +6785,11 @@ function buildTvScreenNode(root) {
 
 function buildTvWallNode(root) {
     const s = TV_MODEL_SCALE;
-    root.add(createDetailPart({ x: 0.54 * s, y: 0.08 * s, z: 0.14 * s }, { x: 0, y: 0.56 * s, z: -0.22 * s }, 0x242a35));
-    root.add(createDetailPart({ x: 1.72 * s, y: 1.02 * s, z: 0.08 * s }, { x: 0, y: 1.06 * s, z: 0.02 * s }, 0x12161c));
-    root.add(createDetailPart({ x: 1.64 * s, y: 0.94 * s, z: 0.04 * s }, { x: 0, y: 1.06 * s, z: 0.04 * s }, 0x090b0f));
-    root.add(createDetailPart({ x: 1.7 * s, y: 0.02 * s, z: 0.1 * s }, { x: 0, y: 1.57 * s, z: 0.02 * s }, 0x2e3542));
+    root.add(createDetailPart({ x: 1.72 * s, y: 1.02 * s, z: 0.06 * s }, { x: 0, y: 1.06 * s, z: 0.01 * s }, 0x12161c));
+    root.add(createDetailPart({ x: 1.64 * s, y: 0.94 * s, z: 0.03 * s }, { x: 0, y: 1.06 * s, z: 0.028 * s }, 0x090b0f));
+    root.add(createDetailPart({ x: 1.7 * s, y: 0.02 * s, z: 0.08 * s }, { x: 0, y: 1.57 * s, z: 0.01 * s }, 0x2e3542));
+    root.add(createDetailPart({ x: 0.22 * s, y: 0.18 * s, z: 0.03 * s }, { x: 0, y: 1.06 * s, z: -0.022 * s }, 0x232a34));
+    root.add(createDetailPart({ x: 0.05 * s, y: 0.44 * s, z: 0.03 * s }, { x: 0, y: 1.06 * s, z: -0.022 * s }, 0x232a34));
 
     const screenMaterial = createDisposableStandardMaterial({
         color: 0x0f1216,
@@ -6688,8 +6799,8 @@ function buildTvWallNode(root) {
         emissiveIntensity: 0.01
     });
     const screenMesh = createDynamicPart(
-        { x: 1.54 * s, y: 0.84 * s, z: 0.02 * s },
-        { x: 0, y: 1.06 * s, z: 0.045 * s },
+        { x: 1.54 * s, y: 0.84 * s, z: 0.018 * s },
+        { x: 0, y: 1.06 * s, z: 0.032 * s },
         screenMaterial
     );
     root.add(screenMesh);
@@ -6703,10 +6814,14 @@ function buildTvWallNode(root) {
     });
     const indicator = createDynamicPart(
         { x: 0.04 * s, y: 0.02 * s, z: 0.016 * s },
-        { x: 0.76 * s, y: 0.58 * s, z: 0.056 * s },
+        { x: 0.76 * s, y: 0.58 * s, z: 0.038 * s },
         indicatorMaterial
     );
     root.add(indicator);
+    const brandPlate = createTvBrandPlate(s);
+    if (brandPlate) {
+        root.add(brandPlate);
+    }
 
     root.userData.tvScreenMaterial = screenMaterial;
     root.userData.tvScreenMesh = screenMesh;
@@ -13528,9 +13643,15 @@ function updateJukeboxSpatialAudio() {
 }
 
 function getTvSpatialGain(placed) {
-    const dx = placed.x - state.playerPosition.x;
-    const dy = (placed.y + 1.06) - (state.playerPosition.y + 0.3);
-    const dz = placed.z - state.playerPosition.z;
+    const screenMesh = placed?.node?.userData?.tvScreenMesh || null;
+    if (screenMesh) {
+        screenMesh.getWorldPosition(tvProjectionCenterScratch);
+    } else {
+        tvProjectionCenterScratch.set(placed.x, placed.y + 1.06, placed.z);
+    }
+    const dx = tvProjectionCenterScratch.x - state.playerPosition.x;
+    const dy = tvProjectionCenterScratch.y - (state.playerPosition.y + 0.3);
+    const dz = tvProjectionCenterScratch.z - state.playerPosition.z;
     const distance = Math.hypot(dx, dy, dz);
     if (distance <= TV_SPATIAL_NEAR_DISTANCE) {
         return 0.98;
@@ -13561,6 +13682,41 @@ function setTvOverlayVisible(runtime, visible) {
     runtime.overlayEl.style.display = visible ? "block" : "none";
 }
 
+function resolveTvScreenHalfExtents(screenMesh) {
+    const fallbackHalfWidth = Math.abs(Number(TV_SCREEN_LOCAL_CORNERS_FALLBACK[1]?.[0]) || 0.5);
+    const fallbackHalfHeight = Math.abs(Number(TV_SCREEN_LOCAL_CORNERS_FALLBACK[2]?.[1]) || 0.5);
+    const fallbackHalfDepth = Math.abs(Number(TV_SCREEN_LOCAL_CORNERS_FALLBACK[0]?.[2]) || 0.01);
+
+    if (!screenMesh?.geometry) {
+        tvProjectionScreenHalfExtentsScratch.set(fallbackHalfWidth, fallbackHalfHeight, fallbackHalfDepth);
+        return tvProjectionScreenHalfExtentsScratch;
+    }
+
+    const geometry = screenMesh.geometry;
+    if (!geometry.boundingBox) {
+        geometry.computeBoundingBox();
+    }
+    if (!geometry.boundingBox) {
+        tvProjectionScreenHalfExtentsScratch.set(fallbackHalfWidth, fallbackHalfHeight, fallbackHalfDepth);
+        return tvProjectionScreenHalfExtentsScratch;
+    }
+
+    tvProjectionScreenHalfExtentsScratch
+        .copy(geometry.boundingBox.max)
+        .sub(geometry.boundingBox.min)
+        .multiplyScalar(0.5);
+
+    if (
+        !Number.isFinite(tvProjectionScreenHalfExtentsScratch.x)
+        || !Number.isFinite(tvProjectionScreenHalfExtentsScratch.y)
+        || !Number.isFinite(tvProjectionScreenHalfExtentsScratch.z)
+    ) {
+        tvProjectionScreenHalfExtentsScratch.set(fallbackHalfWidth, fallbackHalfHeight, fallbackHalfDepth);
+    }
+
+    return tvProjectionScreenHalfExtentsScratch;
+}
+
 function updateTvRuntimeOverlayPosition(runtime, placed) {
     const screenMesh = placed?.node?.userData?.tvScreenMesh || null;
     if (!screenMesh || !runtime?.overlayEl) {
@@ -13588,10 +13744,22 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
     let maxY = Number.NEGATIVE_INFINITY;
     let anyCornerInFront = false;
     const projectedPoints = [];
+    const halfExtents = resolveTvScreenHalfExtents(screenMesh);
+    const halfWidth = Math.max(0.001, halfExtents.x);
+    const halfHeight = Math.max(0.001, halfExtents.y);
+    const frontZ = Math.max(0.001, halfExtents.z) + 0.001;
 
     for (let i = 0; i < 4; i += 1) {
         const cornerWorld = tvProjectionCornerWorldScratch[i];
-        cornerWorld.set(TV_SCREEN_LOCAL_CORNERS[i][0], TV_SCREEN_LOCAL_CORNERS[i][1], TV_SCREEN_LOCAL_CORNERS[i][2]);
+        if (i === 0) {
+            cornerWorld.set(-halfWidth, -halfHeight, frontZ);
+        } else if (i === 1) {
+            cornerWorld.set(halfWidth, -halfHeight, frontZ);
+        } else if (i === 2) {
+            cornerWorld.set(halfWidth, halfHeight, frontZ);
+        } else {
+            cornerWorld.set(-halfWidth, halfHeight, frontZ);
+        }
         screenMesh.localToWorld(cornerWorld);
 
         const cornerCamera = tvProjectionCornerScreenScratch[i];
@@ -14083,6 +14251,99 @@ function extractFirstHttpUrlFromText(rawText) {
     return matches?.[0] ? String(matches[0]).trim() : "";
 }
 
+function extractYouTubeUrlsFromText(rawText) {
+    const text = String(rawText || "");
+    if (!text) {
+        return [];
+    }
+    const matches = text.match(/https?:\/\/[^\s"'<>|]+/gi) || [];
+    const urls = [];
+    for (const rawUrl of matches) {
+        const safeUrl = String(rawUrl || "").replace(/[),.;!?]+$/, "").trim();
+        const youtubeId = sanitizeYouTubeVideoId(safeUrl);
+        if (!youtubeId) {
+            continue;
+        }
+        urls.push({
+            url: `https://www.youtube.com/watch?v=${youtubeId}`,
+            id: youtubeId
+        });
+    }
+    return urls;
+}
+
+function parseMuseumFeedEntriesFromText(rawText, museumConfig = {}) {
+    const lines = String(rawText || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"));
+    const parsed = [];
+
+    for (let index = 0; index < lines.length; index += 1) {
+        const line = lines[index];
+        const segments = line.split("|").map((segment) => segment.trim()).filter(Boolean);
+        const urlIndex = segments.findIndex((segment) => /^https?:\/\//i.test(segment));
+        const fallbackTitle = `Episodio ${String(index + 1).padStart(3, "0")}`;
+        const fallbackUrl = urlIndex !== -1
+            ? segments[urlIndex]
+            : String(extractFirstHttpUrlFromText(line) || "");
+        const youtubeId = sanitizeYouTubeVideoId(fallbackUrl);
+        if (!youtubeId) {
+            continue;
+        }
+
+        const title = urlIndex > 0
+            ? segments.slice(0, urlIndex).join(" | ")
+            : (segments[0] && !/^https?:\/\//i.test(segments[0]) ? segments[0] : "");
+        parsed.push({
+            url: `https://www.youtube.com/watch?v=${youtubeId}`,
+            title: String(title || museumConfig.seriesLabel || fallbackTitle).trim()
+        });
+    }
+
+    return parsed;
+}
+
+function pickLatestMuseumSourceEntry(rawText, museumConfig = {}) {
+    const entries = parseMuseumFeedEntriesFromText(rawText, museumConfig);
+    if (!entries.length) {
+        return null;
+    }
+    const wantsNewestFirst = museumConfig.reverseOrder !== false;
+    const orderedEntries = wantsNewestFirst ? [...entries].reverse() : entries;
+    return orderedEntries[0] || null;
+}
+
+function pickLatestMuseumFeedEntry(entries) {
+    if (!Array.isArray(entries) || entries.length === 0) {
+        return null;
+    }
+    const normalized = [];
+    for (const raw of entries) {
+        const url = String(raw?.url || "").trim();
+        const youtubeId = sanitizeYouTubeVideoId(url);
+        if (!youtubeId) {
+            continue;
+        }
+        const publishedAtMs = Date.parse(String(raw?.publishedAt || ""));
+        normalized.push({
+            url: `https://www.youtube.com/watch?v=${youtubeId}`,
+            title: String(raw?.title || "Episodio reciente"),
+            publishedAtMs: Number.isFinite(publishedAtMs) ? publishedAtMs : 0
+        });
+    }
+    if (normalized.length === 0) {
+        return null;
+    }
+    normalized.sort((a, b) => {
+        if (a.publishedAtMs !== b.publishedAtMs) {
+            return b.publishedAtMs - a.publishedAtMs;
+        }
+        return 0;
+    });
+    return normalized[0];
+}
+
 async function fetchLatestMuseumEpisodeLink() {
     const museumConfig = window.appConfig?.story?.museum || {};
     const autoFeedConfig = museumConfig.autoFeed || {};
@@ -14090,21 +14351,24 @@ async function fetchLatestMuseumEpisodeLink() {
 
     if (channelId) {
         try {
+            const requestedLimit = Number.parseInt(String(autoFeedConfig.limit || "24"), 10);
+            const feedLimit = Number.isFinite(requestedLimit)
+                ? THREE.MathUtils.clamp(requestedLimit, 6, 80)
+                : 24;
             const params = new URLSearchParams({
                 channelId,
-                limit: "1",
+                limit: String(feedLimit),
                 series: String(museumConfig.seriesLabel || "Fucknews Fridays"),
                 note: String(museumConfig.defaultNote || "Otro viernes guardado.")
             });
             const response = await fetch(`/.netlify/functions/youtube-feed?${params.toString()}`, { cache: "no-store" });
             if (response.ok) {
                 const payload = await response.json();
-                const latestEntry = Array.isArray(payload?.entries) ? payload.entries[0] : null;
-                const latestUrl = String(latestEntry?.url || "").trim();
-                if (latestUrl) {
+                const latestEntry = pickLatestMuseumFeedEntry(payload?.entries || []);
+                if (latestEntry?.url) {
                     return {
-                        url: latestUrl,
-                        title: String(latestEntry?.title || "Episodio reciente")
+                        url: latestEntry.url,
+                        title: String(latestEntry.title || "Episodio reciente")
                     };
                 }
             }
@@ -14117,6 +14381,24 @@ async function fetchLatestMuseumEpisodeLink() {
         const response = await fetch(sourcePath, { cache: "no-store" });
         if (response.ok) {
             const sourceText = await response.text();
+            const latestSourceEntry = pickLatestMuseumSourceEntry(sourceText, museumConfig);
+            if (latestSourceEntry?.url) {
+                return {
+                    url: latestSourceEntry.url,
+                    title: String(latestSourceEntry.title || "Episodio reciente")
+                };
+            }
+            const youtubeUrls = extractYouTubeUrlsFromText(sourceText);
+            if (youtubeUrls.length > 0) {
+                const wantsNewestFirst = museumConfig.reverseOrder !== false;
+                const fallbackEntry = wantsNewestFirst
+                    ? youtubeUrls[youtubeUrls.length - 1]
+                    : youtubeUrls[0];
+                return {
+                    url: fallbackEntry.url,
+                    title: "Episodio reciente (archivo)"
+                };
+            }
             const sourceUrl = extractFirstHttpUrlFromText(sourceText);
             if (sourceUrl) {
                 return {
@@ -14459,8 +14741,10 @@ function renderTvInteractionPanel(placed) {
     const powered = Boolean(safeState.powered);
     const youtubeId = sanitizeYouTubeVideoId(safeState.youtubeId || "");
     const title = String(safeState.title || "").trim();
+    const sizeInches = sanitizeTvSizeInches(safeState.sizeInches, 200);
     appendInteractionInfoLine(`Estado: ${powered ? "Encendida" : "Apagada"}`);
     appendInteractionInfoLine(`Canal: ${youtubeId ? (title || "Video sincronizado") : "Sin senal"}`);
+    appendInteractionInfoLine(`Tamano: ${sizeInches}"`);
     appendInteractionInfoLine("Audio espacial: si te alejas, baja el volumen.");
 
     appendInteractionAction(powered ? "Apagar TV" : "Encender TV", () => {
@@ -14518,6 +14802,25 @@ function renderTvInteractionPanel(placed) {
         }
     });
     interactionPanelBodyEl?.appendChild(latestButton);
+
+    const sizeRow = document.createElement("div");
+    sizeRow.className = "interaction-row";
+    for (const option of TV_SIZE_OPTIONS) {
+        const sizeButton = document.createElement("button");
+        sizeButton.type = "button";
+        sizeButton.className = "interaction-action";
+        sizeButton.textContent = `${option}"`;
+        if (option === sizeInches) {
+            sizeButton.classList.add("active");
+        }
+        sizeButton.addEventListener("click", () => {
+            if (updatePropSharedState(placed.id, { sizeInches: option }, `TV ${option}"`)) {
+                markInteractionPanelDirty();
+            }
+        });
+        sizeRow.appendChild(sizeButton);
+    }
+    interactionPanelBodyEl?.appendChild(sizeRow);
 }
 
 function renderInteractionPanelNow() {
@@ -14726,7 +15029,7 @@ function resolveContextualPropTypeForPlacement(basePropType, worldNormal) {
     }
 
     const horizontalStrength = Math.hypot(Number(worldNormal.x) || 0, Number(worldNormal.z) || 0);
-    const isWallFace = horizontalStrength >= 0.55 && Math.abs(Number(worldNormal.y) || 0) <= 0.4;
+    const isWallFace = horizontalStrength >= 0.1 && Math.abs(Number(worldNormal.y) || 0) <= 0.85;
     if (baseType === PROP_TYPE.TV_WALL || baseType === PROP_TYPE.TV_SCREEN) {
         return isWallFace ? PROP_TYPE.TV_WALL : PROP_TYPE.TV_SCREEN;
     }
@@ -14751,14 +15054,14 @@ function getWallPlacementWarning(propType) {
 
 function getWallMountCenterOffset(propType) {
     if (propType === PROP_TYPE.TV_WALL) {
-        return 0.29 * TV_MODEL_SCALE;
+        return 0.12;
     }
     return 0.44;
 }
 
 function getWallMountBaseYOffset(propType) {
     if (propType === PROP_TYPE.TV_WALL) {
-        return Math.floor(0.52 * TV_MODEL_SCALE);
+        return 0;
     }
     return 0;
 }
@@ -14821,12 +15124,13 @@ function findTargetedBlockHit() {
     return { hit, lookup };
 }
 
-function findTargetedPropHit(blockingDistance = null) {
+function findTargetedPropHit(blockingDistance = null, reachDistance = MAX_REACH) {
     if (placedProps.size === 0 || propsRoot.children.length === 0) {
         return null;
     }
 
-    const searchRadius = MAX_REACH + 1.2;
+    const safeReachDistance = Math.max(0.5, Number(reachDistance) || MAX_REACH);
+    const searchRadius = safeReachDistance + 1.2;
     const nearbyIds = queryNearbyPropIdsReusable(
         state.playerPosition.x - searchRadius,
         state.playerPosition.x + searchRadius,
@@ -14848,7 +15152,7 @@ function findTargetedPropHit(blockingDistance = null) {
     }
 
     raycaster.setFromCamera(blockRayCenterNdc, camera);
-    raycaster.far = MAX_REACH;
+    raycaster.far = safeReachDistance;
     const propHits = raycaster.intersectObjects(propRaycastCandidates, true);
     if (!propHits.length) {
         return null;
@@ -14887,11 +15191,11 @@ function findTargetedPropHit(blockingDistance = null) {
 function findInteractablePropHit() {
     const blockHit = findTargetedBlockHit();
     const blockDistance = blockHit?.hit?.distance ?? Number.POSITIVE_INFINITY;
-    const propHit = findTargetedPropHit(blockDistance);
+    const propHit = findTargetedPropHit(blockDistance, Math.max(MAX_REACH, getPropInteractionMaxDistance(PROP_TYPE.TV_SCREEN)));
     if (!propHit) {
         return null;
     }
-    if (!isInteractionDistanceValid(propHit.distance)) {
+    if (!isInteractionDistanceValid(propHit.distance, propHit.placed.propType)) {
         return null;
     }
 
@@ -14962,6 +15266,7 @@ function attemptMineOrPlace(isPlacing) {
     const selectedType = selectedPropType();
     if (selectedType) {
         let propTypeToPlace = selectedType;
+        let selectedTvSizeInches = null;
         let propX = 0;
         let propY = 0;
         let propZ = 0;
@@ -15002,7 +15307,7 @@ function attemptMineOrPlace(isPlacing) {
             let placeZ = 0;
             if (wantsWallPlacement) {
                 const horizontalStrength = Math.hypot(normal.x, normal.z);
-                if (horizontalStrength < 0.55 || Math.abs(normal.y) > 0.4) {
+                if (horizontalStrength < 0.1 || Math.abs(normal.y) > 0.85) {
                     showToast(getWallPlacementWarning(propTypeToPlace), "warning", 1000);
                     return;
                 }
@@ -15077,13 +15382,24 @@ function attemptMineOrPlace(isPlacing) {
             return;
         }
 
+        if (propTypeToPlace === PROP_TYPE.TV_SCREEN || propTypeToPlace === PROP_TYPE.TV_WALL) {
+            selectedTvSizeInches = promptTvSizeSelection();
+            if (selectedTvSizeInches === null) {
+                showToast("Colocacion TV cancelada", "info", 800);
+                return;
+            }
+        }
+
         const propId = addPlacedPropEntry({
             propType: propTypeToPlace,
             x: propX,
             y: propY,
             z: propZ,
             lampLevel: isLightPropType(propTypeToPlace) ? 0 : undefined,
-            yaw: propYaw
+            yaw: propYaw,
+            state: (propTypeToPlace === PROP_TYPE.TV_SCREEN || propTypeToPlace === PROP_TYPE.TV_WALL)
+                ? { sizeInches: sanitizeTvSizeInches(selectedTvSizeInches, 200) }
+                : undefined
         }, "local");
 
         if (propId) {
