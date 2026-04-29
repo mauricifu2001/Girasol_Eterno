@@ -16776,6 +16776,11 @@ function onMouseWheel(event) {
 function onKeyDown(event) {
     const typingIntoEditable = isTypingIntoEditableTarget(event.target);
 
+    // Prevent focused UI buttons from being "clicked" by Space while playing.
+    if (!typingIntoEditable && state.worldStarted && event.code === "Space") {
+        event.preventDefault();
+    }
+
     if (!typingIntoEditable && (
         event.code === "ArrowUp"
         || event.code === "ArrowDown"
