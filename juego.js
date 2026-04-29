@@ -127,6 +127,33 @@ const BASE_SPEED = 6.2;
 const SPRINT_SPEED = 9.4;
 const JUMP_SPEED = 9.2;
 const FLIGHT_SPEED = 24;
+const KART_MAX_SPEED_FORWARD = 22;
+const KART_MAX_SPEED_REVERSE = 7;
+const KART_ACCELERATION = 21;
+const KART_BRAKE_FORCE = 29;
+const KART_COAST_DRAG = 3.9;
+const KART_ROLLING_DRAG = 1.25;
+const KART_STEER_RESPONSE = 10;
+const KART_STEER_RATE = 2.9;
+const KART_STEER_RATE_DRIFT = 4.3;
+const KART_DRIFT_SLIP_ANGLE = 0.32;
+const KART_MAX_STEP_UP = 0.58;
+const KART_MAX_STEP_DOWN = 1.15;
+const KART_PROP_SYNC_INTERVAL_SECONDS = 0.16;
+const KART_WORLD_SAVE_INTERVAL_SECONDS = 0.42;
+const KART_INTERACTION_DISTANCE = 4.4;
+const KART_DRIVER_EYE_HEIGHT = 1.24;
+const KART_DRIVER_SEAT_OFFSET_FORWARD = -0.06;
+const KART_DRIVER_SEAT_OFFSET_RIGHT = 0;
+const KART_DRIVER_SEAT_OFFSET_UP = 0.6;
+const KART_COLOR_OPTIONS = Object.freeze([
+    Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
+    Object.freeze({ key: "red", label: "Rojo", body: 0xd35046, side: 0xa53d37, accent: 0xef796b }),
+    Object.freeze({ key: "blue", label: "Azul", body: 0x3f74da, side: 0x2f56a5, accent: 0x6592ea }),
+    Object.freeze({ key: "green", label: "Verde", body: 0x3cae66, side: 0x2f864f, accent: 0x61c987 }),
+    Object.freeze({ key: "yellow", label: "Amarillo", body: 0xd8b43b, side: 0xae8e2c, accent: 0xebcf62 }),
+    Object.freeze({ key: "purple", label: "Morado", body: 0x8a5ad8, side: 0x6c46aa, accent: 0xa77cf0 })
+]);
 const MAX_REACH = 6;
 const DEFAULT_POINTER_SPEED = 0.68;
 const TARGET_UI_SCAN_INTERVAL = 0.055;
@@ -1403,7 +1430,8 @@ const uiState = {
     noSpaceToastAt: 0,
     lastCoordsText: "",
     lastChunkInfoText: "",
-    tvPlacementSizeInches: 200
+    tvPlacementSizeInches: 200,
+    kartPlacementColor: "cyan"
 };
 
 const mapState = {
@@ -1484,6 +1512,7 @@ const floraState = {
 const interactionState = {
     pose: null,
     localUsing: null,
+    kartDrive: null,
     panelPropId: "",
     panelMode: "",
     panelNeedsRender: false,
@@ -3935,6 +3964,14 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
                 }
                 targetBlockLabelEl.classList.toggle("hidden", shouldHideTvHud);
                 return;
+            } else if (kind === INTERACTION_KIND.DRIVE && propHit.placed.propType === PROP_TYPE.KART) {
+                const usage = getTemporaryUsageEntry(propHit.placed.id);
+                const isOccupiedByOther = Boolean(usage && usage.total > 0 && !usage.hasLocal);
+                const colorOption = getKartColorOption(propHit.placed.state?.color || "cyan");
+                const actionHint = isOccupiedByOther
+                    ? "Ocupado"
+                    : (canInteract ? "E manejar" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`);
+                targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${colorOption.label} (${actionHint} | click izq quitar)`;
             } else if (kind !== INTERACTION_KIND.NONE) {
                 const hint = canInteract
                     ? (config?.hudHint || "E interactuar")
@@ -5224,7 +5261,8 @@ const INTERACTION_KIND = Object.freeze({
     JUKEBOX_CONTROL: "jukebox-control",
     TV_CONTROL: "tv-control",
     CYCLE_VARIANT: "cycle-variant",
-    TOGGLE_STATE: "toggle-state"
+    TOGGLE_STATE: "toggle-state",
+    DRIVE: "drive"
 });
 
 const INTERACTION_USAGE_KIND = Object.freeze({
@@ -5232,7 +5270,8 @@ const INTERACTION_USAGE_KIND = Object.freeze({
     FURNACE: "furnace",
     JUKEBOX: "jukebox",
     TV: "tv",
-    SIGN: "sign"
+    SIGN: "sign",
+    KART: "kart"
 });
 
 const VARIANT_MAX_BY_PROP = Object.freeze({
@@ -5325,6 +5364,13 @@ const PROP_INTERACTION_CONFIG = Object.freeze({
         persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.paused", "state.pauseAtSeconds", "state.title", "state.sizeInches"],
         usageKind: INTERACTION_USAGE_KIND.TV
     }),
+    [PROP_TYPE.KART]: Object.freeze({
+        kind: INTERACTION_KIND.DRIVE,
+        hudHint: "E manejar | Shift bajarte",
+        persistentSync: ["state.color"],
+        temporarySync: ["using"],
+        usageKind: INTERACTION_USAGE_KIND.KART
+    }),
     [PROP_TYPE.CHEST]: Object.freeze({
         kind: INTERACTION_KIND.CONTAINER_OPEN,
         hudHint: "E abrir cofre",
@@ -5365,6 +5411,9 @@ function getPropInteractionConfig(propType) {
 function getPropInteractionMaxDistance(propType = "") {
     if (propType === PROP_TYPE.TV_SCREEN || propType === PROP_TYPE.TV_WALL) {
         return TV_INTERACTION_MAX_DISTANCE;
+    }
+    if (propType === PROP_TYPE.KART) {
+        return KART_INTERACTION_DISTANCE;
     }
     return INTERACTION_MAX_DISTANCE;
 }
@@ -5464,10 +5513,12 @@ function clearLocalUsingActivity(forceBroadcast = true) {
 function clearAllTemporaryInteractionState(forceBroadcast = true) {
     const hadPose = Boolean(interactionState.pose);
     const hadUsing = Boolean(interactionState.localUsing);
-    if (!hadPose && !hadUsing) {
+    const hadKartDrive = Boolean(interactionState.kartDrive);
+    if (!hadPose && !hadUsing && !hadKartDrive) {
         return;
     }
 
+    interactionState.kartDrive = null;
     interactionState.pose = null;
     const previousUsing = interactionState.localUsing;
     interactionState.localUsing = null;
@@ -6007,6 +6058,67 @@ function promptTvSizeSelection() {
     return nextSize;
 }
 
+function sanitizeKartColorKey(value, fallback = "cyan") {
+    const raw = String(value || "").trim().toLowerCase();
+    for (const option of KART_COLOR_OPTIONS) {
+        if (option.key === raw) {
+            return option.key;
+        }
+    }
+    const fallbackKey = String(fallback || "").trim().toLowerCase();
+    for (const option of KART_COLOR_OPTIONS) {
+        if (option.key === fallbackKey) {
+            return option.key;
+        }
+    }
+    return "cyan";
+}
+
+function getKartColorOption(colorKey) {
+    const safeKey = sanitizeKartColorKey(colorKey);
+    return KART_COLOR_OPTIONS.find((option) => option.key === safeKey) || KART_COLOR_OPTIONS[0];
+}
+
+function promptKartColorSelection() {
+    const fallbackKey = sanitizeKartColorKey(uiState.kartPlacementColor, "cyan");
+    const fallbackOption = getKartColorOption(fallbackKey);
+    let rawInput = null;
+    const optionsText = KART_COLOR_OPTIONS
+        .map((option, index) => `${index + 1}:${option.label}`)
+        .join(", ");
+    try {
+        rawInput = window.prompt(`Color del kart (${optionsText}):`, fallbackOption.label);
+    } catch (error) {
+        rawInput = fallbackOption.label;
+    }
+    if (rawInput === null) {
+        return null;
+    }
+
+    const normalizedInput = String(rawInput || "").trim().toLowerCase();
+    const byIndex = Number.parseInt(normalizedInput, 10);
+    if (Number.isFinite(byIndex) && byIndex >= 1 && byIndex <= KART_COLOR_OPTIONS.length) {
+        const picked = KART_COLOR_OPTIONS[byIndex - 1];
+        uiState.kartPlacementColor = picked.key;
+        return picked.key;
+    }
+
+    const byLabel = KART_COLOR_OPTIONS.find((option) => option.label.toLowerCase() === normalizedInput);
+    if (byLabel) {
+        uiState.kartPlacementColor = byLabel.key;
+        return byLabel.key;
+    }
+
+    const byKey = KART_COLOR_OPTIONS.find((option) => option.key === normalizedInput);
+    if (byKey) {
+        uiState.kartPlacementColor = byKey.key;
+        return byKey.key;
+    }
+
+    uiState.kartPlacementColor = fallbackOption.key;
+    return fallbackOption.key;
+}
+
 function sanitizeJukeboxSource(value, fallback = JUKEBOX_SOURCE_DEFAULT) {
     const fallbackText = String(fallback || JUKEBOX_SOURCE_DEFAULT).trim() || JUKEBOX_SOURCE_DEFAULT;
     const raw = String(value ?? fallbackText).trim();
@@ -6049,7 +6161,8 @@ function buildLegacyPropStateCandidate(rawEntry) {
         paused: rawEntry.paused,
         pauseAtSeconds: rawEntry.pauseAtSeconds,
         title: rawEntry.title,
-        sizeInches: rawEntry.sizeInches
+        sizeInches: rawEntry.sizeInches,
+        color: rawEntry.color
     };
 }
 
@@ -6116,6 +6229,10 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
         }
         if (key === "sizeInches") {
             normalized[key] = sanitizeTvSizeInches(incoming ?? defaultValue, defaultValue);
+            continue;
+        }
+        if (key === "color") {
+            normalized[key] = sanitizeKartColorKey(incoming ?? defaultValue, defaultValue);
             continue;
         }
 
@@ -6424,6 +6541,30 @@ function applyPropSharedVisualState(placed) {
         if (indicatorMaterial) {
             indicatorMaterial.emissive.setHex(powered ? 0x58ff9a : 0xff5f5f);
             indicatorMaterial.emissiveIntensity = powered ? 0.62 : 0.28;
+        }
+        return;
+    }
+
+    if (propType === PROP_TYPE.KART) {
+        const colorKey = sanitizeKartColorKey(placed.state?.color, "cyan");
+        if (!placed.state || placed.state.color !== colorKey) {
+            placed.state = {
+                ...(placed.state || {}),
+                color: colorKey
+            };
+        }
+        const palette = getKartColorOption(colorKey);
+        const bodyMaterial = placed.node.userData?.kartBodyMaterial || null;
+        const sideMaterial = placed.node.userData?.kartSideMaterial || null;
+        const accentMaterial = placed.node.userData?.kartAccentMaterial || null;
+        if (bodyMaterial) {
+            bodyMaterial.color.setHex(Number(palette.body) || 0x27c8e7);
+        }
+        if (sideMaterial) {
+            sideMaterial.color.setHex(Number(palette.side) || 0x1f9fb8);
+        }
+        if (accentMaterial) {
+            accentMaterial.color.setHex(Number(palette.accent) || 0x3adbf2);
         }
         return;
     }
@@ -7262,41 +7403,114 @@ function buildRabbitHouseNode(root) {
 }
 
 function buildKartNode(root) {
-    root.add(createDetailPart({ x: 1.26, y: 0.12, z: 0.9 }, { x: 0, y: 0.24, z: 0 }, 0x2da8c7));
-    root.add(createDetailPart({ x: 0.96, y: 0.14, z: 0.44 }, { x: 0, y: 0.3, z: -0.24 }, 0x2a95b2));
-    root.add(createDetailPart({ x: 0.46, y: 0.16, z: 0.52 }, { x: 0, y: 0.28, z: 0.42 }, 0x3bd5ef));
-    root.add(createDetailPart({ x: 0.36, y: 0.04, z: 0.24 }, { x: 0, y: 0.24, z: 0.7 }, 0xe6edf5));
-    root.add(createDetailPart({ x: 0.13, y: 0.018, z: 0.15 }, { x: 0, y: 0.27, z: 0.69 }, 0x7ecf4c));
-    root.add(createDetailPart({ x: 0.24, y: 0.18, z: 0.58 }, { x: -0.51, y: 0.26, z: 0.08 }, 0x40cde6));
-    root.add(createDetailPart({ x: 0.24, y: 0.18, z: 0.58 }, { x: 0.51, y: 0.26, z: 0.08 }, 0x40cde6));
+    const defaultPalette = getKartColorOption("cyan");
+    const bodyMaterial = createDisposableStandardMaterial({
+        color: defaultPalette.body,
+        roughness: 0.62,
+        metalness: 0.06
+    });
+    const sideMaterial = createDisposableStandardMaterial({
+        color: defaultPalette.side,
+        roughness: 0.66,
+        metalness: 0.05
+    });
+    const accentMaterial = createDisposableStandardMaterial({
+        color: defaultPalette.accent,
+        roughness: 0.54,
+        metalness: 0.04
+    });
+    const darkMaterial = createDisposableStandardMaterial({
+        color: 0x1f232c,
+        roughness: 0.7,
+        metalness: 0.08
+    });
+    const wheelMaterial = createDisposableStandardMaterial({
+        color: 0x171a20,
+        roughness: 0.84,
+        metalness: 0.02
+    });
+    const rimMaterial = createDisposableStandardMaterial({
+        color: 0xe1bf2f,
+        roughness: 0.4,
+        metalness: 0.1
+    });
 
-    root.add(createDetailPart({ x: 1.06, y: 0.04, z: 0.14 }, { x: 0, y: 0.12, z: 0.78 }, 0xbec8d4));
-    root.add(createDetailPart({ x: 0.08, y: 0.05, z: 0.14 }, { x: -0.38, y: 0.13, z: 0.72 }, 0x9ba7b7));
-    root.add(createDetailPart({ x: 0.08, y: 0.05, z: 0.14 }, { x: 0.38, y: 0.13, z: 0.72 }, 0x9ba7b7));
+    root.add(createDynamicPart({ x: 1.62, y: 0.16, z: 1.12 }, { x: 0, y: 0.32, z: 0.03 }, bodyMaterial));
+    root.add(createDynamicPart({ x: 1.24, y: 0.19, z: 0.56 }, { x: 0, y: 0.4, z: -0.28 }, sideMaterial));
+    root.add(createDynamicPart({ x: 0.62, y: 0.21, z: 0.66 }, { x: 0, y: 0.36, z: 0.52 }, accentMaterial));
+    root.add(createDetailPart({ x: 0.46, y: 0.05, z: 0.34 }, { x: 0, y: 0.31, z: 0.9 }, 0xe6edf5));
+    root.add(createDetailPart({ x: 0.16, y: 0.02, z: 0.2 }, { x: 0, y: 0.36, z: 0.88 }, 0x7ecf4c));
 
-    const wheelXs = [-0.66, 0.66];
-    const wheelZs = [-0.34, 0.42];
+    root.add(createDetailPart({ x: 1.32, y: 0.05, z: 0.16 }, { x: 0, y: 0.17, z: 1.03 }, 0xc9d3dd));
+    root.add(createDetailPart({ x: 0.12, y: 0.06, z: 0.16 }, { x: -0.48, y: 0.18, z: 0.96 }, 0x97a4b2));
+    root.add(createDetailPart({ x: 0.12, y: 0.06, z: 0.16 }, { x: 0.48, y: 0.18, z: 0.96 }, 0x97a4b2));
+
+    const wheelXs = [-0.84, 0.84];
+    const wheelZs = [-0.46, 0.56];
     for (const wheelX of wheelXs) {
         for (const wheelZ of wheelZs) {
-            root.add(createDetailPart({ x: 0.16, y: 0.34, z: 0.34 }, { x: wheelX, y: 0.18, z: wheelZ }, 0x1e2027));
-            root.add(createDetailPart({ x: 0.06, y: 0.14, z: 0.14 }, { x: wheelX, y: 0.18, z: wheelZ }, 0xe1c02e));
+            root.add(createDynamicPart({ x: 0.22, y: 0.48, z: 0.48 }, { x: wheelX, y: 0.25, z: wheelZ }, wheelMaterial));
+            root.add(createDynamicPart({ x: 0.08, y: 0.2, z: 0.2 }, { x: wheelX, y: 0.25, z: wheelZ }, rimMaterial));
         }
     }
 
-    root.add(createDetailPart({ x: 0.34, y: 0.08, z: 0.34 }, { x: 0, y: 0.35, z: 0.03 }, 0x313644));
-    root.add(createDetailPart({ x: 0.3, y: 0.34, z: 0.14 }, { x: 0, y: 0.56, z: -0.07 }, 0x3a4050));
-    root.add(createDetailPart({ x: 0.22, y: 0.1, z: 0.16 }, { x: 0, y: 0.76, z: -0.08 }, 0x2b303e));
-    root.add(createDetailPart({ x: 0.16, y: 0.03, z: 0.12 }, { x: 0, y: 0.4, z: 0.18 }, 0x262b36));
-    root.add(createDetailPart({ x: 0.02, y: 0.1, z: 0.02 }, { x: 0, y: 0.44, z: 0.24 }, 0x3a3f4d));
-    root.add(createDetailPart({ x: 0.22, y: 0.03, z: 0.03 }, { x: 0, y: 0.5, z: 0.31 }, 0x1f232c));
-    root.add(createDetailPart({ x: 0.03, y: 0.03, z: 0.2 }, { x: 0, y: 0.5, z: 0.31 }, 0x1f232c));
+    root.add(createDynamicPart({ x: 0.46, y: 0.12, z: 0.44 }, { x: 0, y: 0.48, z: 0.06 }, darkMaterial));
+    root.add(createDetailPart({ x: 0.4, y: 0.46, z: 0.2 }, { x: 0, y: 0.76, z: -0.09 }, 0x343a4a));
+    root.add(createDetailPart({ x: 0.3, y: 0.14, z: 0.22 }, { x: 0, y: 1.03, z: -0.11 }, 0x272c37));
+    root.add(createDetailPart({ x: 0.2, y: 0.04, z: 0.16 }, { x: 0, y: 0.55, z: 0.23 }, 0x252a34));
+    root.add(createDetailPart({ x: 0.03, y: 0.14, z: 0.03 }, { x: 0, y: 0.61, z: 0.31 }, 0x3c4252));
+    root.add(createDynamicPart({ x: 0.28, y: 0.04, z: 0.04 }, { x: 0, y: 0.69, z: 0.4 }, darkMaterial));
+    root.add(createDynamicPart({ x: 0.04, y: 0.04, z: 0.24 }, { x: 0, y: 0.69, z: 0.4 }, darkMaterial));
 
-    root.add(createDetailPart({ x: 0.22, y: 0.36, z: 0.22 }, { x: -0.24, y: 0.52, z: -0.5 }, 0x343746));
-    root.add(createDetailPart({ x: 0.22, y: 0.36, z: 0.22 }, { x: 0.24, y: 0.52, z: -0.5 }, 0x343746));
-    root.add(createDetailPart({ x: 0.24, y: 0.08, z: 0.24 }, { x: -0.24, y: 0.67, z: -0.5 }, 0x1e2128));
-    root.add(createDetailPart({ x: 0.24, y: 0.08, z: 0.24 }, { x: 0.24, y: 0.67, z: -0.5 }, 0x1e2128));
-    root.add(createDetailPart({ x: 0.24, y: 0.05, z: 0.05 }, { x: -0.24, y: 0.58, z: -0.38 }, 0xe1bf2f));
-    root.add(createDetailPart({ x: 0.24, y: 0.05, z: 0.05 }, { x: 0.24, y: 0.58, z: -0.38 }, 0xe1bf2f));
+    root.add(createDetailPart({ x: 0.3, y: 0.5, z: 0.3 }, { x: -0.32, y: 0.73, z: -0.68 }, 0x313645));
+    root.add(createDetailPart({ x: 0.3, y: 0.5, z: 0.3 }, { x: 0.32, y: 0.73, z: -0.68 }, 0x313645));
+    root.add(createDetailPart({ x: 0.31, y: 0.1, z: 0.31 }, { x: -0.32, y: 0.93, z: -0.68 }, 0x1e222b));
+    root.add(createDetailPart({ x: 0.31, y: 0.1, z: 0.31 }, { x: 0.32, y: 0.93, z: -0.68 }, 0x1e222b));
+    root.add(createDynamicPart({ x: 0.3, y: 0.06, z: 0.06 }, { x: -0.32, y: 0.8, z: -0.5 }, rimMaterial));
+    root.add(createDynamicPart({ x: 0.3, y: 0.06, z: 0.06 }, { x: 0.32, y: 0.8, z: -0.5 }, rimMaterial));
+
+    root.userData.kartBodyMaterial = bodyMaterial;
+    root.userData.kartSideMaterial = sideMaterial;
+    root.userData.kartAccentMaterial = accentMaterial;
+}
+
+function buildRaceBarrierNode(root) {
+    root.add(createDetailPart({ x: 1.6, y: 0.18, z: 0.24 }, { x: 0, y: 0.45, z: 0 }, 0xc9493f));
+    root.add(createDetailPart({ x: 1.6, y: 0.18, z: 0.24 }, { x: 0, y: 0.24, z: 0 }, 0xffffff));
+    root.add(createDetailPart({ x: 1.6, y: 0.12, z: 0.2 }, { x: 0, y: 0.08, z: 0 }, 0x343845));
+    root.add(createDetailPart({ x: 0.18, y: 0.76, z: 0.18 }, { x: -0.58, y: 0.38, z: 0 }, 0x2a2f3a));
+    root.add(createDetailPart({ x: 0.18, y: 0.76, z: 0.18 }, { x: 0.58, y: 0.38, z: 0 }, 0x2a2f3a));
+}
+
+function buildRaceCurbNode(root) {
+    root.add(createDetailPart({ x: 1.28, y: 0.08, z: 0.5 }, { x: 0, y: 0.04, z: 0 }, 0xe8e5df));
+    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.5 }, { x: -0.45, y: 0.04, z: 0 }, 0xd14f48));
+    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.5 }, { x: -0.09, y: 0.04, z: 0 }, 0xd14f48));
+    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.5 }, { x: 0.27, y: 0.04, z: 0 }, 0xd14f48));
+}
+
+function buildRaceFinishLineNode(root) {
+    root.add(createDetailPart({ x: 0.16, y: 1.86, z: 0.16 }, { x: -0.68, y: 0.93, z: 0 }, 0x2b2f38));
+    root.add(createDetailPart({ x: 0.16, y: 1.86, z: 0.16 }, { x: 0.68, y: 0.93, z: 0 }, 0x2b2f38));
+    root.add(createDetailPart({ x: 1.52, y: 0.18, z: 0.16 }, { x: 0, y: 1.76, z: 0 }, 0x2b2f38));
+    root.add(createDetailPart({ x: 1.36, y: 0.12, z: 0.08 }, { x: 0, y: 1.76, z: 0.12 }, 0xffffff));
+    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.02 }, { x: -0.44, y: 1.76, z: 0.16 }, 0x111419));
+    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.02 }, { x: -0.04, y: 1.76, z: 0.16 }, 0x111419));
+    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.02 }, { x: 0.36, y: 1.76, z: 0.16 }, 0x111419));
+}
+
+function buildRaceCheckpointNode(root) {
+    root.add(createDetailPart({ x: 0.14, y: 1.5, z: 0.14 }, { x: -0.66, y: 0.75, z: 0 }, 0x1f4154));
+    root.add(createDetailPart({ x: 0.14, y: 1.5, z: 0.14 }, { x: 0.66, y: 0.75, z: 0 }, 0x1f4154));
+    root.add(createDetailPart({ x: 1.42, y: 0.14, z: 0.14 }, { x: 0, y: 1.45, z: 0 }, 0x29556f));
+    const beamMaterial = createDisposableStandardMaterial({
+        color: 0x70e2ff,
+        roughness: 0.2,
+        metalness: 0,
+        emissive: 0x45cfff,
+        emissiveIntensity: 0.55
+    });
+    root.add(createDynamicPart({ x: 1.3, y: 0.05, z: 0.05 }, { x: 0, y: 1.45, z: 0.09 }, beamMaterial));
 }
 
 const PROP_NODE_BUILDERS = Object.freeze({
@@ -7332,7 +7546,11 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.TV_WALL]: buildTvWallNode,
     [PROP_TYPE.GIANT_SUNFLOWER]: buildGiantSunflowerNode,
     [PROP_TYPE.RABBIT_HOUSE]: buildRabbitHouseNode,
-    [PROP_TYPE.KART]: buildKartNode
+    [PROP_TYPE.KART]: buildKartNode,
+    [PROP_TYPE.RACE_BARRIER]: buildRaceBarrierNode,
+    [PROP_TYPE.RACE_CURB]: buildRaceCurbNode,
+    [PROP_TYPE.RACE_FINISH_LINE]: buildRaceFinishLineNode,
+    [PROP_TYPE.RACE_CHECKPOINT]: buildRaceCheckpointNode
 });
 
 const registryValidationIssues = [
@@ -7724,6 +7942,9 @@ function removePlacedPropEntry(propId, origin = "local", showFeedback = false) {
 
     if (interactionState.panelPropId === id) {
         closeInteractionPanel(false, true);
+    }
+    if (interactionState.kartDrive?.propId === id) {
+        exitKartDrive(false);
     }
     if (interactionState.localUsing?.propId === id) {
         clearLocalUsingActivity(true);
@@ -13248,7 +13469,307 @@ function updateLocalPoseLock() {
     return true;
 }
 
+function getKartSeatAnchor(placed) {
+    const yaw = Number(placed?.yaw) || 0;
+    const forwardX = Math.sin(yaw);
+    const forwardZ = Math.cos(yaw);
+    const rightX = Math.sin(yaw + Math.PI * 0.5);
+    const rightZ = Math.cos(yaw + Math.PI * 0.5);
+    const seatX = (Number(placed?.x) || 0) + forwardX * KART_DRIVER_SEAT_OFFSET_FORWARD + rightX * KART_DRIVER_SEAT_OFFSET_RIGHT;
+    const seatZ = (Number(placed?.z) || 0) + forwardZ * KART_DRIVER_SEAT_OFFSET_FORWARD + rightZ * KART_DRIVER_SEAT_OFFSET_RIGHT;
+    const seatY = (Number(placed?.y) || 0) + KART_DRIVER_SEAT_OFFSET_UP;
+    const eyeY = (Number(placed?.y) || 0) + KART_DRIVER_EYE_HEIGHT;
+    return { x: seatX, y: seatY, z: seatZ, eyeY };
+}
+
+function updatePlacedPropTransformImmediate(placed, x, y, z, yaw) {
+    if (!placed || !placed.node) {
+        return false;
+    }
+    unindexPlacedProp(placed);
+    placed.x = x;
+    placed.y = y;
+    placed.z = z;
+    placed.yaw = normalizeYawRadians(yaw);
+    placed.node.position.set(placed.x, placed.y, placed.z);
+    placed.node.rotation.y = placed.yaw;
+    refreshSinglePropVisibility(placed);
+    indexPlacedProp(placed);
+    propState.cullingDirty = true;
+    return true;
+}
+
+function getPropBoundsCollidesSolidBlocks(bounds) {
+    if (!bounds) {
+        return true;
+    }
+    const minX = Math.floor(bounds.minX);
+    const maxX = Math.floor(bounds.maxX);
+    const minY = Math.floor(bounds.minY);
+    const maxY = Math.floor(bounds.maxY);
+    const minZ = Math.floor(bounds.minZ);
+    const maxZ = Math.floor(bounds.maxZ);
+    for (let yy = minY; yy <= maxY; yy += 1) {
+        for (let xx = minX; xx <= maxX; xx += 1) {
+            for (let zz = minZ; zz <= maxZ; zz += 1) {
+                if (yy < 0) {
+                    return true;
+                }
+                if (yy >= WORLD_MAX_Y) {
+                    continue;
+                }
+                if (!isSolidBlock(getBlock(xx, yy, zz))) {
+                    continue;
+                }
+                if (
+                    bounds.minX < xx + 1
+                    && bounds.maxX > xx
+                    && bounds.minY < yy + 1
+                    && bounds.maxY > yy
+                    && bounds.minZ < zz + 1
+                    && bounds.maxZ > zz
+                ) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
+    const nextBounds = getPlacedPropBoundsAt(PROP_TYPE.KART, nextX, nextY, nextZ, nextYaw, 0.002, placed?.state);
+    if (getPropBoundsCollidesSolidBlocks(nextBounds)) {
+        return true;
+    }
+
+    const nearbyIds = queryNearbyPropIdsReusable(
+        nextBounds.minX,
+        nextBounds.maxX,
+        nextBounds.minY,
+        nextBounds.maxY,
+        nextBounds.minZ,
+        nextBounds.maxZ
+    );
+    for (const propId of nearbyIds) {
+        if (propId === placed.id) {
+            continue;
+        }
+        const other = placedProps.get(propId);
+        if (!other || !other.node || other.node.visible === false) {
+            continue;
+        }
+        const definition = getPropDefinition(other.propType);
+        if (definition && !definition.solid) {
+            continue;
+        }
+        const otherBounds = getPlacedPropBounds(other, 0.001);
+        if (intersectsAabb(nextBounds, otherBounds)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function resolveKartGroundYAt(x, z, currentY) {
+    const sampleX = Math.floor(Number(x) || 0);
+    const sampleZ = Math.floor(Number(z) || 0);
+    const startY = Math.min(WORLD_MAX_Y - 1, Math.max(0, Math.floor((Number(currentY) || 0) + 3)));
+    const scannedY = findColumnSurfaceYAtOrBelow(sampleX, sampleZ, startY);
+    if (Number.isFinite(scannedY)) {
+        return scannedY + 1;
+    }
+    return Math.floor(Number(terrainHeight(sampleX, sampleZ)) || 0) + 1;
+}
+
+function applyKartDriverCamera(placed, deltaSeconds = 0) {
+    const anchor = getKartSeatAnchor(placed);
+    state.playerPosition.x = anchor.x;
+    state.playerPosition.y = anchor.eyeY - EYE_HEIGHT;
+    state.playerPosition.z = anchor.z;
+    state.velocityY = 0;
+    state.onGround = true;
+    controls.getObject().rotation.y = approachAngle(
+        controls.getObject().rotation.y || 0,
+        Number(placed?.yaw) || 0,
+        Math.min(1, Math.max(0, deltaSeconds) * 7.5)
+    );
+    controls.getObject().position.set(anchor.x, anchor.eyeY, anchor.z);
+}
+
+function enterKartDrive(propHit) {
+    const placed = propHit?.placed;
+    if (!placed || placed.propType !== PROP_TYPE.KART) {
+        return false;
+    }
+
+    if (interactionState.kartDrive?.propId === placed.id) {
+        return exitKartDrive(true);
+    }
+
+    if (interactionState.kartDrive) {
+        exitKartDrive(false);
+    }
+
+    const usage = getTemporaryUsageEntry(placed.id);
+    if (usage && usage.total > 0 && !usage.hasLocal) {
+        showToast("Ese kart esta siendo usado por otro jugador", "warning", 1200);
+        return false;
+    }
+
+    closeInteractionPanel(false, true);
+    clearLocalPoseActivity(true);
+    setLocalUsingActivity(placed.id, INTERACTION_USAGE_KIND.KART, true);
+    interactionState.kartDrive = {
+        propId: placed.id,
+        speed: 0,
+        steer: 0,
+        drift: false,
+        syncTick: 0,
+        saveTick: 0
+    };
+    state.keyDown.delete("Space");
+    state.velocityY = 0;
+    state.onGround = true;
+    controls.getObject().rotation.y = Number(placed.yaw) || controls.getObject().rotation.y || 0;
+    applyKartDriverCamera(placed, 1 / 60);
+    persistPlayerStateSnapshot(true);
+    showToast("Subiste al kart. WASD manejar, Espacio derrape, Shift bajarte.", "info", 1650);
+    return true;
+}
+
+function exitKartDrive(showFeedback = false) {
+    const drive = interactionState.kartDrive;
+    if (!drive) {
+        return false;
+    }
+    const placed = placedProps.get(String(drive.propId || ""));
+    interactionState.kartDrive = null;
+    clearLocalUsingActivity(true);
+    state.keyDown.clear();
+
+    if (placed) {
+        scheduleWorldSave();
+        publishPropUpsert(placed.id);
+        const safeExit = findSafeExitPositionFromPose(placed, "sit");
+        if (safeExit) {
+            state.playerPosition.x = safeExit.x;
+            state.playerPosition.y = safeExit.y;
+            state.playerPosition.z = safeExit.z;
+        }
+    }
+    state.velocityY = 0;
+    updateOnGroundFlag();
+    controls.getObject().position.set(
+        state.playerPosition.x,
+        state.playerPosition.y + EYE_HEIGHT,
+        state.playerPosition.z
+    );
+    if (showFeedback) {
+        showToast("Te bajaste del kart", "info", 900);
+    }
+    persistPlayerStateSnapshot(true);
+    return true;
+}
+
+function updateKartDrive(deltaSeconds) {
+    const drive = interactionState.kartDrive;
+    if (!drive) {
+        return false;
+    }
+    const placed = placedProps.get(String(drive.propId || ""));
+    if (!placed || placed.propType !== PROP_TYPE.KART) {
+        interactionState.kartDrive = null;
+        clearLocalUsingActivity(true);
+        return false;
+    }
+
+    const steerTarget = (state.keyDown.has("KeyD") ? 1 : 0) - (state.keyDown.has("KeyA") ? 1 : 0);
+    const steerLerp = 1 - Math.exp(-KART_STEER_RESPONSE * Math.max(0, deltaSeconds));
+    drive.steer = THREE.MathUtils.clamp(lerp(drive.steer, steerTarget, steerLerp), -1, 1);
+
+    const pressingForward = state.keyDown.has("KeyW");
+    const pressingBackward = state.keyDown.has("KeyS");
+    const drifting = state.keyDown.has("Space") && Math.abs(drive.speed) > 5.5 && Math.abs(drive.steer) > 0.16;
+    drive.drift = drifting;
+
+    if (pressingForward) {
+        drive.speed += KART_ACCELERATION * deltaSeconds;
+    }
+    if (pressingBackward) {
+        if (drive.speed > 0) {
+            drive.speed -= KART_BRAKE_FORCE * deltaSeconds;
+        } else {
+            drive.speed -= KART_ACCELERATION * 0.72 * deltaSeconds;
+        }
+    }
+    if (!pressingForward && !pressingBackward) {
+        drive.speed -= drive.speed * Math.min(1, KART_ROLLING_DRAG * deltaSeconds);
+    }
+    drive.speed -= drive.speed * Math.min(1, KART_COAST_DRAG * (drifting ? 0.55 : 1) * deltaSeconds);
+    drive.speed = THREE.MathUtils.clamp(drive.speed, -KART_MAX_SPEED_REVERSE, KART_MAX_SPEED_FORWARD);
+
+    const speedFactor = Math.min(1, Math.abs(drive.speed) / KART_MAX_SPEED_FORWARD);
+    const steerRate = drifting ? KART_STEER_RATE_DRIFT : KART_STEER_RATE;
+    const turnScale = 0.22 + speedFactor * 0.95;
+    const nextYaw = normalizeYawRadians((Number(placed.yaw) || 0) + drive.steer * steerRate * turnScale * deltaSeconds);
+    const slipAngle = drifting ? drive.steer * KART_DRIFT_SLIP_ANGLE : drive.steer * 0.04;
+    const moveYaw = nextYaw + slipAngle;
+    const deltaX = Math.sin(moveYaw) * drive.speed * deltaSeconds;
+    const deltaZ = Math.cos(moveYaw) * drive.speed * deltaSeconds;
+
+    let moved = false;
+    let collided = false;
+    const moveDistance = Math.hypot(deltaX, deltaZ);
+    const steps = Math.max(1, Math.ceil(moveDistance / 0.42));
+    const stepX = deltaX / steps;
+    const stepZ = deltaZ / steps;
+
+    for (let i = 0; i < steps; i += 1) {
+        const candidateX = placed.x + stepX;
+        const candidateZ = placed.z + stepZ;
+        const candidateY = resolveKartGroundYAt(candidateX, candidateZ, placed.y);
+        const stepUp = candidateY - placed.y;
+        if (stepUp > KART_MAX_STEP_UP || stepUp < -KART_MAX_STEP_DOWN) {
+            collided = true;
+            break;
+        }
+        if (wouldKartCollideAt(placed, candidateX, candidateY, candidateZ, nextYaw)) {
+            collided = true;
+            break;
+        }
+        updatePlacedPropTransformImmediate(placed, candidateX, candidateY, candidateZ, nextYaw);
+        moved = true;
+    }
+
+    if (!moved && !collided) {
+        updatePlacedPropTransformImmediate(placed, placed.x, placed.y, placed.z, nextYaw);
+    }
+
+    if (collided) {
+        drive.speed *= 0.2;
+    }
+
+    drive.syncTick += deltaSeconds;
+    drive.saveTick += deltaSeconds;
+    if (moved && drive.syncTick >= KART_PROP_SYNC_INTERVAL_SECONDS) {
+        drive.syncTick = 0;
+        publishPropUpsert(placed.id);
+    }
+    if (moved && drive.saveTick >= KART_WORLD_SAVE_INTERVAL_SECONDS) {
+        drive.saveTick = 0;
+        scheduleWorldSave();
+    }
+
+    applyKartDriverCamera(placed, deltaSeconds);
+    return true;
+}
+
 function updatePlayer(deltaSeconds) {
+    if (interactionState.kartDrive) {
+        updateKartDrive(deltaSeconds);
+        return;
+    }
     if (interactionState.pose) {
         updateLocalPoseLock();
         return;
@@ -16226,6 +16747,7 @@ function attemptMineOrPlace(isPlacing) {
         let propZ = 0;
         let hasAnchor = false;
         let forcedPropYaw = null;
+        let selectedKartColorKey = null;
         let wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
         const ensureTvSizeSelected = () => {
             if (propTypeToPlace !== PROP_TYPE.TV_SCREEN && propTypeToPlace !== PROP_TYPE.TV_WALL) {
@@ -16241,6 +16763,20 @@ function attemptMineOrPlace(isPlacing) {
             }
             return true;
         };
+        const ensureKartColorSelected = () => {
+            if (propTypeToPlace !== PROP_TYPE.KART) {
+                return true;
+            }
+            if (selectedKartColorKey !== null) {
+                return true;
+            }
+            selectedKartColorKey = promptKartColorSelection();
+            if (!selectedKartColorKey) {
+                showToast("Colocacion de kart cancelada", "info", 800);
+                return false;
+            }
+            return true;
+        };
         const getPendingTvState = () => {
             if (propTypeToPlace !== PROP_TYPE.TV_SCREEN && propTypeToPlace !== PROP_TYPE.TV_WALL) {
                 return null;
@@ -16248,6 +16784,15 @@ function attemptMineOrPlace(isPlacing) {
             const sizeInches = sanitizeTvSizeInches(selectedTvSizeInches, 200);
             return { sizeInches };
         };
+        const getPendingKartState = () => {
+            if (propTypeToPlace !== PROP_TYPE.KART) {
+                return null;
+            }
+            return {
+                color: sanitizeKartColorKey(selectedKartColorKey, uiState.kartPlacementColor)
+            };
+        };
+        const getPendingSharedState = () => getPendingTvState() || getPendingKartState();
 
         if (targetedProp && targetedProp.distance <= blockDistance + 0.001) {
             const worldNormal = getWorldNormalFromRayHit(targetedProp.hit);
@@ -16259,6 +16804,9 @@ function attemptMineOrPlace(isPlacing) {
             propTypeToPlace = resolveContextualPropTypeForPlacement(propTypeToPlace, worldNormal);
             wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
             if (!ensureTvSizeSelected()) {
+                return;
+            }
+            if (!ensureKartColorSelected()) {
                 return;
             }
             if (wantsWallPlacement) {
@@ -16280,6 +16828,9 @@ function attemptMineOrPlace(isPlacing) {
             propTypeToPlace = resolveContextualPropTypeForPlacement(propTypeToPlace, normal);
             wantsWallPlacement = isWallMountedPropType(propTypeToPlace);
             if (!ensureTvSizeSelected()) {
+                return;
+            }
+            if (!ensureKartColorSelected()) {
                 return;
             }
 
@@ -16326,7 +16877,7 @@ function attemptMineOrPlace(isPlacing) {
                 const wallX = Math.sign(normal.x);
                 const wallZ = Math.sign(normal.z);
                 const wallOffset = getWallMountCenterOffset(propTypeToPlace);
-                const pendingTvState = getPendingTvState();
+                const pendingTvState = getPendingSharedState();
                 propX = placeX + 0.5 - wallX * wallOffset;
                 propY = propTypeToPlace === PROP_TYPE.TV_WALL
                     ? resolveWallTvPlacementY(placeY, placeX, placeZ, pendingTvState)
@@ -16360,10 +16911,33 @@ function attemptMineOrPlace(isPlacing) {
             minZ: state.playerPosition.z - PLAYER_RADIUS,
             maxZ: state.playerPosition.z + PLAYER_RADIUS
         };
-        const pendingState = getPendingTvState();
+        const pendingState = getPendingSharedState();
         const nextPropBounds = getPlacedPropBoundsAt(propTypeToPlace, propX, propY, propZ, propYaw, 0.001, pendingState);
         if (intersectsAabb(playerBounds, nextPropBounds)) {
             return;
+        }
+        const nearbyIdsForPlacement = queryNearbyPropIdsReusable(
+            nextPropBounds.minX,
+            nextPropBounds.maxX,
+            nextPropBounds.minY,
+            nextPropBounds.maxY,
+            nextPropBounds.minZ,
+            nextPropBounds.maxZ
+        );
+        for (const otherId of nearbyIdsForPlacement) {
+            const other = placedProps.get(otherId);
+            if (!other || !other.node || other.node.visible === false) {
+                continue;
+            }
+            const definition = getPropDefinition(other.propType);
+            if (definition && !definition.solid) {
+                continue;
+            }
+            const otherBounds = getPlacedPropBounds(other, 0.001);
+            if (intersectsAabb(nextPropBounds, otherBounds)) {
+                showToast("Ese espacio ya esta ocupado por otro objeto", "warning", 900);
+                return;
+            }
         }
 
         const propId = addPlacedPropEntry({
@@ -16736,6 +17310,9 @@ function tryInteractAtCrosshair() {
     if (config.kind === INTERACTION_KIND.TV_CONTROL) {
         return openInteractionPanel(propHit, INTERACTION_KIND.TV_CONTROL, config.usageKind || INTERACTION_USAGE_KIND.TV);
     }
+    if (config.kind === INTERACTION_KIND.DRIVE && propHit.placed.propType === PROP_TYPE.KART) {
+        return enterKartDrive(propHit);
+    }
     if (config.kind === INTERACTION_KIND.TOGGLE_STATE && propHit.placed.propType === PROP_TYPE.FURNACE) {
         const nextLit = !Boolean(propHit.placed.state?.lit);
         return updatePropSharedState(propHit.propId, { lit: nextLit }, `Horno ${nextLit ? "encendido" : "apagado"}`);
@@ -16841,6 +17418,9 @@ function onKeyDown(event) {
 
     if (event.code === "KeyV" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
+        if (interactionState.kartDrive) {
+            return;
+        }
 
         if (!state.worldStarted || !state.worldReady) {
             return;
@@ -16864,6 +17444,9 @@ function onKeyDown(event) {
 
     if (event.code === "KeyI" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
+        if (interactionState.kartDrive) {
+            return;
+        }
         if (!state.worldStarted || !state.worldReady) {
             return;
         }
@@ -16886,6 +17469,9 @@ function onKeyDown(event) {
 
     if (event.code === "KeyM" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
+        if (interactionState.kartDrive) {
+            return;
+        }
         if (state.paused) {
             setPauseSettingsOpen(!state.pauseSettingsOpen);
             return;
@@ -16911,6 +17497,9 @@ function onKeyDown(event) {
 
     if (event.code === "KeyF" && isPlainHotkeyEvent(event)) {
         event.preventDefault();
+        if (interactionState.kartDrive) {
+            return;
+        }
         if (!state.worldStarted || !state.worldReady) {
             return;
         }
@@ -16983,6 +17572,12 @@ function onKeyDown(event) {
         return;
     }
 
+    if (event.code === INTERACTION_EXIT_KEY && interactionState.kartDrive) {
+        event.preventDefault();
+        exitKartDrive(true);
+        return;
+    }
+
     if (event.code === INTERACTION_EXIT_KEY && interactionState.pose) {
         event.preventDefault();
         exitLocalPose(true);
@@ -17009,6 +17604,9 @@ function onKeyDown(event) {
     if (event.code === INTERACTION_KEY) {
         event.preventDefault();
         if (event.repeat || !controls.isLocked) {
+            return;
+        }
+        if (interactionState.kartDrive) {
             return;
         }
         if (interactionState.pose) {
@@ -17062,6 +17660,9 @@ function onMouseDown(event) {
     }
 
     if (state.paused || state.tutorialVisible || state.avatarPreviewOpen || state.inventoryOpen || state.interactionPanelOpen || isMapBlockingGameplay()) {
+        return;
+    }
+    if (interactionState.kartDrive) {
         return;
     }
 
@@ -17523,7 +18124,7 @@ function init() {
     setupRealtimeMultiplayer();
 
     if (helpMiniEl) {
-        helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose - Espacio saltar - F vuelo - Rueda o 1-9/0 material - I inventario - M mapa (global: click pin y rueda zoom donde apuntes) - F3 debug - V ver avatar - ESC pausa";
+    helpMiniEl.textContent = "WASD mover - Mouse mirar - Click izq minar - Click der colocar - E interactuar/cosechar - Shift salir de pose/kart - Espacio saltar/derrape kart - F vuelo - Rueda o 1-9/0 material - I inventario - M mapa (global: click pin y rueda zoom donde apuntes) - F3 debug - V ver avatar - ESC pausa";
     }
 
     state.worldReady = true;

@@ -31,7 +31,11 @@ export const PROP_TYPE = Object.freeze({
     TV_WALL: "tv_wall",
     GIANT_SUNFLOWER: "giant_sunflower",
     RABBIT_HOUSE: "rabbit_house",
-    KART: "kart"
+    KART: "kart",
+    RACE_BARRIER: "race_barrier",
+    RACE_CURB: "race_curb",
+    RACE_FINISH_LINE: "race_finish_line",
+    RACE_CHECKPOINT: "race_checkpoint"
 });
 
 const PROP_KIND = "prop";
@@ -417,8 +421,44 @@ const RAW_PROP_DEFINITIONS = [
         label: "Kart",
         category: "racing",
         tags: ["kart", "race", "vehicle", "sports"],
+        interaction: "kart-drive",
+        stateDefaults: { color: "cyan" },
         visual: { tint: "rgba(66, 192, 221, 0.44)" },
-        profile: { halfExtents: { x: 0.72, z: 0.86 }, minY: 0, maxY: 0.9, supportY: 0.28 }
+        profile: { halfExtents: { x: 0.9, z: 1.04 }, minY: 0, maxY: 1.28, supportY: 0.36 }
+    },
+    {
+        id: PROP_TYPE.RACE_BARRIER,
+        label: "Barrera de pista",
+        category: "racing",
+        tags: ["race", "barrier", "track"],
+        visual: { tint: "rgba(220, 80, 74, 0.42)" },
+        profile: { halfExtents: { x: 0.78, z: 0.2 }, minY: 0, maxY: 0.78, supportY: 0.76 }
+    },
+    {
+        id: PROP_TYPE.RACE_CURB,
+        label: "Piano de pista",
+        category: "racing",
+        tags: ["race", "curb", "track"],
+        visual: { tint: "rgba(228, 226, 222, 0.42)" },
+        profile: { halfExtents: { x: 0.62, z: 0.26 }, minY: 0, maxY: 0.16, supportY: 0.14 }
+    },
+    {
+        id: PROP_TYPE.RACE_FINISH_LINE,
+        label: "Meta",
+        category: "racing",
+        tags: ["race", "finish", "checkpoint"],
+        solid: false,
+        visual: { tint: "rgba(245, 228, 127, 0.36)" },
+        profile: { halfExtents: { x: 0.84, z: 0.18 }, minY: 0, maxY: 1.92, supportY: 0.04 }
+    },
+    {
+        id: PROP_TYPE.RACE_CHECKPOINT,
+        label: "Checkpoint",
+        category: "racing",
+        tags: ["race", "checkpoint", "lap"],
+        solid: false,
+        visual: { tint: "rgba(90, 198, 241, 0.36)" },
+        profile: { halfExtents: { x: 0.84, z: 0.18 }, minY: 0, maxY: 1.56, supportY: 0.04 }
     }
 ];
 
