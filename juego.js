@@ -58,6 +58,10 @@ const CHUNK_FULL_DETAIL_RADIUS_MIN = 8;
 const CHUNK_FULL_DETAIL_RADIUS_MAX = 24;
 const CHUNK_REBUILD_FIFO_POP_THRESHOLD = 2200;
 const CHUNK_REBUILD_FIFO_POP_SCAN_LIMIT = 28;
+const CHUNK_RADIUS_AUTO_STRESS_SECONDS = 4.5;
+const CHUNK_RADIUS_AUTO_RECOVER_SECONDS = 16;
+const CHUNK_RADIUS_AUTO_COOLDOWN_SECONDS = 10;
+const CHUNK_RADIUS_AUTO_STEP_MAX = 2;
 const BLOCK_FACE_NEIGHBOR_OFFSETS = Object.freeze([
     [1, 0, 0],
     [-1, 0, 0],
@@ -92,6 +96,18 @@ const FISH_MIN_FISH_DISTANCE = 1.6;
 const WILDLIFE_SYNC_INTERVAL_MS = 620;
 const WILDLIFE_SYNC_RETRY_MS = 1100;
 const WILDLIFE_REMOTE_BLEND_SPEED = 7.5;
+const SUBSYSTEM_TICK_INTERVAL_STABLE_SECONDS = 0;
+const SUBSYSTEM_TICK_INTERVAL_MEDIUM_SECONDS = 1 / 30;
+const SUBSYSTEM_TICK_INTERVAL_STRESSED_SECONDS = 1 / 18;
+const SUBSYSTEM_TICK_INTERVAL_SEVERE_SECONDS = 1 / 12;
+const TV_TICK_INTERVAL_STABLE_SECONDS = 1 / 30;
+const TV_TICK_INTERVAL_MEDIUM_SECONDS = 1 / 20;
+const TV_TICK_INTERVAL_STRESSED_SECONDS = 1 / 14;
+const TV_TICK_INTERVAL_SEVERE_SECONDS = 1 / 10;
+const SPATIAL_AUDIO_TICK_INTERVAL_STABLE_SECONDS = 0;
+const SPATIAL_AUDIO_TICK_INTERVAL_MEDIUM_SECONDS = 1 / 24;
+const SPATIAL_AUDIO_TICK_INTERVAL_STRESSED_SECONDS = 1 / 16;
+const SPATIAL_AUDIO_TICK_INTERVAL_SEVERE_SECONDS = 1 / 10;
 const DEBUG_VISIBILITY_STORAGE_KEY = "girasolDebugHudVisible";
 const TUTORIAL_SEEN_STORAGE_KEY = "girasolTutorialSeenV1";
 const BLOCK_HIGHLIGHT_SIZE = 1.02;
@@ -1349,7 +1365,17 @@ const perfState = {
     geometries: 0,
     textures: 0,
     chunkBuildCostEmaMs: 1.2,
-    chunkLastBatchMs: 0
+    chunkLastBatchMs: 0,
+    autoChunkRadiusEnabled: true,
+    userRequestedChunkRadius: INITIAL_CHUNK_RADIUS,
+    chunkRadiusGovernorCooldown: 0,
+    chunkRadiusGovernorStressSeconds: 0,
+    chunkRadiusGovernorRecoverySeconds: 0,
+    wildlifeTickAccumulator: 0,
+    fishTickAccumulator: 0,
+    sunflowerTickAccumulator: 0,
+    tvTickAccumulator: 0,
+    spatialAudioTickAccumulator: 0
 };
 
 const skyState = {
@@ -2337,13 +2363,18 @@ function setQualityPreset(preset, persist = true, showFeedback = false) {
     const normalized = normalizeQualityPreset(preset);
     perfState.qualityPreset = normalized;
     perfState.adjustCooldown = 0;
+    perfState.chunkRadiusGovernorStressSeconds = 0;
+    perfState.chunkRadiusGovernorRecoverySeconds = 0;
+    perfState.chunkRadiusGovernorCooldown = 0;
 
     if (normalized === "auto") {
         perfState.adaptiveEnabled = true;
+        perfState.autoChunkRadiusEnabled = true;
         perfState.minPixelRatio = 0.72;
         perfState.dynamicPixelRatio = THREE.MathUtils.clamp(perfState.dynamicPixelRatio, perfState.minPixelRatio, basePixelRatio);
     } else {
         perfState.adaptiveEnabled = false;
+        perfState.autoChunkRadiusEnabled = false;
         const manualRatio = normalized === "low"
             ? Math.min(basePixelRatio, 0.78)
             : normalized === "medium"
@@ -2493,6 +2524,7 @@ function loadGameplayPreferences() {
         CHUNK_RADIUS_MAX
     );
     state.chunkRadius = storedChunkRadius;
+    perfState.userRequestedChunkRadius = storedChunkRadius;
     syncCameraViewDistanceWithChunkRadius();
 
     const storedPointerSensitivity = readStorageNumber(POINTER_SENSITIVITY_STORAGE_KEY, DEFAULT_POINTER_SPEED);
@@ -10244,6 +10276,107 @@ function updateAdaptiveQuality(deltaSeconds) {
     perfState.adjustCooldown = 1.4;
 }
 
+function getPerformanceStressTier() {
+    const fps = Number(perfState.fpsEma) || 60;
+    const frameMs = Number(perfState.frameMsEma) || 16.7;
+    const pending = Number(state.pendingChunkBuildCount) || 0;
+    if (fps < 34 || frameMs > 28 || pending > 5600) {
+        return 3;
+    }
+    if (fps < 44 || frameMs > 23 || pending > 2600) {
+        return 2;
+    }
+    if (fps < 52 || frameMs > 19 || pending > 950) {
+        return 1;
+    }
+    return 0;
+}
+
+function getSubsystemTickIntervalSeconds(kind) {
+    const tier = getPerformanceStressTier();
+    if (kind === "tv") {
+        if (tier >= 3) return TV_TICK_INTERVAL_SEVERE_SECONDS;
+        if (tier === 2) return TV_TICK_INTERVAL_STRESSED_SECONDS;
+        if (tier === 1) return TV_TICK_INTERVAL_MEDIUM_SECONDS;
+        return TV_TICK_INTERVAL_STABLE_SECONDS;
+    }
+    if (kind === "spatialAudio") {
+        if (tier >= 3) return SPATIAL_AUDIO_TICK_INTERVAL_SEVERE_SECONDS;
+        if (tier === 2) return SPATIAL_AUDIO_TICK_INTERVAL_STRESSED_SECONDS;
+        if (tier === 1) return SPATIAL_AUDIO_TICK_INTERVAL_MEDIUM_SECONDS;
+        return SPATIAL_AUDIO_TICK_INTERVAL_STABLE_SECONDS;
+    }
+    if (tier >= 3) return SUBSYSTEM_TICK_INTERVAL_SEVERE_SECONDS;
+    if (tier === 2) return SUBSYSTEM_TICK_INTERVAL_STRESSED_SECONDS;
+    if (tier === 1) return SUBSYSTEM_TICK_INTERVAL_MEDIUM_SECONDS;
+    return SUBSYSTEM_TICK_INTERVAL_STABLE_SECONDS;
+}
+
+function updateAdaptiveChunkRadius(deltaSeconds) {
+    const safeDelta = Math.max(0, Number(deltaSeconds) || 0);
+    if (safeDelta <= 0) {
+        return;
+    }
+    if (state.paused || !state.worldStarted || !state.worldReady) {
+        return;
+    }
+    if (!perfState.autoChunkRadiusEnabled || perfState.qualityPreset !== "auto") {
+        perfState.chunkRadiusGovernorStressSeconds = 0;
+        perfState.chunkRadiusGovernorRecoverySeconds = 0;
+        return;
+    }
+
+    perfState.chunkRadiusGovernorCooldown = Math.max(0, perfState.chunkRadiusGovernorCooldown - safeDelta);
+    const stressTier = getPerformanceStressTier();
+    const heavyStress = stressTier >= 2;
+    if (heavyStress) {
+        perfState.chunkRadiusGovernorStressSeconds += safeDelta;
+        perfState.chunkRadiusGovernorRecoverySeconds = 0;
+    } else {
+        perfState.chunkRadiusGovernorRecoverySeconds += safeDelta;
+        perfState.chunkRadiusGovernorStressSeconds = 0;
+    }
+
+    const currentRadius = clampInt(state.chunkRadius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX);
+    const requestedRadius = clampInt(
+        Number(perfState.userRequestedChunkRadius) || currentRadius,
+        CHUNK_RADIUS_MIN,
+        CHUNK_RADIUS_MAX
+    );
+
+    if (
+        perfState.chunkRadiusGovernorCooldown <= 0
+        && perfState.chunkRadiusGovernorStressSeconds >= CHUNK_RADIUS_AUTO_STRESS_SECONDS
+        && currentRadius > CHUNK_RADIUS_MIN
+    ) {
+        const step = stressTier >= 3 ? CHUNK_RADIUS_AUTO_STEP_MAX : 1;
+        const nextRadius = Math.max(CHUNK_RADIUS_MIN, currentRadius - step);
+        if (nextRadius !== currentRadius) {
+            setChunkRadius(nextRadius, {
+                persist: false,
+                auto: true
+            });
+        }
+        perfState.chunkRadiusGovernorStressSeconds = 0;
+        perfState.chunkRadiusGovernorCooldown = CHUNK_RADIUS_AUTO_COOLDOWN_SECONDS;
+        return;
+    }
+
+    if (
+        perfState.chunkRadiusGovernorCooldown <= 0
+        && perfState.chunkRadiusGovernorRecoverySeconds >= CHUNK_RADIUS_AUTO_RECOVER_SECONDS
+        && stressTier === 0
+        && currentRadius < requestedRadius
+    ) {
+        setChunkRadius(currentRadius + 1, {
+            persist: false,
+            auto: true
+        });
+        perfState.chunkRadiusGovernorRecoverySeconds = 0;
+        perfState.chunkRadiusGovernorCooldown = CHUNK_RADIUS_AUTO_COOLDOWN_SECONDS;
+    }
+}
+
 function getDynamicChunkBuildBudget() {
     if (state.pendingChunkBuildCount <= 0) {
         return 0;
@@ -12764,15 +12897,22 @@ function processChunkRebuildQueue(maxBuilds = CHUNK_REBUILD_BUDGET_PER_FRAME, ma
     state.pendingChunkBuildCount = chunkRebuildQueue.size;
 }
 
-function setChunkRadius(nextRadius) {
+function setChunkRadius(nextRadius, options = null) {
+    const persist = options?.persist !== false;
+    const auto = Boolean(options?.auto);
     const clamped = clampInt(nextRadius, CHUNK_RADIUS_MIN, CHUNK_RADIUS_MAX);
     const changed = clamped !== state.chunkRadius;
 
     state.chunkRadius = clamped;
+    if (!auto) {
+        perfState.userRequestedChunkRadius = clamped;
+    }
     syncCameraViewDistanceWithChunkRadius();
     updateGameplaySettingsUi();
 
-    writeStorageValue(CHUNK_RADIUS_STORAGE_KEY, clamped);
+    if (persist) {
+        writeStorageValue(CHUNK_RADIUS_STORAGE_KEY, clamped);
+    }
 
     if (!changed) {
         return;
@@ -13195,6 +13335,14 @@ function updateHud() {
     if (coordsText !== uiState.lastCoordsText) {
         coordsEl.textContent = coordsText;
         uiState.lastCoordsText = coordsText;
+    }
+
+    if (!state.debugVisible) {
+        if (uiState.lastChunkInfoText !== "") {
+            setChunkInfo("");
+            uiState.lastChunkInfoText = "";
+        }
+        return;
     }
 
     const fpsLabel = Number.isFinite(perfState.fpsEma) ? perfState.fpsEma.toFixed(1) : "0.0";
@@ -17186,17 +17334,51 @@ function animate() {
 
     updateSky(delta);
     if (!state.paused) {
-        updateWildlife(delta);
-        updateFish(delta);
-        updateSunflowers(delta);
-        if (multiplayer.ready && multiplayer.isWildlifeAuthority) {
+        let wildlifeUpdated = false;
+        const wildlifeInterval = getSubsystemTickIntervalSeconds("wildlife");
+        perfState.wildlifeTickAccumulator += delta;
+        if (wildlifeInterval <= 0 || perfState.wildlifeTickAccumulator >= wildlifeInterval) {
+            const wildlifeDelta = wildlifeInterval <= 0 ? delta : perfState.wildlifeTickAccumulator;
+            perfState.wildlifeTickAccumulator = 0;
+            updateWildlife(wildlifeDelta);
+            wildlifeUpdated = true;
+        }
+
+        const fishInterval = getSubsystemTickIntervalSeconds("fish");
+        perfState.fishTickAccumulator += delta;
+        if (fishInterval <= 0 || perfState.fishTickAccumulator >= fishInterval) {
+            const fishDelta = fishInterval <= 0 ? delta : perfState.fishTickAccumulator;
+            perfState.fishTickAccumulator = 0;
+            updateFish(fishDelta);
+        }
+
+        const sunflowerInterval = getSubsystemTickIntervalSeconds("sunflower");
+        perfState.sunflowerTickAccumulator += delta;
+        if (sunflowerInterval <= 0 || perfState.sunflowerTickAccumulator >= sunflowerInterval) {
+            const sunflowerDelta = sunflowerInterval <= 0 ? delta : perfState.sunflowerTickAccumulator;
+            perfState.sunflowerTickAccumulator = 0;
+            updateSunflowers(sunflowerDelta);
+        }
+
+        if (wildlifeUpdated && multiplayer.ready && multiplayer.isWildlifeAuthority) {
             publishWildlifeSnapshot(false);
         }
     }
     if (state.worldStarted && state.worldReady) {
         updateActiveLampShadowCasters(delta);
-        updateJukeboxSpatialAudio();
-        updateTvScreens();
+        const spatialAudioInterval = getSubsystemTickIntervalSeconds("spatialAudio");
+        perfState.spatialAudioTickAccumulator += delta;
+        if (spatialAudioInterval <= 0 || perfState.spatialAudioTickAccumulator >= spatialAudioInterval) {
+            perfState.spatialAudioTickAccumulator = 0;
+            updateJukeboxSpatialAudio();
+        }
+
+        const tvInterval = getSubsystemTickIntervalSeconds("tv");
+        perfState.tvTickAccumulator += delta;
+        if (tvInterval <= 0 || perfState.tvTickAccumulator >= tvInterval) {
+            perfState.tvTickAccumulator = 0;
+            updateTvScreens();
+        }
     }
 
     updateChunkStreaming(false);
@@ -17208,6 +17390,7 @@ function animate() {
     if (propState.cullingDirty) {
         updatePlacedPropCulling();
     }
+    updateAdaptiveChunkRadius(delta);
 
     updateRemotePlayers(delta);
     broadcastLocalPlayerState();
