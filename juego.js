@@ -322,6 +322,8 @@ const TV_SYNC_MAX_AGE_MS = 6 * 60 * 60 * 1000;
 const TV_EMBED_MIN_SIZE_PX = 16;
 const TV_EMBED_OFFSCREEN_MARGIN_PX = 120;
 const TV_EMBED_CLIP_INSET_PX = 2;
+const TV_OVERLAY_OCCLUSION_CHECK_INTERVAL_MS = 120;
+const TV_OVERLAY_OCCLUSION_RAY_BIAS = 0.04;
 const TV_MODEL_SCALE = 10;
 const TV_SIZE_OPTIONS = Object.freeze([200, 100, 70]);
 const TV_WALL_BASE_MIN_Y = 5.5;
@@ -1190,6 +1192,8 @@ const propSpatialGrid = new Map();
 const propTypeIndex = new Map(Object.values(PROP_TYPE).map((type) => [type, new Set()]));
 
 const blockMeshes = [];
+const decorativeFloraMeshes = [];
+const removedDecorativeFloraColumns = new Set();
 const blockPositionLookup = new Map();
 const chunkBuildMatrixScratch = new THREE.Matrix4();
 const floraInstancePositionScratch = new THREE.Vector3();
@@ -1210,6 +1214,8 @@ const worldNormalScratch = new THREE.Vector3();
 const blockSamplePointScratch = new THREE.Vector3();
 const propSpatialQueryIds = new Set();
 const propRaycastCandidates = [];
+const tvOcclusionPropRaycastCandidates = [];
+const tvOcclusionRaycaster = new THREE.Raycaster();
 const playerCollisionBoundsScratch = {
     minX: 0,
     maxX: 0,
@@ -1424,7 +1430,8 @@ const floraState = {
     sunflowers: new Map(),
     nextId: 1,
     spawnTimer: 3,
-    lastHarvestAt: 0
+    lastHarvestAt: 0,
+    lastDecorRemovalAt: 0
 };
 
 const interactionState = {
@@ -1478,6 +1485,14 @@ const TV_SCREEN_LOCAL_CORNERS_FALLBACK = Object.freeze([
     Object.freeze([-0.5, 0.5, 0.5])
 ]);
 const tvProjectionScreenHalfExtentsScratch = new THREE.Vector3(0.5, 0.5, 0.01);
+const tvProjectionOcclusionSampleWorldScratch = [
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3(),
+    new THREE.Vector3()
+];
+const tvProjectionOcclusionDirectionScratch = new THREE.Vector3();
 
 let draggedInventoryItemId = "";
 
@@ -5012,13 +5027,13 @@ const PROP_INTERACTION_CONFIG = Object.freeze({
     [PROP_TYPE.TV_SCREEN]: Object.freeze({
         kind: INTERACTION_KIND.TV_CONTROL,
         hudHint: "E abrir controles TV",
-        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title", "state.sizeInches"],
+        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.paused", "state.pauseAtSeconds", "state.title", "state.sizeInches"],
         usageKind: INTERACTION_USAGE_KIND.TV
     }),
     [PROP_TYPE.TV_WALL]: Object.freeze({
         kind: INTERACTION_KIND.TV_CONTROL,
         hudHint: "E abrir controles TV",
-        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.title", "state.sizeInches"],
+        persistentSync: ["state.powered", "state.youtubeId", "state.playbackStartedAtMs", "state.paused", "state.pauseAtSeconds", "state.title", "state.sizeInches"],
         usageKind: INTERACTION_USAGE_KIND.TV
     }),
     [PROP_TYPE.CHEST]: Object.freeze({
@@ -5649,6 +5664,18 @@ function sanitizeTvPlaybackStartAtMs(value, fallback = 0) {
     return Number.isFinite(fallbackNumeric) && fallbackNumeric > 0 ? fallbackNumeric : 0;
 }
 
+function sanitizeTvPauseAtSeconds(value, fallback = 0) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric) && numeric >= 0) {
+        return Math.min(24 * 60 * 60, numeric);
+    }
+    const fallbackNumeric = Number(fallback);
+    if (Number.isFinite(fallbackNumeric) && fallbackNumeric >= 0) {
+        return Math.min(24 * 60 * 60, fallbackNumeric);
+    }
+    return 0;
+}
+
 function sanitizeTvSizeInches(value, fallback = 200) {
     const numeric = Math.floor(Number(value));
     if (TV_SIZE_OPTIONS.includes(numeric)) {
@@ -5730,6 +5757,8 @@ function buildLegacyPropStateCandidate(rawEntry) {
         powered: rawEntry.powered,
         youtubeId: rawEntry.youtubeId,
         playbackStartedAtMs: rawEntry.playbackStartedAtMs,
+        paused: rawEntry.paused,
+        pauseAtSeconds: rawEntry.pauseAtSeconds,
         title: rawEntry.title,
         sizeInches: rawEntry.sizeInches
     };
@@ -5786,6 +5815,10 @@ function normalizePropSharedState(propType, rawState, fallbackRaw = null) {
         }
         if (key === "playbackStartedAtMs") {
             normalized[key] = sanitizeTvPlaybackStartAtMs(incoming ?? defaultValue, defaultValue);
+            continue;
+        }
+        if (key === "pauseAtSeconds") {
+            normalized[key] = sanitizeTvPauseAtSeconds(incoming ?? defaultValue, defaultValue);
             continue;
         }
         if (key === "title") {
@@ -6025,6 +6058,8 @@ function applyPropSharedVisualState(placed) {
         const powered = Boolean(placed.state?.powered);
         const youtubeId = sanitizeYouTubeVideoId(placed.state?.youtubeId || "");
         const playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(placed.state?.playbackStartedAtMs, 0);
+        const paused = Boolean(placed.state?.paused);
+        const pauseAtSeconds = sanitizeTvPauseAtSeconds(placed.state?.pauseAtSeconds, 0);
         const title = String(placed.state?.title || "").slice(0, 120);
         const sizeInches = sanitizeTvSizeInches(placed.state?.sizeInches, 200);
         if (
@@ -6032,6 +6067,8 @@ function applyPropSharedVisualState(placed) {
             || placed.state.powered !== powered
             || placed.state.youtubeId !== youtubeId
             || placed.state.playbackStartedAtMs !== playbackStartedAtMs
+            || placed.state.paused !== paused
+            || Math.abs((Number(placed.state.pauseAtSeconds) || 0) - pauseAtSeconds) > 0.001
             || placed.state.title !== title
             || placed.state.sizeInches !== sizeInches
         ) {
@@ -6040,6 +6077,8 @@ function applyPropSharedVisualState(placed) {
                 powered,
                 youtubeId,
                 playbackStartedAtMs,
+                paused,
+                pauseAtSeconds,
                 title,
                 sizeInches
             };
@@ -8257,11 +8296,12 @@ function flushWorldSave(force = false) {
     const edits = [...editedBlocks.entries()]
         .filter(([, id]) => isValidBlockId(id))
         .map(([key, id]) => [key, id]);
+    const removedDecorFlora = serializeRemovedDecorativeFloraColumns();
 
     try {
         if (edits.length === 0) {
             const props = serializePlacedPropsForSave();
-            if (props.length === 0) {
+            if (props.length === 0 && removedDecorFlora.length === 0) {
                 window.localStorage.removeItem(WORLD_SAVE_KEY);
             } else {
                 const payload = {
@@ -8270,7 +8310,8 @@ function flushWorldSave(force = false) {
                     terrainFingerprint: getTerrainFingerprint(),
                     savedAt: Date.now(),
                     edits: [],
-                    props
+                    props,
+                    removedDecorFlora
                 };
                 window.localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(payload));
             }
@@ -8282,7 +8323,8 @@ function flushWorldSave(force = false) {
                 terrainFingerprint: getTerrainFingerprint(),
                 savedAt: Date.now(),
                 edits,
-                props
+                props,
+                removedDecorFlora
             };
 
             window.localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(payload));
@@ -8309,6 +8351,7 @@ function scheduleWorldSave() {
 }
 
 function loadWorldFromStorage() {
+    applyRemovedDecorativeFloraFromPayload([]);
     let raw = "";
     try {
         raw = window.localStorage.getItem(WORLD_SAVE_KEY) || "";
@@ -8324,6 +8367,7 @@ function loadWorldFromStorage() {
         const payload = JSON.parse(raw);
         const rawEdits = Array.isArray(payload?.edits) ? payload.edits : [];
         const rawProps = Array.isArray(payload?.props) ? payload.props : [];
+        const rawRemovedDecorFlora = Array.isArray(payload?.removedDecorFlora) ? payload.removedDecorFlora : [];
         const reacomodo = applyTerrainReacomodoToPayload(rawEdits, rawProps, payload?.terrainFingerprint, true);
         const edits = reacomodo.edits;
         const props = reacomodo.props;
@@ -8331,6 +8375,7 @@ function loadWorldFromStorage() {
         editedBlocks.clear();
         editedColumnYIndex.clear();
         clearPlacedProps();
+        applyRemovedDecorativeFloraFromPayload(rawRemovedDecorFlora);
         propState.nextId = 1;
         let loaded = 0;
 
@@ -8377,7 +8422,8 @@ function loadWorldFromStorage() {
                     terrainFingerprint: reacomodo.fingerprint,
                     savedAt: Date.now(),
                     edits,
-                    props
+                    props,
+                    removedDecorFlora: serializeRemovedDecorativeFloraColumns()
                 };
                 window.localStorage.setItem(WORLD_SAVE_KEY, JSON.stringify(refreshedPayload));
             } catch (error) {
@@ -10295,6 +10341,34 @@ function blockColumnKey(x, z) {
     return `${x}|${z}`;
 }
 
+function sanitizeDecorativeFloraColumnKey(value) {
+    const raw = String(value || "").trim();
+    const [xText, zText] = raw.split("|");
+    const x = Number.parseInt(xText, 10);
+    const z = Number.parseInt(zText, 10);
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return "";
+    }
+    return blockColumnKey(x, z);
+}
+
+function serializeRemovedDecorativeFloraColumns() {
+    return Array.from(removedDecorativeFloraColumns.values()).sort((a, b) => a.localeCompare(b));
+}
+
+function applyRemovedDecorativeFloraFromPayload(rawList) {
+    removedDecorativeFloraColumns.clear();
+    if (!Array.isArray(rawList)) {
+        return;
+    }
+    for (const entry of rawList) {
+        const safeKey = sanitizeDecorativeFloraColumnKey(entry);
+        if (safeKey) {
+            removedDecorativeFloraColumns.add(safeKey);
+        }
+    }
+}
+
 function addEditedBlockToColumnIndex(x, y, z) {
     const key = blockColumnKey(x, z);
     let ySet = editedColumnYIndex.get(key);
@@ -11420,6 +11494,10 @@ function removeMeshReferences(mesh) {
     if (index >= 0) {
         blockMeshes.splice(index, 1);
     }
+    const floraIndex = decorativeFloraMeshes.indexOf(mesh);
+    if (floraIndex >= 0) {
+        decorativeFloraMeshes.splice(floraIndex, 1);
+    }
 
     worldRoot.remove(mesh);
 }
@@ -11640,6 +11718,10 @@ function emitFloraDecorForColumn(instancesByColor, x, z, column, grassDensitySca
     const floraType = String(column?.floraType || "none");
     const groundY = Number(column?.height);
     if (!Number.isFinite(groundY)) {
+        return;
+    }
+    const columnKey = blockColumnKey(x, z);
+    if (removedDecorativeFloraColumns.has(columnKey) || editedColumnYIndex.has(columnKey)) {
         return;
     }
 
@@ -11901,6 +11983,7 @@ function addChunkDecorativeFloraMeshes(chunk, baseX, baseZ) {
         mesh.receiveShadow = false;
         mesh.renderOrder = 2;
         mesh.userData.lookupKeys = [];
+        mesh.userData.isDecorativeFlora = true;
 
         for (let index = 0; index < count; index += 1) {
             const base = index * 9;
@@ -11930,6 +12013,7 @@ function addChunkDecorativeFloraMeshes(chunk, baseX, baseZ) {
 
         mesh.instanceMatrix.needsUpdate = true;
         worldRoot.add(mesh);
+        decorativeFloraMeshes.push(mesh);
         chunk.meshes.push(mesh);
     });
 }
@@ -12466,6 +12550,7 @@ function applyBlockMutation(x, y, z, id, origin = "local") {
     }
 
     setBlock(x, y, z, id);
+    removedDecorativeFloraColumns.add(blockColumnKey(x, z));
     if (id === BLOCK.AIR || !isSolidBlock(id)) {
         removePropsSupportedByBlock(x, y, z, origin);
     }
@@ -13761,6 +13846,46 @@ function computeTvPlaybackStartSeconds(startedAtMs) {
     return Math.max(0, ageMs / 1000);
 }
 
+function computeTvPlaybackStartAtMsFromSeconds(seconds) {
+    const safeSeconds = sanitizeTvPauseAtSeconds(seconds, 0);
+    return sanitizeTvPlaybackStartAtMs(Date.now() - Math.round(safeSeconds * 1000), Date.now());
+}
+
+function formatTvTimeLabel(seconds) {
+    const safe = Math.max(0, Math.floor(Number(seconds) || 0));
+    const hours = Math.floor(safe / 3600);
+    const minutes = Math.floor((safe % 3600) / 60);
+    const secs = safe % 60;
+    if (hours > 0) {
+        return `${hours}:${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+    }
+    return `${String(minutes).padStart(2, "0")}:${String(secs).padStart(2, "0")}`;
+}
+
+function readTvRuntimeCurrentSeconds(runtime, fallbackSeconds = 0) {
+    const fallback = sanitizeTvPauseAtSeconds(fallbackSeconds, 0);
+    if (!runtime?.playerReady || !runtime.player?.getCurrentTime) {
+        return fallback;
+    }
+    try {
+        return sanitizeTvPauseAtSeconds(runtime.player.getCurrentTime(), fallback);
+    } catch (error) {
+        return fallback;
+    }
+}
+
+function readTvRuntimeDurationSeconds(runtime, fallbackSeconds = 0) {
+    const fallback = sanitizeTvPauseAtSeconds(fallbackSeconds, 0);
+    if (!runtime?.playerReady || !runtime.player?.getDuration) {
+        return fallback;
+    }
+    try {
+        return sanitizeTvPauseAtSeconds(runtime.player.getDuration(), fallback);
+    } catch (error) {
+        return fallback;
+    }
+}
+
 function setTvOverlayVisible(runtime, visible) {
     if (!runtime?.overlayEl) {
         return;
@@ -13803,6 +13928,87 @@ function resolveTvScreenHalfExtents(screenMesh) {
     return tvProjectionScreenHalfExtentsScratch;
 }
 
+function buildTvOcclusionPropCandidates(currentPropId, samplePoints, sampleCount) {
+    tvOcclusionPropRaycastCandidates.length = 0;
+    if (placedProps.size <= 1 || sampleCount <= 0) {
+        return;
+    }
+
+    let minX = camera.position.x;
+    let maxX = camera.position.x;
+    let minY = camera.position.y;
+    let maxY = camera.position.y;
+    let minZ = camera.position.z;
+    let maxZ = camera.position.z;
+    for (let i = 0; i < sampleCount; i += 1) {
+        const sample = samplePoints[i];
+        minX = Math.min(minX, sample.x);
+        maxX = Math.max(maxX, sample.x);
+        minY = Math.min(minY, sample.y);
+        maxY = Math.max(maxY, sample.y);
+        minZ = Math.min(minZ, sample.z);
+        maxZ = Math.max(maxZ, sample.z);
+    }
+
+    const margin = 1.35;
+    const nearbyIds = queryNearbyPropIdsReusable(
+        minX - margin,
+        maxX + margin,
+        minY - margin,
+        maxY + margin,
+        minZ - margin,
+        maxZ + margin
+    );
+    for (const propId of nearbyIds) {
+        if (propId === currentPropId) {
+            continue;
+        }
+        const placed = placedProps.get(propId);
+        if (!placed?.node || placed.node.visible === false) {
+            continue;
+        }
+        tvOcclusionPropRaycastCandidates.push(placed.node);
+    }
+}
+
+function isTvOverlayOccluded(placed, samplePoints, sampleCount) {
+    if (sampleCount <= 0) {
+        return false;
+    }
+    const currentPropId = String(placed?.id || "");
+    buildTvOcclusionPropCandidates(currentPropId, samplePoints, sampleCount);
+
+    for (let i = 0; i < sampleCount; i += 1) {
+        const target = samplePoints[i];
+        tvProjectionOcclusionDirectionScratch.copy(target).sub(camera.position);
+        const distanceToTarget = tvProjectionOcclusionDirectionScratch.length();
+        if (!Number.isFinite(distanceToTarget) || distanceToTarget <= 0.05) {
+            continue;
+        }
+        tvProjectionOcclusionDirectionScratch.multiplyScalar(1 / distanceToTarget);
+        tvOcclusionRaycaster.set(camera.position, tvProjectionOcclusionDirectionScratch);
+        tvOcclusionRaycaster.far = Math.max(0.05, distanceToTarget - TV_OVERLAY_OCCLUSION_RAY_BIAS);
+
+        const blockHits = tvOcclusionRaycaster.intersectObjects(blockMeshes, false);
+        const nearestBlock = getFirstVisibleRayHit(blockHits);
+        if (nearestBlock && nearestBlock.distance < distanceToTarget - TV_OVERLAY_OCCLUSION_RAY_BIAS) {
+            const blockId = Number(nearestBlock.object?.userData?.blockId);
+            if (!isValidBlockId(blockId) || !isSeeThroughBlock(blockId)) {
+                return true;
+            }
+        }
+
+        if (tvOcclusionPropRaycastCandidates.length > 0) {
+            const propHits = tvOcclusionRaycaster.intersectObjects(tvOcclusionPropRaycastCandidates, true);
+            const nearestProp = getFirstVisibleRayHit(propHits);
+            if (nearestProp && nearestProp.distance < distanceToTarget - TV_OVERLAY_OCCLUSION_RAY_BIAS) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 function updateTvRuntimeOverlayPosition(runtime, placed) {
     const screenMesh = placed?.node?.userData?.tvScreenMesh || null;
     if (!screenMesh || !runtime?.overlayEl) {
@@ -13819,7 +14025,7 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
 
     screenMesh.getWorldDirection(tvProjectionScreenNormalScratch).normalize();
     tvProjectionToCameraScratch.copy(camera.position).sub(tvProjectionCenterScratch).normalize();
-    if (tvProjectionScreenNormalScratch.dot(tvProjectionToCameraScratch) <= 0.05) {
+    if (tvProjectionScreenNormalScratch.dot(tvProjectionToCameraScratch) <= 0.1) {
         setTvOverlayVisible(runtime, false);
         return;
     }
@@ -13828,7 +14034,7 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
     let maxX = Number.NEGATIVE_INFINITY;
     let minY = Number.POSITIVE_INFINITY;
     let maxY = Number.NEGATIVE_INFINITY;
-    let anyCornerInFront = false;
+    let allCornersInFront = true;
     const projectedPoints = [];
     const halfExtents = resolveTvScreenHalfExtents(screenMesh);
     const halfWidth = Math.max(0.001, halfExtents.x);
@@ -13850,8 +14056,8 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
 
         const cornerCamera = tvProjectionCornerScreenScratch[i];
         cornerCamera.copy(cornerWorld).applyMatrix4(camera.matrixWorldInverse);
-        if (cornerCamera.z < -0.01) {
-            anyCornerInFront = true;
+        if (cornerCamera.z >= -0.01) {
+            allCornersInFront = false;
         }
 
         cornerCamera.copy(cornerWorld).project(camera);
@@ -13864,7 +14070,7 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
         maxY = Math.max(maxY, py);
     }
 
-    if (!anyCornerInFront) {
+    if (!allCornersInFront) {
         setTvOverlayVisible(runtime, false);
         return;
     }
@@ -13890,6 +14096,21 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
         return;
     }
 
+    const now = performance.now();
+    if (!Number.isFinite(runtime.nextOcclusionCheckAtMs) || now >= runtime.nextOcclusionCheckAtMs) {
+        const occlusionSamples = tvProjectionOcclusionSampleWorldScratch;
+        occlusionSamples[0].copy(tvProjectionCenterScratch);
+        for (let i = 0; i < 4; i += 1) {
+            occlusionSamples[i + 1].copy(tvProjectionCornerWorldScratch[i]);
+        }
+        runtime.occludedByScene = isTvOverlayOccluded(placed, occlusionSamples, occlusionSamples.length);
+        runtime.nextOcclusionCheckAtMs = now + TV_OVERLAY_OCCLUSION_CHECK_INTERVAL_MS;
+    }
+    if (runtime.occludedByScene) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+
     runtime.overlayEl.style.left = `${minX}px`;
     runtime.overlayEl.style.top = `${minY}px`;
     runtime.overlayEl.style.width = `${width}px`;
@@ -13908,7 +14129,7 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
     setTvOverlayVisible(runtime, true);
 }
 
-function createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs) {
+function createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs, paused = false, pauseAtSeconds = 0) {
     const overlayEl = document.createElement("div");
     overlayEl.className = "tv-screen-overlay";
     overlayEl.style.display = "none";
@@ -13929,9 +14150,16 @@ function createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs) {
         playerReady: false,
         youtubePlaying: false,
         pendingVideoId: sanitizeYouTubeVideoId(youtubeId || ""),
-        pendingStartSeconds: computeTvPlaybackStartSeconds(playbackStartedAtMs),
+        pendingStartSeconds: paused
+            ? sanitizeTvPauseAtSeconds(pauseAtSeconds, 0)
+            : computeTvPlaybackStartSeconds(playbackStartedAtMs),
+        pendingPaused: Boolean(paused),
+        pendingPauseAtSeconds: sanitizeTvPauseAtSeconds(pauseAtSeconds, 0),
         pendingVolume: 0,
         pendingShouldPlay: false,
+        durationSeconds: 0,
+        nextOcclusionCheckAtMs: 0,
+        occludedByScene: false,
         disposed: false
     };
 
@@ -13970,7 +14198,17 @@ function createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs) {
                             });
                             runtime.youtubeId = pendingId;
                             runtime.playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(playbackStartedAtMs, 0);
-                            runtime.youtubePlaying = true;
+                            runtime.youtubePlaying = !runtime.pendingPaused;
+                        } catch (error) {
+                        }
+                    }
+                    if (runtime.pendingPaused && runtime.player.pauseVideo) {
+                        try {
+                            if (runtime.player.seekTo) {
+                                runtime.player.seekTo(runtime.pendingPauseAtSeconds, true);
+                            }
+                            runtime.player.pauseVideo();
+                            runtime.youtubePlaying = false;
                         } catch (error) {
                         }
                     }
@@ -13978,7 +14216,7 @@ function createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs) {
                         runtime.player.setVolume(Math.round(runtime.pendingVolume));
                     } catch (error) {
                     }
-                    if (runtime.pendingShouldPlay) {
+                    if (runtime.pendingShouldPlay && !runtime.pendingPaused) {
                         try {
                             runtime.player.playVideo();
                             runtime.youtubePlaying = true;
@@ -14075,6 +14313,8 @@ function updateTvScreens() {
         const powered = Boolean(safeState.powered);
         const youtubeId = sanitizeYouTubeVideoId(safeState.youtubeId || "");
         const playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(safeState.playbackStartedAtMs, 0);
+        const paused = Boolean(safeState.paused);
+        const pauseAtSeconds = sanitizeTvPauseAtSeconds(safeState.pauseAtSeconds, 0);
         if (!powered || !youtubeId) {
             stopTvRuntimeById(propId);
             continue;
@@ -14082,7 +14322,7 @@ function updateTvScreens() {
 
         let runtime = tvState.activeRuntimes.get(propId);
         if (!runtime) {
-            runtime = createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs);
+            runtime = createTvYouTubeRuntime(propId, youtubeId, playbackStartedAtMs, paused, pauseAtSeconds);
             if (runtime) {
                 tvState.activeRuntimes.set(propId, runtime);
             }
@@ -14096,14 +14336,23 @@ function updateTvScreens() {
 
         const gain = getTvSpatialGain(placed);
         const targetVolume = Math.round(THREE.MathUtils.clamp(gain * 100, 0, 100));
-        const startSeconds = computeTvPlaybackStartSeconds(playbackStartedAtMs);
+        const startSeconds = paused
+            ? pauseAtSeconds
+            : computeTvPlaybackStartSeconds(playbackStartedAtMs);
         activeRuntime.pendingVolume = targetVolume;
-        activeRuntime.pendingShouldPlay = true;
+        activeRuntime.pendingShouldPlay = !paused;
         activeRuntime.pendingVideoId = youtubeId;
         activeRuntime.pendingStartSeconds = startSeconds;
+        activeRuntime.pendingPaused = paused;
+        activeRuntime.pendingPauseAtSeconds = pauseAtSeconds;
 
         if (activeRuntime.playerReady && activeRuntime.player) {
-            const sourceChanged = activeRuntime.youtubeId !== youtubeId || activeRuntime.playbackStartedAtMs !== playbackStartedAtMs;
+            const sourceChanged = activeRuntime.youtubeId !== youtubeId;
+            const previouslyPaused = Boolean(activeRuntime.lastAppliedPaused);
+            const currentTimeSeconds = readTvRuntimeCurrentSeconds(activeRuntime, startSeconds);
+            const seekTolerance = paused ? 0.2 : 1.5;
+            const needsSeek = Math.abs(currentTimeSeconds - startSeconds) > seekTolerance;
+
             if (sourceChanged && activeRuntime.player.loadVideoById) {
                 try {
                     activeRuntime.player.loadVideoById({
@@ -14115,20 +14364,43 @@ function updateTvScreens() {
                     activeRuntime.youtubePlaying = true;
                 } catch (error) {
                 }
+            } else if (needsSeek && activeRuntime.player.seekTo) {
+                try {
+                    activeRuntime.player.seekTo(startSeconds, true);
+                } catch (error) {
+                }
             }
 
+            activeRuntime.playbackStartedAtMs = playbackStartedAtMs;
+            activeRuntime.youtubeId = youtubeId;
             if (activeRuntime.player.setVolume) {
                 try {
                     activeRuntime.player.setVolume(targetVolume);
                 } catch (error) {
                 }
             }
-            if (!activeRuntime.youtubePlaying && activeRuntime.player.playVideo) {
+
+            const durationSeconds = readTvRuntimeDurationSeconds(activeRuntime, activeRuntime.durationSeconds);
+            activeRuntime.durationSeconds = durationSeconds;
+
+            if (paused) {
+                if (activeRuntime.player.pauseVideo) {
+                    try {
+                        activeRuntime.player.pauseVideo();
+                    } catch (error) {
+                    }
+                }
+                activeRuntime.youtubePlaying = false;
+                activeRuntime.lastAppliedPaused = true;
+            } else if ((!activeRuntime.youtubePlaying || previouslyPaused || sourceChanged) && activeRuntime.player.playVideo) {
                 try {
                     activeRuntime.player.playVideo();
                     activeRuntime.youtubePlaying = true;
                 } catch (error) {
                 }
+                activeRuntime.lastAppliedPaused = false;
+            } else {
+                activeRuntime.lastAppliedPaused = false;
             }
         }
 
@@ -14826,12 +15098,31 @@ function renderTvInteractionPanel(placed) {
     const safeState = normalizePropSharedState(placed.propType, placed.state, placed.state) || getPropDefaultSharedState(placed.propType) || {};
     const powered = Boolean(safeState.powered);
     const youtubeId = sanitizeYouTubeVideoId(safeState.youtubeId || "");
+    const playbackStartedAtMs = sanitizeTvPlaybackStartAtMs(safeState.playbackStartedAtMs, 0);
+    const paused = Boolean(safeState.paused);
+    const pauseAtSeconds = sanitizeTvPauseAtSeconds(safeState.pauseAtSeconds, 0);
     const title = String(safeState.title || "").trim();
     const sizeInches = sanitizeTvSizeInches(safeState.sizeInches, 200);
-    appendInteractionInfoLine(`Estado: ${powered ? "Encendida" : "Apagada"}`);
+    const runtime = tvState.activeRuntimes.get(String(placed.id || ""));
+    const fallbackCurrentSeconds = paused ? pauseAtSeconds : computeTvPlaybackStartSeconds(playbackStartedAtMs);
+    const currentSeconds = readTvRuntimeCurrentSeconds(runtime, fallbackCurrentSeconds);
+    const durationSeconds = readTvRuntimeDurationSeconds(runtime, runtime?.durationSeconds || 0);
+    if (runtime) {
+        runtime.durationSeconds = durationSeconds;
+    }
+    const timelineMaxSeconds = Math.max(
+        30,
+        Math.ceil(durationSeconds > 0 ? durationSeconds : Math.max(currentSeconds + 15, 180))
+    );
+
+    appendInteractionInfoLine(`Estado: ${powered ? (paused ? "Encendida (pausada)" : "Encendida (reproduciendo)") : "Apagada"}`);
     appendInteractionInfoLine(`Canal: ${youtubeId ? (title || "Video sincronizado") : "Sin senal"}`);
     appendInteractionInfoLine(`Tamano: ${sizeInches}"`);
     appendInteractionInfoLine("Audio espacial: si te alejas, baja el volumen.");
+    if (youtubeId) {
+        const totalLabelSeconds = durationSeconds > 0 ? durationSeconds : timelineMaxSeconds;
+        appendInteractionInfoLine(`Tiempo: ${formatTvTimeLabel(currentSeconds)} / ${formatTvTimeLabel(totalLabelSeconds)}`);
+    }
 
     appendInteractionAction(powered ? "Apagar TV" : "Encender TV", () => {
         const nextPowered = !powered;
@@ -14841,16 +15132,103 @@ function renderTvInteractionPanel(placed) {
     });
 
     if (youtubeId) {
-        appendInteractionAction("Reiniciar video", () => {
-            if (updatePropSharedState(placed.id, { powered: true, playbackStartedAtMs: Date.now() }, "TV reiniciada")) {
+        const transportRow = document.createElement("div");
+        transportRow.className = "interaction-row";
+
+        const pauseButton = document.createElement("button");
+        pauseButton.type = "button";
+        pauseButton.className = "interaction-action";
+        pauseButton.textContent = paused ? "Reanudar" : "Pausar";
+        pauseButton.addEventListener("click", () => {
+            const runtimeNow = tvState.activeRuntimes.get(String(placed.id || ""));
+            const fallbackNow = paused ? pauseAtSeconds : computeTvPlaybackStartSeconds(playbackStartedAtMs);
+            const currentNow = readTvRuntimeCurrentSeconds(runtimeNow, fallbackNow);
+            if (paused) {
+                const resumedAt = computeTvPlaybackStartAtMsFromSeconds(currentNow);
+                if (updatePropSharedState(placed.id, {
+                    powered: true,
+                    paused: false,
+                    pauseAtSeconds: currentNow,
+                    playbackStartedAtMs: resumedAt
+                }, "TV reanudada")) {
+                    markInteractionPanelDirty();
+                }
+            } else if (updatePropSharedState(placed.id, {
+                paused: true,
+                pauseAtSeconds: currentNow,
+                playbackStartedAtMs: computeTvPlaybackStartAtMsFromSeconds(currentNow)
+            }, "TV en pausa")) {
                 markInteractionPanelDirty();
             }
         });
+        transportRow.appendChild(pauseButton);
+
+        appendInteractionAction("Reiniciar video", () => {
+            if (updatePropSharedState(placed.id, {
+                powered: true,
+                paused: false,
+                pauseAtSeconds: 0,
+                playbackStartedAtMs: Date.now()
+            }, "TV reiniciada")) {
+                markInteractionPanelDirty();
+            }
+        });
+        interactionPanelBodyEl?.appendChild(transportRow);
+
+        const progressRow = document.createElement("div");
+        progressRow.className = "interaction-source";
+        const progressInput = document.createElement("input");
+        progressInput.type = "range";
+        progressInput.className = "interaction-range";
+        progressInput.min = "0";
+        progressInput.max = String(timelineMaxSeconds);
+        progressInput.step = "0.1";
+        progressInput.value = String(THREE.MathUtils.clamp(currentSeconds, 0, timelineMaxSeconds));
+
+        const progressLabel = document.createElement("span");
+        progressLabel.className = "interaction-time-label";
+        const updateProgressLabel = (seconds) => {
+            const total = durationSeconds > 0 ? durationSeconds : timelineMaxSeconds;
+            progressLabel.textContent = `${formatTvTimeLabel(seconds)} / ${formatTvTimeLabel(total)}`;
+        };
+        updateProgressLabel(currentSeconds);
+
+        progressInput.addEventListener("input", () => {
+            updateProgressLabel(Number(progressInput.value) || 0);
+        });
+        progressInput.addEventListener("change", () => {
+            const targetSeconds = THREE.MathUtils.clamp(Number(progressInput.value) || 0, 0, timelineMaxSeconds);
+            if (paused) {
+                if (updatePropSharedState(placed.id, {
+                    paused: true,
+                    pauseAtSeconds: targetSeconds,
+                    playbackStartedAtMs: computeTvPlaybackStartAtMsFromSeconds(targetSeconds)
+                }, "TV: posicion actualizada")) {
+                    markInteractionPanelDirty();
+                }
+                return;
+            }
+            const restartedAt = computeTvPlaybackStartAtMsFromSeconds(targetSeconds);
+            if (updatePropSharedState(placed.id, {
+                powered: true,
+                paused: false,
+                pauseAtSeconds: targetSeconds,
+                playbackStartedAtMs: restartedAt
+            }, "TV: avance actualizado")) {
+                markInteractionPanelDirty();
+            }
+        });
+        progressRow.appendChild(progressInput);
+        progressRow.appendChild(progressLabel);
+        interactionPanelBodyEl?.appendChild(progressRow);
+
         appendInteractionAction("Apagar y limpiar senal", () => {
             if (updatePropSharedState(placed.id, {
                 powered: false,
                 youtubeId: "",
                 playbackStartedAtMs: 0,
+                paused: false,
+                pauseAtSeconds: 0,
                 title: ""
             }, "TV apagada")) {
                 markInteractionPanelDirty();
@@ -14876,6 +15254,8 @@ function renderTvInteractionPanel(placed) {
                 powered: true,
                 youtubeId: youtubeIdFromFeed,
                 playbackStartedAtMs: Date.now(),
+                paused: false,
+                pauseAtSeconds: 0,
                 title: normalizedTitle
             }, `TV: ${normalizedTitle}`)) {
                 markInteractionPanelDirty();
@@ -15599,6 +15979,49 @@ function setSelectedHotbar(index) {
     showToast(`Seleccionado: ${label}`, "success", 900);
 }
 
+function tryRemoveDecorativeFloraAtCrosshair() {
+    const now = performance.now();
+    if (now - floraState.lastDecorRemovalAt < 120) {
+        return false;
+    }
+    if (decorativeFloraMeshes.length === 0) {
+        return false;
+    }
+
+    raycaster.setFromCamera(blockRayCenterNdc, camera);
+    raycaster.far = MAX_REACH;
+    const floraHits = raycaster.intersectObjects(decorativeFloraMeshes, false);
+    const nearestFlora = getFirstVisibleRayHit(floraHits);
+    if (!nearestFlora) {
+        return false;
+    }
+
+    const blockHit = findTargetedBlockHit();
+    const blockDistance = blockHit?.hit?.distance ?? Number.POSITIVE_INFINITY;
+    const propHit = findTargetedPropHit(blockDistance);
+    const propDistance = propHit?.distance ?? Number.POSITIVE_INFINITY;
+    const blockingDistance = Math.min(blockDistance, propDistance);
+    if (nearestFlora.distance > blockingDistance + 0.001) {
+        return false;
+    }
+
+    const x = Math.floor(Number(nearestFlora.point?.x));
+    const z = Math.floor(Number(nearestFlora.point?.z));
+    if (!Number.isFinite(x) || !Number.isFinite(z)) {
+        return false;
+    }
+    const columnKey = blockColumnKey(x, z);
+    if (!columnKey || removedDecorativeFloraColumns.has(columnKey) || editedColumnYIndex.has(columnKey)) {
+        return false;
+    }
+
+    removedDecorativeFloraColumns.add(columnKey);
+    floraState.lastDecorRemovalAt = now;
+    markChunksDirtyAroundBlock(x, z);
+    scheduleWorldSave();
+    return true;
+}
+
 function tryHarvestSunflowerAtCrosshair() {
     const now = performance.now();
     if (now - floraState.lastHarvestAt < 180) {
@@ -16184,6 +16607,9 @@ function onMouseDown(event) {
 
     if (event.button === 0) {
         if (tryRemovePlacedPropAtCrosshair()) {
+            return;
+        }
+        if (tryRemoveDecorativeFloraAtCrosshair()) {
             return;
         }
         attemptMineOrPlace(false);

@@ -572,6 +572,17 @@ body {
     color: rgba(239, 233, 219, 0.56);
 }
 
+.interaction-range {
+    width: 100%;
+    accent-color: #f3cc83;
+}
+
+.interaction-time-label {
+    font-size: 0.66rem;
+    color: #cfe5ff;
+    font-variant-numeric: tabular-nums;
+}
+
 .jukebox-spotify-host {
     position: fixed;
     left: -9999px;

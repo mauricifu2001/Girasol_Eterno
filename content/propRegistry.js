@@ -367,6 +367,8 @@ const RAW_PROP_DEFINITIONS = [
             powered: false,
             youtubeId: "",
             playbackStartedAtMs: 0,
+            paused: false,
+            pauseAtSeconds: 0,
             title: "",
             sizeInches: 200
         },
@@ -383,6 +385,8 @@ const RAW_PROP_DEFINITIONS = [
             powered: false,
             youtubeId: "",
             playbackStartedAtMs: 0,
+            paused: false,
+            pauseAtSeconds: 0,
             title: "",
             sizeInches: 200
         },
