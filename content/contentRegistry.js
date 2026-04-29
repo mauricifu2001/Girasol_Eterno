@@ -21,7 +21,8 @@ export const INVENTORY_CATEGORY = Object.freeze({
     LIQUIDS: "liquids",
     CONSTRUCTION: "construction",
     FURNITURE: "furniture",
-    UTILITY: "utility"
+    UTILITY: "utility",
+    RACING: "racing"
 });
 
 export const INVENTORY_CATEGORY_ORDER = Object.freeze([
@@ -30,7 +31,8 @@ export const INVENTORY_CATEGORY_ORDER = Object.freeze([
     INVENTORY_CATEGORY.CONSTRUCTION,
     INVENTORY_CATEGORY.LIQUIDS,
     INVENTORY_CATEGORY.FURNITURE,
-    INVENTORY_CATEGORY.UTILITY
+    INVENTORY_CATEGORY.UTILITY,
+    INVENTORY_CATEGORY.RACING
 ]);
 
 export const INVENTORY_CATEGORY_LABELS = Object.freeze({
@@ -39,7 +41,8 @@ export const INVENTORY_CATEGORY_LABELS = Object.freeze({
     [INVENTORY_CATEGORY.CONSTRUCTION]: "Construccion",
     [INVENTORY_CATEGORY.LIQUIDS]: "Liquidos y transparentes",
     [INVENTORY_CATEGORY.FURNITURE]: "Muebles y decoracion",
-    [INVENTORY_CATEGORY.UTILITY]: "Utilidad"
+    [INVENTORY_CATEGORY.UTILITY]: "Utilidad",
+    [INVENTORY_CATEGORY.RACING]: "Carreras"
 });
 
 function normalizeInventoryCategory(value) {

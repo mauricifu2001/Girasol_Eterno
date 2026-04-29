@@ -7261,6 +7261,44 @@ function buildRabbitHouseNode(root) {
     root.add(createDetailPart({ x: 0.42, y: 0.06, z: 0.9 }, { x: 0, y: 0.71, z: 0 }, 0x8f6544, { x: Math.PI * 0.11, y: 0, z: 0 }));
 }
 
+function buildKartNode(root) {
+    root.add(createDetailPart({ x: 1.26, y: 0.12, z: 0.9 }, { x: 0, y: 0.24, z: 0 }, 0x2da8c7));
+    root.add(createDetailPart({ x: 0.96, y: 0.14, z: 0.44 }, { x: 0, y: 0.3, z: -0.24 }, 0x2a95b2));
+    root.add(createDetailPart({ x: 0.46, y: 0.16, z: 0.52 }, { x: 0, y: 0.28, z: 0.42 }, 0x3bd5ef));
+    root.add(createDetailPart({ x: 0.36, y: 0.04, z: 0.24 }, { x: 0, y: 0.24, z: 0.7 }, 0xe6edf5));
+    root.add(createDetailPart({ x: 0.13, y: 0.018, z: 0.15 }, { x: 0, y: 0.27, z: 0.69 }, 0x7ecf4c));
+    root.add(createDetailPart({ x: 0.24, y: 0.18, z: 0.58 }, { x: -0.51, y: 0.26, z: 0.08 }, 0x40cde6));
+    root.add(createDetailPart({ x: 0.24, y: 0.18, z: 0.58 }, { x: 0.51, y: 0.26, z: 0.08 }, 0x40cde6));
+
+    root.add(createDetailPart({ x: 1.06, y: 0.04, z: 0.14 }, { x: 0, y: 0.12, z: 0.78 }, 0xbec8d4));
+    root.add(createDetailPart({ x: 0.08, y: 0.05, z: 0.14 }, { x: -0.38, y: 0.13, z: 0.72 }, 0x9ba7b7));
+    root.add(createDetailPart({ x: 0.08, y: 0.05, z: 0.14 }, { x: 0.38, y: 0.13, z: 0.72 }, 0x9ba7b7));
+
+    const wheelXs = [-0.66, 0.66];
+    const wheelZs = [-0.34, 0.42];
+    for (const wheelX of wheelXs) {
+        for (const wheelZ of wheelZs) {
+            root.add(createDetailPart({ x: 0.16, y: 0.34, z: 0.34 }, { x: wheelX, y: 0.18, z: wheelZ }, 0x1e2027));
+            root.add(createDetailPart({ x: 0.06, y: 0.14, z: 0.14 }, { x: wheelX, y: 0.18, z: wheelZ }, 0xe1c02e));
+        }
+    }
+
+    root.add(createDetailPart({ x: 0.34, y: 0.08, z: 0.34 }, { x: 0, y: 0.35, z: 0.03 }, 0x313644));
+    root.add(createDetailPart({ x: 0.3, y: 0.34, z: 0.14 }, { x: 0, y: 0.56, z: -0.07 }, 0x3a4050));
+    root.add(createDetailPart({ x: 0.22, y: 0.1, z: 0.16 }, { x: 0, y: 0.76, z: -0.08 }, 0x2b303e));
+    root.add(createDetailPart({ x: 0.16, y: 0.03, z: 0.12 }, { x: 0, y: 0.4, z: 0.18 }, 0x262b36));
+    root.add(createDetailPart({ x: 0.02, y: 0.1, z: 0.02 }, { x: 0, y: 0.44, z: 0.24 }, 0x3a3f4d));
+    root.add(createDetailPart({ x: 0.22, y: 0.03, z: 0.03 }, { x: 0, y: 0.5, z: 0.31 }, 0x1f232c));
+    root.add(createDetailPart({ x: 0.03, y: 0.03, z: 0.2 }, { x: 0, y: 0.5, z: 0.31 }, 0x1f232c));
+
+    root.add(createDetailPart({ x: 0.22, y: 0.36, z: 0.22 }, { x: -0.24, y: 0.52, z: -0.5 }, 0x343746));
+    root.add(createDetailPart({ x: 0.22, y: 0.36, z: 0.22 }, { x: 0.24, y: 0.52, z: -0.5 }, 0x343746));
+    root.add(createDetailPart({ x: 0.24, y: 0.08, z: 0.24 }, { x: -0.24, y: 0.67, z: -0.5 }, 0x1e2128));
+    root.add(createDetailPart({ x: 0.24, y: 0.08, z: 0.24 }, { x: 0.24, y: 0.67, z: -0.5 }, 0x1e2128));
+    root.add(createDetailPart({ x: 0.24, y: 0.05, z: 0.05 }, { x: -0.24, y: 0.58, z: -0.38 }, 0xe1bf2f));
+    root.add(createDetailPart({ x: 0.24, y: 0.05, z: 0.05 }, { x: 0.24, y: 0.58, z: -0.38 }, 0xe1bf2f));
+}
+
 const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.CHAIR]: buildChairNode,
     [PROP_TYPE.TABLE]: buildTableNode,
@@ -7293,7 +7331,8 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.TV_SCREEN]: buildTvScreenNode,
     [PROP_TYPE.TV_WALL]: buildTvWallNode,
     [PROP_TYPE.GIANT_SUNFLOWER]: buildGiantSunflowerNode,
-    [PROP_TYPE.RABBIT_HOUSE]: buildRabbitHouseNode
+    [PROP_TYPE.RABBIT_HOUSE]: buildRabbitHouseNode,
+    [PROP_TYPE.KART]: buildKartNode
 });
 
 const registryValidationIssues = [

@@ -30,7 +30,8 @@ export const PROP_TYPE = Object.freeze({
     TV_SCREEN: "tv_screen",
     TV_WALL: "tv_wall",
     GIANT_SUNFLOWER: "giant_sunflower",
-    RABBIT_HOUSE: "rabbit_house"
+    RABBIT_HOUSE: "rabbit_house",
+    KART: "kart"
 });
 
 const PROP_KIND = "prop";
@@ -410,6 +411,14 @@ const RAW_PROP_DEFINITIONS = [
         tags: ["rabbit", "decor", "outdoor"],
         visual: { tint: "rgba(167, 126, 93, 0.42)" },
         profile: { halfExtents: { x: 0.54, z: 0.42 }, minY: 0, maxY: 0.72, supportY: 0.7 }
+    },
+    {
+        id: PROP_TYPE.KART,
+        label: "Kart",
+        category: "racing",
+        tags: ["kart", "race", "vehicle", "sports"],
+        visual: { tint: "rgba(66, 192, 221, 0.44)" },
+        profile: { halfExtents: { x: 0.72, z: 0.86 }, minY: 0, maxY: 0.9, supportY: 0.28 }
     }
 ];
 
