@@ -1325,6 +1325,9 @@ const saveState = {
     writeTimerId: null,
     lastSavedAt: 0
 };
+const hardResetState = {
+    inProgress: false
+};
 
 const perfState = {
     dynamicPixelRatio: basePixelRatio,
@@ -3613,7 +3616,8 @@ function clearLocalWorldPersistenceKeys() {
         PLAYER_STATE_STORAGE_KEY,
         MAP_PIN_STORAGE_KEY,
         MAP_HOME_PIN_STORAGE_KEY,
-        JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY
+        JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY,
+        SUNFLOWER_CURRENCY_STORAGE_KEY
     ];
     for (const key of storageKeys) {
         try {
@@ -3621,6 +3625,46 @@ function clearLocalWorldPersistenceKeys() {
         } catch (error) {
         }
     }
+
+    const scopedPrefixes = [
+        "girasolWorldEdits:",
+        "girasolPlayerStateV1:",
+        `${MAP_PIN_STORAGE_KEY_PREFIX}:`,
+        `${MAP_HOME_PIN_STORAGE_KEY_PREFIX}:`,
+        `${JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY_PREFIX}:`
+    ];
+    try {
+        const keysToRemove = [];
+        for (let i = 0; i < window.localStorage.length; i += 1) {
+            const key = String(window.localStorage.key(i) || "");
+            if (scopedPrefixes.some((prefix) => key.startsWith(prefix))) {
+                keysToRemove.push(key);
+            }
+        }
+        for (const key of keysToRemove) {
+            window.localStorage.removeItem(key);
+        }
+    } catch (error) {
+    }
+}
+
+function clearRuntimeWorldStateForHardReset() {
+    if (saveState.writeTimerId !== null) {
+        window.clearTimeout(saveState.writeTimerId);
+        saveState.writeTimerId = null;
+    }
+    saveState.dirty = false;
+
+    editedBlocks.clear();
+    editedColumnYIndex.clear();
+    applyRemovedDecorativeFloraFromPayload([]);
+    clearPlacedProps();
+    propState.nextId = 1;
+    clearWildlife();
+    clearFish();
+    clearSunflowers();
+    economyState.sunflowers = 0;
+    updateSunflowerCurrencyHud();
 }
 
 async function resetSharedWorldDataFromCloud() {
@@ -3665,14 +3709,12 @@ async function runHardWorldResetFlow() {
         return false;
     }
 
+    hardResetState.inProgress = true;
     showToast("Borrando mundo completo...", "warning", 1400);
     state.keyDown.clear();
-    clearAllTemporaryInteractionState(true);
+    clearAllTemporaryInteractionState(false);
     clearInteractionPanelState();
-    flushWorldSave(true);
-    flushCloudEditWrites();
-    flushCloudPropWrites();
-    publishWildlifeSnapshot(true);
+    clearRuntimeWorldStateForHardReset();
 
     multiplayer.pendingEditWrites.clear();
     multiplayer.pendingPropWrites.clear();
@@ -3692,6 +3734,7 @@ async function runHardWorldResetFlow() {
     try {
         await resetSharedWorldDataFromCloud();
     } catch (error) {
+        hardResetState.inProgress = false;
         console.warn("No pude borrar el mundo compartido en la nube", error);
         showToast("No pude borrar el mundo compartido. Intenta de nuevo", "warning", 1900);
         return false;
@@ -17104,6 +17147,10 @@ function setupEvents() {
     }
 
     window.addEventListener("beforeunload", () => {
+        if (hardResetState.inProgress) {
+            clearLocalWorldPersistenceKeys();
+            return;
+        }
         persistPlayerStateSnapshot(true);
         clearAllTemporaryInteractionState(false);
         clearInteractionPanelState();
