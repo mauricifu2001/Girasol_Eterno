@@ -319,16 +319,33 @@ const TV_SPATIAL_MAX_DISTANCE = 72;
 const TV_SPATIAL_NEAR_DISTANCE = 4;
 const TV_INTERACTION_MAX_DISTANCE = 26;
 const TV_SYNC_MAX_AGE_MS = 6 * 60 * 60 * 1000;
-const TV_EMBED_MIN_SIZE_PX = 16;
+const TV_EMBED_MIN_SIZE_PX = 8;
 const TV_EMBED_OFFSCREEN_MARGIN_PX = 120;
-const TV_EMBED_CLIP_INSET_PX = 2;
+const TV_EMBED_CLIP_INSET_PX = 0.6;
+const TV_OVERLAY_OCCLUSION_ENABLED = false;
+const TV_OVERLAY_FRONTFACE_DOT_MIN = 0.06;
 const TV_OVERLAY_OCCLUSION_CHECK_INTERVAL_MS = 120;
 const TV_OVERLAY_OCCLUSION_RAY_BIAS = 0.04;
+const TV_TARGET_UI_IDLE_HIDE_DELAY_SECONDS = 2;
+const TV_TARGET_UI_CAMERA_POSITION_EPSILON_SQ = 0.000004;
+const TV_TARGET_UI_CAMERA_QUAT_DOT_THRESHOLD = 0.999995;
 const TV_MODEL_SCALE = 10;
 const TV_SIZE_OPTIONS = Object.freeze([200, 100, 70]);
 const TV_WALL_BASE_MIN_Y = 5.5;
 const TV_WALL_BASE_MAX_Y = 15.8;
 const TV_WALL_BASE_SUPPORT_Y = 10.6;
+const WORLD_HARD_RESET_CONFIRM_WORDS = Object.freeze([
+    "girasol",
+    "eterno",
+    "volcan",
+    "obsidiana",
+    "hogar",
+    "luciernaga",
+    "brujula",
+    "cordillera",
+    "aurora",
+    "palmera"
+]);
 const INTERACTION_KEY = "KeyE";
 const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
@@ -429,6 +446,7 @@ const pauseContinueButton = document.getElementById("pauseContinueButton");
 const pauseSettingsButton = document.getElementById("pauseSettingsButton");
 const pauseSaveButton = document.getElementById("pauseSaveButton");
 const pauseRestartButton = document.getElementById("pauseRestartButton");
+const pauseHardResetButton = document.getElementById("pauseHardResetButton");
 const pauseSettingsSection = document.getElementById("pauseSettingsSection");
 const chunkRadiusSliderEl = document.getElementById("chunkRadiusSlider");
 const chunkRadiusValueEl = document.getElementById("chunkRadiusValue");
@@ -1493,6 +1511,16 @@ const tvProjectionOcclusionSampleWorldScratch = [
     new THREE.Vector3()
 ];
 const tvProjectionOcclusionDirectionScratch = new THREE.Vector3();
+const tvTargetHudCameraPositionScratch = new THREE.Vector3();
+const tvTargetHudCameraQuaternionScratch = new THREE.Quaternion();
+const tvTargetHudAutoHideState = {
+    eligible: false,
+    initialized: false,
+    idleSeconds: 0,
+    hidden: false,
+    lastCameraPosition: new THREE.Vector3(),
+    lastCameraQuaternion: new THREE.Quaternion()
+};
 
 let draggedInventoryItemId = "";
 
@@ -3571,14 +3599,169 @@ function saveWorldNow(showFeedback = false) {
     }
 }
 
+function getRandomHardResetWord() {
+    if (!Array.isArray(WORLD_HARD_RESET_CONFIRM_WORDS) || WORLD_HARD_RESET_CONFIRM_WORDS.length === 0) {
+        return "girasol";
+    }
+    const index = Math.floor(Math.random() * WORLD_HARD_RESET_CONFIRM_WORDS.length);
+    return String(WORLD_HARD_RESET_CONFIRM_WORDS[index] || "girasol");
+}
+
+function clearLocalWorldPersistenceKeys() {
+    const storageKeys = [
+        WORLD_SAVE_KEY,
+        PLAYER_STATE_STORAGE_KEY,
+        MAP_PIN_STORAGE_KEY,
+        MAP_HOME_PIN_STORAGE_KEY,
+        JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY
+    ];
+    for (const key of storageKeys) {
+        try {
+            window.localStorage.removeItem(key);
+        } catch (error) {
+        }
+    }
+}
+
+async function resetSharedWorldDataFromCloud() {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.firebase?.db || !multiplayer.worldPath) {
+        return true;
+    }
+    const dbModule = multiplayer.firebase.dbModule;
+    const db = multiplayer.firebase.db;
+    const worldRef = dbModule.ref(db, multiplayer.worldPath);
+    await dbModule.update(worldRef, {
+        chunks: null,
+        props: null,
+        wildlife: null,
+        meta: null,
+        edits: null,
+        ops: null
+    });
+    return true;
+}
+
+async function runHardWorldResetFlow() {
+    const stepOneAccepted = window.confirm("Confirmacion 1/3: esto borrara TODO el mundo guardado y no se puede deshacer. Quieres continuar?");
+    if (!stepOneAccepted) {
+        return false;
+    }
+
+    const stepTwoAccepted = window.confirm("Confirmacion 2/3: se eliminaran ediciones locales y compartidas de la sala activa. Seguro que quieres borrar todo?");
+    if (!stepTwoAccepted) {
+        return false;
+    }
+
+    const challengeWord = getRandomHardResetWord();
+    const typedWord = window.prompt(
+        `Confirmacion 3/3.\nComentario del juego: "Si de verdad quieres borrarlo TODO, escribe exactamente la palabra: ${challengeWord}"\n\nEscribe la palabra para continuar:`,
+        ""
+    );
+    if (typedWord === null) {
+        return false;
+    }
+    if (String(typedWord).trim().toLowerCase() !== challengeWord.toLowerCase()) {
+        showToast("Palabra incorrecta. Borrado total cancelado", "warning", 1600);
+        return false;
+    }
+
+    showToast("Borrando mundo completo...", "warning", 1400);
+    state.keyDown.clear();
+    clearAllTemporaryInteractionState(true);
+    clearInteractionPanelState();
+    flushWorldSave(true);
+    flushCloudEditWrites();
+    flushCloudPropWrites();
+    publishWildlifeSnapshot(true);
+
+    multiplayer.pendingEditWrites.clear();
+    multiplayer.pendingPropWrites.clear();
+    if (multiplayer.writeTimerId !== null) {
+        window.clearTimeout(multiplayer.writeTimerId);
+        multiplayer.writeTimerId = null;
+    }
+    if (multiplayer.propWriteTimerId !== null) {
+        window.clearTimeout(multiplayer.propWriteTimerId);
+        multiplayer.propWriteTimerId = null;
+    }
+    if (multiplayer.wildlifeWriteTimerId !== null) {
+        window.clearTimeout(multiplayer.wildlifeWriteTimerId);
+        multiplayer.wildlifeWriteTimerId = null;
+    }
+
+    try {
+        await resetSharedWorldDataFromCloud();
+    } catch (error) {
+        console.warn("No pude borrar el mundo compartido en la nube", error);
+        showToast("No pude borrar el mundo compartido. Intenta de nuevo", "warning", 1900);
+        return false;
+    }
+
+    clearLocalWorldPersistenceKeys();
+    window.location.reload();
+    return true;
+}
+
 function getBlockLabel(blockId) {
     const definition = getBlockDefinitionById(Number(blockId));
     return definition?.label || `Bloque ${blockId}`;
 }
 
+function resetTvTargetHudAutoHideState() {
+    tvTargetHudAutoHideState.eligible = false;
+    tvTargetHudAutoHideState.initialized = false;
+    tvTargetHudAutoHideState.idleSeconds = 0;
+    tvTargetHudAutoHideState.hidden = false;
+}
+
+function updateTvTargetHudAutoHide(deltaSeconds, eligible) {
+    if (!eligible || !controls.isLocked) {
+        resetTvTargetHudAutoHideState();
+        return false;
+    }
+
+    tvTargetHudAutoHideState.eligible = true;
+    const cameraObject = controls.getObject?.() || camera;
+    if (!cameraObject) {
+        resetTvTargetHudAutoHideState();
+        return false;
+    }
+
+    tvTargetHudCameraPositionScratch.copy(cameraObject.position);
+    camera.getWorldQuaternion(tvTargetHudCameraQuaternionScratch);
+
+    if (!tvTargetHudAutoHideState.initialized) {
+        tvTargetHudAutoHideState.initialized = true;
+        tvTargetHudAutoHideState.idleSeconds = 0;
+        tvTargetHudAutoHideState.hidden = false;
+        tvTargetHudAutoHideState.lastCameraPosition.copy(tvTargetHudCameraPositionScratch);
+        tvTargetHudAutoHideState.lastCameraQuaternion.copy(tvTargetHudCameraQuaternionScratch);
+        return false;
+    }
+
+    const movedDistanceSq = tvTargetHudAutoHideState.lastCameraPosition.distanceToSquared(tvTargetHudCameraPositionScratch);
+    const quatDot = Math.abs(tvTargetHudAutoHideState.lastCameraQuaternion.dot(tvTargetHudCameraQuaternionScratch));
+    const cameraMoved = movedDistanceSq > TV_TARGET_UI_CAMERA_POSITION_EPSILON_SQ || quatDot < TV_TARGET_UI_CAMERA_QUAT_DOT_THRESHOLD;
+
+    if (cameraMoved) {
+        tvTargetHudAutoHideState.idleSeconds = 0;
+        tvTargetHudAutoHideState.hidden = false;
+    } else {
+        tvTargetHudAutoHideState.idleSeconds += Math.max(0, Number(deltaSeconds) || 0);
+        if (tvTargetHudAutoHideState.idleSeconds >= TV_TARGET_UI_IDLE_HIDE_DELAY_SECONDS) {
+            tvTargetHudAutoHideState.hidden = true;
+        }
+    }
+
+    tvTargetHudAutoHideState.lastCameraPosition.copy(tvTargetHudCameraPositionScratch);
+    tvTargetHudAutoHideState.lastCameraQuaternion.copy(tvTargetHudCameraQuaternionScratch);
+    return tvTargetHudAutoHideState.hidden;
+}
+
 function updateTargetedBlockUi(deltaSeconds = 0) {
     if (!state.worldStarted || !state.worldReady || state.paused || state.avatarPreviewOpen || state.inventoryOpen || isMapBlockingGameplay() || state.interactionPanelOpen || !controls.isLocked) {
         state.targetUiTick = 0;
+        resetTvTargetHudAutoHideState();
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
             targetBlockLabelEl.classList.add("hidden");
@@ -3588,6 +3771,13 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
 
     state.targetUiTick -= Math.max(0, deltaSeconds);
     if (state.targetUiTick > 0) {
+        const shouldHideTvHud = updateTvTargetHudAutoHide(deltaSeconds, tvTargetHudAutoHideState.eligible);
+        if (tvTargetHudAutoHideState.eligible && crosshairEl) {
+            crosshairEl.classList.toggle("hidden", shouldHideTvHud);
+        }
+        if (tvTargetHudAutoHideState.eligible && targetBlockLabelEl) {
+            targetBlockLabelEl.classList.toggle("hidden", shouldHideTvHud);
+        }
         return;
     }
     state.targetUiTick = TARGET_UI_SCAN_INTERVAL;
@@ -3612,6 +3802,10 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     const propDistance = propHit?.distance ?? Number.POSITIVE_INFINITY;
 
     if (flowerId && flowerDistance <= blockDistance + 0.001 && flowerDistance <= propDistance + 0.001) {
+        resetTvTargetHudAutoHideState();
+        if (crosshairEl) {
+            crosshairEl.classList.remove("hidden");
+        }
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
             targetBlockLabelEl.textContent = "Girasol: tecla E para cosechar";
@@ -3627,6 +3821,12 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
             const kind = config?.kind || INTERACTION_KIND.NONE;
             const interactionDistanceLimit = getPropInteractionMaxDistance(propHit.placed.propType);
             const canInteract = propDistance <= interactionDistanceLimit + 0.001;
+            if (kind !== INTERACTION_KIND.TV_CONTROL) {
+                resetTvTargetHudAutoHideState();
+                if (crosshairEl) {
+                    crosshairEl.classList.remove("hidden");
+                }
+            }
 
             if (kind === INTERACTION_KIND.LIGHT_CYCLE && isLightPropType(propHit.placed.propType)) {
                 const actionHint = canInteract ? "E cambiar intensidad" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
@@ -3653,7 +3853,13 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
                 const hasSignal = Boolean(sanitizeYouTubeVideoId(propHit.placed.state?.youtubeId || ""));
                 const modeLabel = powered ? (hasSignal ? "Reproduciendo" : "Encendida sin senal") : "Apagada";
                 const actionHint = canInteract ? "E controlar" : `Acercate (${interactionDistanceLimit.toFixed(1)}m)`;
+                const shouldHideTvHud = updateTvTargetHudAutoHide(deltaSeconds, powered && hasSignal);
                 targetBlockLabelEl.textContent = `${getPropLabel(propHit.placed.propType)} ${modeLabel} (${actionHint} | click izq quitar)`;
+                if (crosshairEl) {
+                    crosshairEl.classList.toggle("hidden", shouldHideTvHud);
+                }
+                targetBlockLabelEl.classList.toggle("hidden", shouldHideTvHud);
+                return;
             } else if (kind !== INTERACTION_KIND.NONE) {
                 const hint = canInteract
                     ? (config?.hudHint || "E interactuar")
@@ -3668,6 +3874,10 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
     }
 
     if (!blockHit) {
+        resetTvTargetHudAutoHideState();
+        if (crosshairEl) {
+            crosshairEl.classList.remove("hidden");
+        }
         targetHighlight.visible = false;
         if (targetBlockLabelEl) {
             targetBlockLabelEl.classList.add("hidden");
@@ -3677,6 +3887,10 @@ function updateTargetedBlockUi(deltaSeconds = 0) {
 
     targetHighlight.visible = true;
     targetHighlight.position.set(blockHit.lookup.x + 0.5, blockHit.lookup.y + 0.5, blockHit.lookup.z + 0.5);
+    resetTvTargetHudAutoHideState();
+    if (crosshairEl) {
+        crosshairEl.classList.remove("hidden");
+    }
 
     if (targetBlockLabelEl) {
         targetBlockLabelEl.textContent = `Bloque: ${getBlockLabel(blockHit.lookup.id)}`;
@@ -14025,7 +14239,7 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
 
     screenMesh.getWorldDirection(tvProjectionScreenNormalScratch).normalize();
     tvProjectionToCameraScratch.copy(camera.position).sub(tvProjectionCenterScratch).normalize();
-    if (tvProjectionScreenNormalScratch.dot(tvProjectionToCameraScratch) <= 0.1) {
+    if (tvProjectionScreenNormalScratch.dot(tvProjectionToCameraScratch) <= TV_OVERLAY_FRONTFACE_DOT_MIN) {
         setTvOverlayVisible(runtime, false);
         return;
     }
@@ -14056,13 +14270,17 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
 
         const cornerCamera = tvProjectionCornerScreenScratch[i];
         cornerCamera.copy(cornerWorld).applyMatrix4(camera.matrixWorldInverse);
-        if (cornerCamera.z >= -0.01) {
+        if (cornerCamera.z >= -0.03) {
             allCornersInFront = false;
         }
 
         cornerCamera.copy(cornerWorld).project(camera);
         const px = (cornerCamera.x * 0.5 + 0.5) * window.innerWidth;
         const py = (-cornerCamera.y * 0.5 + 0.5) * window.innerHeight;
+        if (!Number.isFinite(px) || !Number.isFinite(py)) {
+            setTvOverlayVisible(runtime, false);
+            return;
+        }
         projectedPoints.push([px, py]);
         minX = Math.min(minX, px);
         maxX = Math.max(maxX, px);
@@ -14081,7 +14299,11 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
         setTvOverlayVisible(runtime, false);
         return;
     }
-    if (width > window.innerWidth * 2.4 || height > window.innerHeight * 2.4) {
+    if (width > window.innerWidth * 2.6 || height > window.innerHeight * 2.6) {
+        setTvOverlayVisible(runtime, false);
+        return;
+    }
+    if (minX < -window.innerWidth * 1.4 || maxX > window.innerWidth * 2.4 || minY < -window.innerHeight * 1.4 || maxY > window.innerHeight * 2.4) {
         setTvOverlayVisible(runtime, false);
         return;
     }
@@ -14097,18 +14319,22 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
     }
 
     const now = performance.now();
-    if (!Number.isFinite(runtime.nextOcclusionCheckAtMs) || now >= runtime.nextOcclusionCheckAtMs) {
-        const occlusionSamples = tvProjectionOcclusionSampleWorldScratch;
-        occlusionSamples[0].copy(tvProjectionCenterScratch);
-        for (let i = 0; i < 4; i += 1) {
-            occlusionSamples[i + 1].copy(tvProjectionCornerWorldScratch[i]);
+    if (TV_OVERLAY_OCCLUSION_ENABLED) {
+        if (!Number.isFinite(runtime.nextOcclusionCheckAtMs) || now >= runtime.nextOcclusionCheckAtMs) {
+            const occlusionSamples = tvProjectionOcclusionSampleWorldScratch;
+            occlusionSamples[0].copy(tvProjectionCenterScratch);
+            for (let i = 0; i < 4; i += 1) {
+                occlusionSamples[i + 1].copy(tvProjectionCornerWorldScratch[i]);
+            }
+            runtime.occludedByScene = isTvOverlayOccluded(placed, occlusionSamples, occlusionSamples.length);
+            runtime.nextOcclusionCheckAtMs = now + TV_OVERLAY_OCCLUSION_CHECK_INTERVAL_MS;
         }
-        runtime.occludedByScene = isTvOverlayOccluded(placed, occlusionSamples, occlusionSamples.length);
-        runtime.nextOcclusionCheckAtMs = now + TV_OVERLAY_OCCLUSION_CHECK_INTERVAL_MS;
-    }
-    if (runtime.occludedByScene) {
-        setTvOverlayVisible(runtime, false);
-        return;
+        if (runtime.occludedByScene) {
+            setTvOverlayVisible(runtime, false);
+            return;
+        }
+    } else {
+        runtime.occludedByScene = false;
     }
 
     runtime.overlayEl.style.left = `${minX}px`;
@@ -14118,7 +14344,14 @@ function updateTvRuntimeOverlayPosition(runtime, placed) {
 
     const insetXPct = Math.min(8, (TV_EMBED_CLIP_INSET_PX / Math.max(1, width)) * 100);
     const insetYPct = Math.min(8, (TV_EMBED_CLIP_INSET_PX / Math.max(1, height)) * 100);
-    const clipPoints = projectedPoints.map(([px, py]) => {
+    const centroidX = projectedPoints.reduce((sum, point) => sum + point[0], 0) / Math.max(1, projectedPoints.length);
+    const centroidY = projectedPoints.reduce((sum, point) => sum + point[1], 0) / Math.max(1, projectedPoints.length);
+    const orderedProjectedPoints = [...projectedPoints].sort((left, right) => {
+        const leftAngle = Math.atan2(left[1] - centroidY, left[0] - centroidX);
+        const rightAngle = Math.atan2(right[1] - centroidY, right[0] - centroidX);
+        return leftAngle - rightAngle;
+    });
+    const clipPoints = orderedProjectedPoints.map(([px, py]) => {
         const nx = THREE.MathUtils.clamp(((px - minX) / Math.max(1e-3, width)) * 100, insetXPct, 100 - insetXPct);
         const ny = THREE.MathUtils.clamp(((py - minY) / Math.max(1e-3, height)) * 100, insetYPct, 100 - insetYPct);
         return `${nx.toFixed(3)}% ${ny.toFixed(3)}%`;
@@ -16810,6 +17043,17 @@ function setupEvents() {
             }
 
             window.location.reload();
+        });
+    }
+
+    if (pauseHardResetButton) {
+        pauseHardResetButton.addEventListener("click", async () => {
+            pauseHardResetButton.disabled = true;
+            try {
+                await runHardWorldResetFlow();
+            } finally {
+                pauseHardResetButton.disabled = false;
+            }
         });
     }
 

@@ -839,6 +839,19 @@ body {
     padding: 7px 8px;
 }
 
+.settings-danger-button {
+    margin-top: 12px;
+    border: 1px solid rgba(255, 134, 134, 0.62);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(112, 21, 21, 0.92), rgba(82, 14, 14, 0.94));
+    color: #ffe8e8;
+    text-align: center;
+    padding: 10px 12px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
 #overlay {
     position: fixed;
     inset: 0;
