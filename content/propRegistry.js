@@ -440,7 +440,7 @@ const RAW_PROP_DEFINITIONS = [
         category: "racing",
         tags: ["race", "curb", "track"],
         visual: { tint: "rgba(228, 226, 222, 0.42)" },
-        profile: { halfExtents: { x: 0.62, z: 0.26 }, minY: 0, maxY: 0.16, supportY: 0.14 }
+        profile: { halfExtents: { x: 0.5, z: 0.26 }, minY: 0, maxY: 0.12, supportY: 0.08 }
     },
     {
         id: PROP_TYPE.RACE_FINISH_LINE,
@@ -449,7 +449,7 @@ const RAW_PROP_DEFINITIONS = [
         tags: ["race", "finish", "checkpoint"],
         solid: false,
         visual: { tint: "rgba(245, 228, 127, 0.36)" },
-        profile: { halfExtents: { x: 0.84, z: 0.18 }, minY: 0, maxY: 1.92, supportY: 0.04 }
+        profile: { halfExtents: { x: 1.7, z: 0.24 }, minY: 0, maxY: 2.36, supportY: 0.04 }
     },
     {
         id: PROP_TYPE.RACE_CHECKPOINT,
@@ -458,7 +458,7 @@ const RAW_PROP_DEFINITIONS = [
         tags: ["race", "checkpoint", "lap"],
         solid: false,
         visual: { tint: "rgba(90, 198, 241, 0.36)" },
-        profile: { halfExtents: { x: 0.84, z: 0.18 }, minY: 0, maxY: 1.56, supportY: 0.04 }
+        profile: { halfExtents: { x: 1.62, z: 0.24 }, minY: 0, maxY: 2.12, supportY: 0.04 }
     }
 ];
 

@@ -137,15 +137,18 @@ const KART_STEER_RESPONSE = 10;
 const KART_STEER_RATE = 2.9;
 const KART_STEER_RATE_DRIFT = 4.3;
 const KART_DRIFT_SLIP_ANGLE = 0.32;
-const KART_MAX_STEP_UP = 0.58;
-const KART_MAX_STEP_DOWN = 1.15;
-const KART_PROP_SYNC_INTERVAL_SECONDS = 0.16;
+const KART_MAX_STEP_UP = 1.12;
+const KART_MAX_STEP_DOWN = 1.6;
+const KART_GROUND_SAMPLE_FORWARD = 0.78;
+const KART_GROUND_SAMPLE_RIGHT = 0.62;
+const KART_PROP_SYNC_INTERVAL_SECONDS = 0.09;
 const KART_WORLD_SAVE_INTERVAL_SECONDS = 0.42;
 const KART_INTERACTION_DISTANCE = 4.4;
 const KART_DRIVER_EYE_HEIGHT = 1.24;
 const KART_DRIVER_SEAT_OFFSET_FORWARD = -0.06;
 const KART_DRIVER_SEAT_OFFSET_RIGHT = 0;
 const KART_DRIVER_SEAT_OFFSET_UP = 0.6;
+const KART_CAMERA_YAW_OFFSET = Math.PI;
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
     Object.freeze({ key: "red", label: "Rojo", body: 0xd35046, side: 0xa53d37, accent: 0xef796b }),
@@ -7483,26 +7486,27 @@ function buildRaceBarrierNode(root) {
 }
 
 function buildRaceCurbNode(root) {
-    root.add(createDetailPart({ x: 1.28, y: 0.08, z: 0.5 }, { x: 0, y: 0.04, z: 0 }, 0xe8e5df));
-    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.5 }, { x: -0.45, y: 0.04, z: 0 }, 0xd14f48));
-    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.5 }, { x: -0.09, y: 0.04, z: 0 }, 0xd14f48));
-    root.add(createDetailPart({ x: 0.18, y: 0.08, z: 0.5 }, { x: 0.27, y: 0.04, z: 0 }, 0xd14f48));
+    root.add(createDetailPart({ x: 1.0, y: 0.08, z: 0.52 }, { x: 0, y: 0.04, z: 0 }, 0xf0efec));
+    // Slight Y offset avoids z-fighting on red stripe and keeps consecutive curb pieces visually continuous.
+    root.add(createDetailPart({ x: 1.0, y: 0.022, z: 0.16 }, { x: 0, y: 0.093, z: -0.13 }, 0xcb4a43));
+    root.add(createDetailPart({ x: 1.0, y: 0.022, z: 0.08 }, { x: 0, y: 0.093, z: 0.13 }, 0xffffff));
 }
 
 function buildRaceFinishLineNode(root) {
-    root.add(createDetailPart({ x: 0.16, y: 1.86, z: 0.16 }, { x: -0.68, y: 0.93, z: 0 }, 0x2b2f38));
-    root.add(createDetailPart({ x: 0.16, y: 1.86, z: 0.16 }, { x: 0.68, y: 0.93, z: 0 }, 0x2b2f38));
-    root.add(createDetailPart({ x: 1.52, y: 0.18, z: 0.16 }, { x: 0, y: 1.76, z: 0 }, 0x2b2f38));
-    root.add(createDetailPart({ x: 1.36, y: 0.12, z: 0.08 }, { x: 0, y: 1.76, z: 0.12 }, 0xffffff));
-    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.02 }, { x: -0.44, y: 1.76, z: 0.16 }, 0x111419));
-    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.02 }, { x: -0.04, y: 1.76, z: 0.16 }, 0x111419));
-    root.add(createDetailPart({ x: 0.2, y: 0.2, z: 0.02 }, { x: 0.36, y: 1.76, z: 0.16 }, 0x111419));
+    root.add(createDetailPart({ x: 0.2, y: 2.34, z: 0.2 }, { x: -1.48, y: 1.17, z: 0 }, 0x2b2f38));
+    root.add(createDetailPart({ x: 0.2, y: 2.34, z: 0.2 }, { x: 1.48, y: 1.17, z: 0 }, 0x2b2f38));
+    root.add(createDetailPart({ x: 3.26, y: 0.2, z: 0.2 }, { x: 0, y: 2.22, z: 0 }, 0x2b2f38));
+    root.add(createDetailPart({ x: 3.06, y: 0.14, z: 0.1 }, { x: 0, y: 2.22, z: 0.13 }, 0xffffff));
+    for (let i = 0; i < 6; i += 1) {
+        const x = -1.22 + i * 0.5;
+        root.add(createDetailPart({ x: 0.24, y: 0.22, z: 0.03 }, { x, y: 2.22, z: 0.17 }, i % 2 === 0 ? 0x111419 : 0xf2f5fa));
+    }
 }
 
 function buildRaceCheckpointNode(root) {
-    root.add(createDetailPart({ x: 0.14, y: 1.5, z: 0.14 }, { x: -0.66, y: 0.75, z: 0 }, 0x1f4154));
-    root.add(createDetailPart({ x: 0.14, y: 1.5, z: 0.14 }, { x: 0.66, y: 0.75, z: 0 }, 0x1f4154));
-    root.add(createDetailPart({ x: 1.42, y: 0.14, z: 0.14 }, { x: 0, y: 1.45, z: 0 }, 0x29556f));
+    root.add(createDetailPart({ x: 0.18, y: 2.06, z: 0.18 }, { x: -1.46, y: 1.03, z: 0 }, 0x1f4154));
+    root.add(createDetailPart({ x: 0.18, y: 2.06, z: 0.18 }, { x: 1.46, y: 1.03, z: 0 }, 0x1f4154));
+    root.add(createDetailPart({ x: 3.14, y: 0.16, z: 0.16 }, { x: 0, y: 2.0, z: 0 }, 0x29556f));
     const beamMaterial = createDisposableStandardMaterial({
         color: 0x70e2ff,
         roughness: 0.2,
@@ -7510,7 +7514,7 @@ function buildRaceCheckpointNode(root) {
         emissive: 0x45cfff,
         emissiveIntensity: 0.55
     });
-    root.add(createDynamicPart({ x: 1.3, y: 0.05, z: 0.05 }, { x: 0, y: 1.45, z: 0.09 }, beamMaterial));
+    root.add(createDynamicPart({ x: 2.96, y: 0.06, z: 0.06 }, { x: 0, y: 2.0, z: 0.1 }, beamMaterial));
 }
 
 const PROP_NODE_BUILDERS = Object.freeze({
@@ -13582,19 +13586,66 @@ function resolveKartGroundYAt(x, z, currentY) {
     return Math.floor(Number(terrainHeight(sampleX, sampleZ)) || 0) + 1;
 }
 
+function resolveKartGroundYMultiSample(x, z, yaw, currentY) {
+    const forwardX = Math.sin(yaw);
+    const forwardZ = Math.cos(yaw);
+    const rightX = Math.sin(yaw + Math.PI * 0.5);
+    const rightZ = Math.cos(yaw + Math.PI * 0.5);
+    const samples = [
+        { fx: 0, rz: 0 },
+        { fx: KART_GROUND_SAMPLE_FORWARD, rz: 0 },
+        { fx: -KART_GROUND_SAMPLE_FORWARD * 0.7, rz: 0 },
+        { fx: KART_GROUND_SAMPLE_FORWARD * 0.55, rz: KART_GROUND_SAMPLE_RIGHT },
+        { fx: KART_GROUND_SAMPLE_FORWARD * 0.55, rz: -KART_GROUND_SAMPLE_RIGHT },
+        { fx: -KART_GROUND_SAMPLE_FORWARD * 0.45, rz: KART_GROUND_SAMPLE_RIGHT * 0.85 },
+        { fx: -KART_GROUND_SAMPLE_FORWARD * 0.45, rz: -KART_GROUND_SAMPLE_RIGHT * 0.85 }
+    ];
+    let maxSurfaceY = Number.NEGATIVE_INFINITY;
+    for (const sample of samples) {
+        const sampleX = x + forwardX * sample.fx + rightX * sample.rz;
+        const sampleZ = z + forwardZ * sample.fx + rightZ * sample.rz;
+        const sampleGroundY = resolveKartGroundYAt(sampleX, sampleZ, currentY);
+        if (sampleGroundY > maxSurfaceY) {
+            maxSurfaceY = sampleGroundY;
+        }
+    }
+    if (!Number.isFinite(maxSurfaceY)) {
+        return Number(currentY) || 0;
+    }
+    return maxSurfaceY;
+}
+
 function applyKartDriverCamera(placed, deltaSeconds = 0) {
+    const drive = interactionState.kartDrive;
     const anchor = getKartSeatAnchor(placed);
+    let eyeY = anchor.eyeY;
+    if (drive) {
+        if (!Number.isFinite(drive.cameraEyeY)) {
+            drive.cameraEyeY = anchor.eyeY;
+        }
+        const eyeLerp = 1 - Math.exp(-Math.max(0, deltaSeconds) * 13);
+        drive.cameraEyeY = lerp(drive.cameraEyeY, anchor.eyeY, THREE.MathUtils.clamp(eyeLerp, 0, 1));
+        eyeY = drive.cameraEyeY;
+    }
     state.playerPosition.x = anchor.x;
-    state.playerPosition.y = anchor.eyeY - EYE_HEIGHT;
+    state.playerPosition.y = eyeY - EYE_HEIGHT;
     state.playerPosition.z = anchor.z;
     state.velocityY = 0;
     state.onGround = true;
+    const cameraTargetYaw = normalizeYawRadians((Number(placed?.yaw) || 0) + KART_CAMERA_YAW_OFFSET);
+    if (drive) {
+        if (!Number.isFinite(drive.cameraYaw)) {
+            drive.cameraYaw = cameraTargetYaw;
+        }
+        const yawLerp = Math.min(1, Math.max(0, deltaSeconds) * 9.5);
+        drive.cameraYaw = approachAngle(drive.cameraYaw, cameraTargetYaw, yawLerp);
+    }
     controls.getObject().rotation.y = approachAngle(
         controls.getObject().rotation.y || 0,
-        Number(placed?.yaw) || 0,
+        drive && Number.isFinite(drive.cameraYaw) ? drive.cameraYaw : cameraTargetYaw,
         Math.min(1, Math.max(0, deltaSeconds) * 7.5)
     );
-    controls.getObject().position.set(anchor.x, anchor.eyeY, anchor.z);
+    controls.getObject().position.set(anchor.x, eyeY, anchor.z);
 }
 
 function enterKartDrive(propHit) {
@@ -13625,13 +13676,15 @@ function enterKartDrive(propHit) {
         speed: 0,
         steer: 0,
         drift: false,
+        cameraYaw: normalizeYawRadians((Number(placed.yaw) || 0) + KART_CAMERA_YAW_OFFSET),
+        cameraEyeY: (Number(placed.y) || 0) + KART_DRIVER_EYE_HEIGHT,
         syncTick: 0,
         saveTick: 0
     };
     state.keyDown.delete("Space");
     state.velocityY = 0;
     state.onGround = true;
-    controls.getObject().rotation.y = Number(placed.yaw) || controls.getObject().rotation.y || 0;
+    controls.getObject().rotation.y = normalizeYawRadians((Number(placed.yaw) || 0) + KART_CAMERA_YAW_OFFSET);
     applyKartDriverCamera(placed, 1 / 60);
     persistPlayerStateSnapshot(true);
     showToast("Subiste al kart. WASD manejar, Espacio derrape, Shift bajarte.", "info", 1650);
@@ -13719,6 +13772,7 @@ function updateKartDrive(deltaSeconds) {
     const deltaZ = Math.cos(moveYaw) * drive.speed * deltaSeconds;
 
     let moved = false;
+    let transformChanged = false;
     let collided = false;
     const moveDistance = Math.hypot(deltaX, deltaZ);
     const steps = Math.max(1, Math.ceil(moveDistance / 0.42));
@@ -13728,7 +13782,8 @@ function updateKartDrive(deltaSeconds) {
     for (let i = 0; i < steps; i += 1) {
         const candidateX = placed.x + stepX;
         const candidateZ = placed.z + stepZ;
-        const candidateY = resolveKartGroundYAt(candidateX, candidateZ, placed.y);
+        const targetGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y);
+        const candidateY = targetGroundY;
         const stepUp = candidateY - placed.y;
         if (stepUp > KART_MAX_STEP_UP || stepUp < -KART_MAX_STEP_DOWN) {
             collided = true;
@@ -13740,10 +13795,15 @@ function updateKartDrive(deltaSeconds) {
         }
         updatePlacedPropTransformImmediate(placed, candidateX, candidateY, candidateZ, nextYaw);
         moved = true;
+        transformChanged = true;
     }
 
     if (!moved && !collided) {
-        updatePlacedPropTransformImmediate(placed, placed.x, placed.y, placed.z, nextYaw);
+        const currentYaw = Number(placed.yaw) || 0;
+        if (Math.abs(normalizeYawRadians(nextYaw - currentYaw)) > 1e-4) {
+            updatePlacedPropTransformImmediate(placed, placed.x, placed.y, placed.z, nextYaw);
+            transformChanged = true;
+        }
     }
 
     if (collided) {
@@ -13752,7 +13812,7 @@ function updateKartDrive(deltaSeconds) {
 
     drive.syncTick += deltaSeconds;
     drive.saveTick += deltaSeconds;
-    if (moved && drive.syncTick >= KART_PROP_SYNC_INTERVAL_SECONDS) {
+    if (transformChanged && drive.syncTick >= KART_PROP_SYNC_INTERVAL_SECONDS) {
         drive.syncTick = 0;
         publishPropUpsert(placed.id);
     }
