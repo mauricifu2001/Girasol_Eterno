@@ -139,7 +139,7 @@ const KART_STEER_RATE = 2.9;
 const KART_STEER_RATE_DRIFT = 4.3;
 const KART_DRIFT_SLIP_ANGLE = 0.32;
 const KART_MAX_STEP_UP = 1.12;
-const KART_MAX_STEP_DOWN = 1.6;
+const KART_MAX_STEP_DOWN = 2.05;
 const KART_GROUND_SAMPLE_FORWARD = 0.76;
 const KART_GROUND_SAMPLE_RIGHT = 0.56;
 const KART_PROP_SYNC_INTERVAL_SECONDS = 0.09;
@@ -150,9 +150,9 @@ const KART_DRIVER_SEAT_OFFSET_FORWARD = -0.06;
 const KART_DRIVER_SEAT_OFFSET_RIGHT = 0;
 const KART_DRIVER_SEAT_OFFSET_UP = 0.6;
 const KART_CAMERA_YAW_OFFSET = Math.PI;
-const KART_COLLISION_EXTENT_SCALE_X = 0.84;
-const KART_COLLISION_EXTENT_SCALE_Z = 0.84;
-const KART_COLLISION_MIN_Y_OFFSET = 0.03;
+const KART_COLLISION_EXTENT_SCALE_X = 0.78;
+const KART_COLLISION_EXTENT_SCALE_Z = 0.66;
+const KART_COLLISION_MIN_Y_OFFSET = 0.14;
 const KART_COLLISION_MAX_Y_OFFSET = 0.04;
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
@@ -13608,7 +13608,7 @@ function resolveKartGroundYAt(x, z, currentY) {
     return Math.floor(Number(terrainHeight(sampleX, sampleZ)) || 0) + 1;
 }
 
-function resolveKartGroundYMultiSample(x, z, yaw, currentY, motionSign = 0) {
+function resolveKartGroundYMultiSample(x, z, yaw, currentY, motionSign = 0, mode = "adaptive") {
     const forwardX = Math.sin(yaw);
     const forwardZ = Math.cos(yaw);
     const rightX = Math.sin(yaw + Math.PI * 0.5);
@@ -13642,11 +13642,25 @@ function resolveKartGroundYMultiSample(x, z, yaw, currentY, motionSign = 0) {
         sampledHeights.get("rearRight") ?? Number.NEGATIVE_INFINITY
     );
     const leadY = motionSign >= 0 ? frontY : rearY;
-    const supportY = Math.max(centerY, leadY);
-    if (!Number.isFinite(supportY)) {
+    const trailY = motionSign >= 0 ? rearY : frontY;
+    const climbSupportY = Math.max(centerY, leadY);
+    const descendSupportY = Math.min(centerY, leadY, trailY);
+    if (!Number.isFinite(climbSupportY) && !Number.isFinite(descendSupportY)) {
         return Number(currentY) || 0;
     }
-    return supportY;
+    if (mode === "climb") {
+        return Number.isFinite(climbSupportY) ? climbSupportY : Number(currentY) || 0;
+    }
+    if (mode === "descend") {
+        return Number.isFinite(descendSupportY) ? descendSupportY : Number(currentY) || 0;
+    }
+    if (climbSupportY > (Number(currentY) || 0) + 0.08) {
+        return climbSupportY;
+    }
+    if (descendSupportY < (Number(currentY) || 0) - 0.08) {
+        return descendSupportY;
+    }
+    return Number.isFinite(centerY) ? centerY : (Number(currentY) || 0);
 }
 
 function applyKartDriverCamera(placed, deltaSeconds = 0) {
@@ -13815,36 +13829,77 @@ function updateKartDrive(deltaSeconds) {
     for (let i = 0; i < steps; i += 1) {
         const candidateX = placed.x + stepX;
         const candidateZ = placed.z + stepZ;
-        const targetGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign);
-        let candidateY = targetGroundY;
-        const stepUp = candidateY - placed.y;
-        if (stepUp > KART_MAX_STEP_UP || stepUp < -KART_MAX_STEP_DOWN) {
-            collided = true;
-            break;
-        }
-        let blocked = wouldKartCollideAt(placed, candidateX, candidateY, candidateZ, nextYaw);
-        if (blocked && drive.speed > 0.12) {
-            // Fallback climbing probe: allows smooth stair-style ramps (1-block step) without requiring perfect ground sampling timing.
+        const adaptiveGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "adaptive");
+        const climbGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "climb");
+        const descendGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "descend");
+        const targetCandidates = [adaptiveGroundY, climbGroundY, descendGroundY];
+        if (drive.speed > 0.12) {
+            // Probes for successive stair-style ramps (up/down) when direct sample doesn't fit.
             const climbTests = [0.2, 0.4, 0.6, 0.8, 1.0];
             for (const climbOffset of climbTests) {
-                if (climbOffset > KART_MAX_STEP_UP + 1e-4) {
-                    continue;
-                }
-                const climbY = placed.y + climbOffset;
-                if (!wouldKartCollideAt(placed, candidateX, climbY, candidateZ, nextYaw)) {
-                    candidateY = climbY;
-                    blocked = false;
-                    break;
-                }
+                targetCandidates.push(placed.y + climbOffset, placed.y - climbOffset);
             }
         }
-        if (blocked) {
+        const uniqueTargets = [];
+        for (const value of targetCandidates) {
+            if (!Number.isFinite(value)) {
+                continue;
+            }
+            if (!uniqueTargets.some((existing) => Math.abs(existing - value) <= 1e-4)) {
+                uniqueTargets.push(value);
+            }
+        }
+        const preferClimb = climbGroundY > placed.y + 0.06;
+        const preferDescend = descendGroundY < placed.y - 0.06;
+        uniqueTargets.sort((a, b) => {
+            if (preferClimb) {
+                return b - a;
+            }
+            if (preferDescend) {
+                return a - b;
+            }
+            return Math.abs(a - placed.y) - Math.abs(b - placed.y);
+        });
+
+        let acceptedY = null;
+        for (const testY of uniqueTargets) {
+            const stepUp = testY - placed.y;
+            if (stepUp > KART_MAX_STEP_UP || stepUp < -KART_MAX_STEP_DOWN) {
+                continue;
+            }
+            if (wouldKartCollideAt(placed, candidateX, testY, candidateZ, nextYaw)) {
+                continue;
+            }
+            acceptedY = testY;
+            break;
+        }
+        if (!Number.isFinite(acceptedY)) {
             collided = true;
             break;
         }
-        updatePlacedPropTransformImmediate(placed, candidateX, candidateY, candidateZ, nextYaw);
+        updatePlacedPropTransformImmediate(placed, candidateX, acceptedY, candidateZ, nextYaw);
         moved = true;
         transformChanged = true;
+    }
+
+    if (moved) {
+        const postMoveSettleY = resolveKartGroundYMultiSample(
+            Number(placed.x) || 0,
+            Number(placed.z) || 0,
+            Number(placed.yaw) || 0,
+            Number(placed.y) || 0,
+            motionSign,
+            "descend"
+        );
+        const postMoveDelta = postMoveSettleY - placed.y;
+        if (
+            postMoveDelta < -1e-3
+            && postMoveDelta >= -KART_MAX_STEP_DOWN
+            && !wouldKartCollideAt(placed, placed.x, postMoveSettleY, placed.z, placed.yaw)
+        ) {
+            updatePlacedPropTransformImmediate(placed, placed.x, postMoveSettleY, placed.z, placed.yaw);
+            transformChanged = true;
+        }
     }
 
     // If horizontal move was blocked, still try to settle to valid ground to avoid floating/stuck states.
@@ -13854,7 +13909,8 @@ function updateKartDrive(deltaSeconds) {
             Number(placed.z) || 0,
             Number(placed.yaw) || 0,
             Number(placed.y) || 0,
-            0
+            0,
+            "descend"
         );
         const settleDelta = settleGroundY - placed.y;
         if (
