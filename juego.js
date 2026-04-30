@@ -13569,6 +13569,10 @@ function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
         if (definition && !definition.solid) {
             continue;
         }
+        if (other.propType === PROP_TYPE.RACE_CURB) {
+            // Curbs should be drivable so races don't get stuck at piano edges.
+            continue;
+        }
         const otherBounds = getPlacedPropBounds(other, 0);
         if (intersectsAabb(nextBounds, otherBounds)) {
             return true;
@@ -13748,7 +13752,8 @@ function updateKartDrive(deltaSeconds) {
         return false;
     }
 
-    const steerTarget = (state.keyDown.has("KeyD") ? 1 : 0) - (state.keyDown.has("KeyA") ? 1 : 0);
+    // In this yaw system positive rotation turns left, so A must be positive and D negative.
+    const steerTarget = (state.keyDown.has("KeyA") ? 1 : 0) - (state.keyDown.has("KeyD") ? 1 : 0);
     const steerLerp = 1 - Math.exp(-KART_STEER_RESPONSE * Math.max(0, deltaSeconds));
     drive.steer = THREE.MathUtils.clamp(lerp(drive.steer, steerTarget, steerLerp), -1, 1);
 
@@ -13794,13 +13799,29 @@ function updateKartDrive(deltaSeconds) {
         const candidateX = placed.x + stepX;
         const candidateZ = placed.z + stepZ;
         const targetGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y);
-        const candidateY = targetGroundY;
+        let candidateY = targetGroundY;
         const stepUp = candidateY - placed.y;
         if (stepUp > KART_MAX_STEP_UP || stepUp < -KART_MAX_STEP_DOWN) {
             collided = true;
             break;
         }
-        if (wouldKartCollideAt(placed, candidateX, candidateY, candidateZ, nextYaw)) {
+        let blocked = wouldKartCollideAt(placed, candidateX, candidateY, candidateZ, nextYaw);
+        if (blocked && drive.speed > 0.12) {
+            // Fallback climbing probe: allows smooth stair-style ramps (1-block step) without requiring perfect ground sampling timing.
+            const climbTests = [0.2, 0.4, 0.6, 0.8, 1.0];
+            for (const climbOffset of climbTests) {
+                if (climbOffset > KART_MAX_STEP_UP + 1e-4) {
+                    continue;
+                }
+                const climbY = placed.y + climbOffset;
+                if (!wouldKartCollideAt(placed, candidateX, climbY, candidateZ, nextYaw)) {
+                    candidateY = climbY;
+                    blocked = false;
+                    break;
+                }
+            }
+        }
+        if (blocked) {
             collided = true;
             break;
         }

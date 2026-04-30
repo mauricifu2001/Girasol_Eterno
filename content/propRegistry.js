@@ -439,6 +439,7 @@ const RAW_PROP_DEFINITIONS = [
         label: "Piano de pista",
         category: "racing",
         tags: ["race", "curb", "track"],
+        solid: false,
         visual: { tint: "rgba(228, 226, 222, 0.42)" },
         profile: { halfExtents: { x: 0.5, z: 0.26 }, minY: 0, maxY: 0.12, supportY: 0.08 }
     },
