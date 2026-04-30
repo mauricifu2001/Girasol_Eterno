@@ -13833,7 +13833,7 @@ function updateKartDrive(deltaSeconds) {
         const adaptiveGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "adaptive");
         const climbGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "climb");
         const descendGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "descend");
-        const targetCandidates = [adaptiveGroundY, climbGroundY, descendGroundY];
+        const targetCandidates = [placed.y, adaptiveGroundY, climbGroundY, descendGroundY];
         const preferClimb = climbGroundY > placed.y + 0.06;
         const preferDescend = !preferClimb && descendGroundY < placed.y - 0.06;
         if (drive.speed > 0.12) {
@@ -13854,6 +13854,12 @@ function updateKartDrive(deltaSeconds) {
             if (!Number.isFinite(value)) {
                 continue;
             }
+            if (value > placed.y + KART_MAX_STEP_UP + 1e-4) {
+                continue;
+            }
+            if (value < placed.y - KART_VERTICAL_SETTLE_MAX_PER_STEP - 1e-4) {
+                continue;
+            }
             if (!uniqueTargets.some((existing) => Math.abs(existing - value) <= 1e-4)) {
                 uniqueTargets.push(value);
             }
@@ -13863,6 +13869,11 @@ function updateKartDrive(deltaSeconds) {
                 return b - a;
             }
             if (preferDescend) {
+                const da = Math.abs(a - placed.y);
+                const db = Math.abs(b - placed.y);
+                if (Math.abs(da - db) > 1e-4) {
+                    return da - db;
+                }
                 return a - b;
             }
             return Math.abs(a - placed.y) - Math.abs(b - placed.y);
