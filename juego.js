@@ -9841,11 +9841,34 @@ function publishPropRemoval(propId) {
     queueCloudPropWrite(id, null);
 }
 
+function isLocallyAuthoritativePropId(propId) {
+    const id = String(propId || "");
+    if (!id) {
+        return false;
+    }
+    if (String(interactionState.kartDrive?.propId || "") === id) {
+        return true;
+    }
+    if (
+        String(interactionState.localUsing?.propId || "") === id
+        && String(interactionState.localUsing?.usageKind || "") === INTERACTION_USAGE_KIND.KART
+    ) {
+        return true;
+    }
+    return false;
+}
+
 function applyRemotePropsSnapshot(rawPayload) {
     const payload = rawPayload && typeof rawPayload === "object" ? rawPayload : {};
     const seenIds = new Set();
 
     for (const [propId, rawProp] of Object.entries(payload)) {
+        if (isLocallyAuthoritativePropId(propId)) {
+            if (placedProps.has(String(propId))) {
+                seenIds.add(String(propId));
+            }
+            continue;
+        }
         if (multiplayer.pendingPropWrites.get(propId) === null) {
             continue;
         }
@@ -9863,6 +9886,9 @@ function applyRemotePropsSnapshot(rawPayload) {
     }
 
     for (const propId of Array.from(placedProps.keys())) {
+        if (isLocallyAuthoritativePropId(propId)) {
+            continue;
+        }
         const pendingValue = multiplayer.pendingPropWrites.get(propId);
         const hasPendingCreateOrUpdate = pendingValue !== undefined && pendingValue !== null;
         if (!seenIds.has(propId) && !hasPendingCreateOrUpdate) {
@@ -9874,6 +9900,10 @@ function applyRemotePropsSnapshot(rawPayload) {
 function applyRemotePropEntry(propId, rawProp) {
     const id = String(propId || "");
     if (!id) {
+        return;
+    }
+
+    if (isLocallyAuthoritativePropId(id)) {
         return;
     }
 
@@ -9895,6 +9925,10 @@ function applyRemotePropEntry(propId, rawProp) {
 function applyRemotePropRemoval(propId) {
     const id = String(propId || "");
     if (!id) {
+        return;
+    }
+
+    if (isLocallyAuthoritativePropId(id)) {
         return;
     }
 
