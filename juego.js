@@ -13822,6 +13822,12 @@ function updateKartDrive(deltaSeconds) {
     let moved = false;
     let transformChanged = false;
     let collided = false;
+    const currentYaw = Number(placed.yaw) || 0;
+    if (Math.abs(normalizeYawRadians(nextYaw - currentYaw)) > 1e-4) {
+        // Apply steering rotation even if blocked, so players can turn out of edge contact.
+        updatePlacedPropTransformImmediate(placed, placed.x, placed.y, placed.z, nextYaw);
+        transformChanged = true;
+    }
     const moveDistance = Math.hypot(deltaX, deltaZ);
     const steps = Math.max(1, Math.ceil(moveDistance / 0.42));
     const stepX = deltaX / steps;
@@ -13935,14 +13941,6 @@ function updateKartDrive(deltaSeconds) {
             transformChanged = true;
             moved = true;
             collided = false;
-        }
-    }
-
-    if (!moved && !collided) {
-        const currentYaw = Number(placed.yaw) || 0;
-        if (Math.abs(normalizeYawRadians(nextYaw - currentYaw)) > 1e-4) {
-            updatePlacedPropTransformImmediate(placed, placed.x, placed.y, placed.z, nextYaw);
-            transformChanged = true;
         }
     }
 
@@ -17785,14 +17783,23 @@ function onKeyDown(event) {
     }
 
     if (interactionState.kartDrive) {
+        const fallbackKey = String(event.key || "").toLowerCase();
+        let normalizedCode = String(event.code || "");
+        if (!normalizedCode || normalizedCode === "Unidentified") {
+            if (fallbackKey === "w") normalizedCode = "KeyW";
+            if (fallbackKey === "a") normalizedCode = "KeyA";
+            if (fallbackKey === "s") normalizedCode = "KeyS";
+            if (fallbackKey === "d") normalizedCode = "KeyD";
+            if (fallbackKey === " ") normalizedCode = "Space";
+        }
         if (
-            event.code === "KeyW"
-            || event.code === "KeyA"
-            || event.code === "KeyS"
-            || event.code === "KeyD"
-            || event.code === "Space"
+            normalizedCode === "KeyW"
+            || normalizedCode === "KeyA"
+            || normalizedCode === "KeyS"
+            || normalizedCode === "KeyD"
+            || normalizedCode === "Space"
         ) {
-            state.keyDown.add(event.code);
+            state.keyDown.add(normalizedCode);
         }
         return;
     }
@@ -17865,6 +17872,14 @@ function onKeyDown(event) {
 
 function onKeyUp(event) {
     state.keyDown.delete(event.code);
+    const fallbackKey = String(event.key || "").toLowerCase();
+    if (!event.code || event.code === "Unidentified") {
+        if (fallbackKey === "w") state.keyDown.delete("KeyW");
+        if (fallbackKey === "a") state.keyDown.delete("KeyA");
+        if (fallbackKey === "s") state.keyDown.delete("KeyS");
+        if (fallbackKey === "d") state.keyDown.delete("KeyD");
+        if (fallbackKey === " ") state.keyDown.delete("Space");
+    }
 }
 
 function onMouseDown(event) {
