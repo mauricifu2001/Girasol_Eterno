@@ -35,7 +35,11 @@ export const PROP_TYPE = Object.freeze({
     RACE_BARRIER: "race_barrier",
     RACE_CURB: "race_curb",
     RACE_FINISH_LINE: "race_finish_line",
-    RACE_CHECKPOINT: "race_checkpoint"
+    RACE_CHECKPOINT: "race_checkpoint",
+    RACE_BOOST_PAD: "race_boost_pad",
+    RACE_RAMP_LOW: "race_ramp_low",
+    RACE_RAMP_MEDIUM: "race_ramp_medium",
+    RACE_RAMP_HIGH: "race_ramp_high"
 });
 
 const PROP_KIND = "prop";
@@ -432,7 +436,7 @@ const RAW_PROP_DEFINITIONS = [
         category: "racing",
         tags: ["race", "barrier", "track"],
         visual: { tint: "rgba(220, 80, 74, 0.42)" },
-        profile: { halfExtents: { x: 0.78, z: 0.2 }, minY: 0, maxY: 0.78, supportY: 0.76 }
+        profile: { halfExtents: { x: 0.78, z: 0.24 }, minY: 0, maxY: 1.18, supportY: 1.14 }
     },
     {
         id: PROP_TYPE.RACE_CURB,
@@ -460,6 +464,39 @@ const RAW_PROP_DEFINITIONS = [
         solid: false,
         visual: { tint: "rgba(90, 198, 241, 0.36)" },
         profile: { halfExtents: { x: 1.62, z: 0.24 }, minY: 0, maxY: 2.12, supportY: 0.04 }
+    },
+    {
+        id: PROP_TYPE.RACE_BOOST_PAD,
+        label: "Boost pad",
+        category: "racing",
+        tags: ["race", "boost", "track", "speed"],
+        solid: false,
+        visual: { tint: "rgba(107, 194, 255, 0.40)" },
+        profile: { halfExtents: { x: 0.5, z: 0.5 }, minY: 0, maxY: 0.08, supportY: 0.05 }
+    },
+    {
+        id: PROP_TYPE.RACE_RAMP_LOW,
+        label: "Rampa baja",
+        category: "racing",
+        tags: ["race", "ramp", "track", "low"],
+        visual: { tint: "rgba(194, 196, 202, 0.42)" },
+        profile: { halfExtents: { x: 0.5, z: 0.5 }, minY: 0, maxY: 0.34, supportY: 0.12 }
+    },
+    {
+        id: PROP_TYPE.RACE_RAMP_MEDIUM,
+        label: "Rampa media",
+        category: "racing",
+        tags: ["race", "ramp", "track", "medium"],
+        visual: { tint: "rgba(179, 183, 191, 0.42)" },
+        profile: { halfExtents: { x: 0.5, z: 0.5 }, minY: 0, maxY: 0.66, supportY: 0.2 }
+    },
+    {
+        id: PROP_TYPE.RACE_RAMP_HIGH,
+        label: "Rampa alta",
+        category: "racing",
+        tags: ["race", "ramp", "track", "high"],
+        visual: { tint: "rgba(160, 166, 178, 0.42)" },
+        profile: { halfExtents: { x: 0.5, z: 0.5 }, minY: 0, maxY: 1.02, supportY: 0.24 }
     }
 ];
 

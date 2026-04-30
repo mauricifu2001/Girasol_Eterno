@@ -155,6 +155,18 @@ const KART_COLLISION_EXTENT_SCALE_Z = 0.66;
 const KART_COLLISION_MIN_Y_OFFSET = 0.14;
 const KART_COLLISION_MAX_Y_OFFSET = 0.04;
 const KART_VERTICAL_SETTLE_MAX_PER_STEP = 0.34;
+const KART_BOOST_SPEED_MULTIPLIER = 1.55;
+const KART_BOOST_ACCELERATION_MULTIPLIER = 1.8;
+const KART_BOOST_DURATION_SECONDS = 1.65;
+const KART_BOOST_SYNC_COOLDOWN_SECONDS = 0.18;
+const RACE_SURFACE_EPSILON = 0.04;
+const RACE_FINISH_REPEAT_COOLDOWN_SECONDS = 1.2;
+const RACE_META_WINNER_KEY = "raceWinner";
+const RACE_RAMP_HEIGHT_BY_TYPE = Object.freeze({
+    [PROP_TYPE.RACE_RAMP_LOW]: 0.34,
+    [PROP_TYPE.RACE_RAMP_MEDIUM]: 0.66,
+    [PROP_TYPE.RACE_RAMP_HIGH]: 1.02
+});
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
     Object.freeze({ key: "red", label: "Rojo", body: 0xd35046, side: 0xa53d37, accent: 0xef796b }),
@@ -1351,12 +1363,14 @@ const multiplayer = {
         propsRootRef: null,
         metaRef: null,
         dayNightRef: null,
-        wildlifeRef: null
+        wildlifeRef: null,
+        raceWinnerRef: null
     },
     remotePlayers: new Map(),
     chunkEditSubscriptions: new Map(),
     propSnapshotUnsubscribe: null,
     wildlifeSnapshotUnsubscribe: null,
+    raceWinnerUnsubscribe: null,
     sendIntervalMs: 120,
     lastBroadcastMs: 0,
     unsubscribers: [],
@@ -1530,6 +1544,12 @@ const interactionState = {
     previousRemoteUsingByProp: new Map(),
     localAudioContext: null,
     jukeboxLinkDraftByProp: new Map()
+};
+
+const raceState = {
+    winner: null,
+    lastAnnouncedKey: "",
+    lastLocalWinnerSubmitAt: 0
 };
 
 const jukeboxState = {
@@ -3734,6 +3754,7 @@ function clearRuntimeWorldStateForHardReset() {
     clearFish();
     clearSunflowers();
     economyState.sunflowers = 0;
+    clearRaceWinnerState();
     updateSunflowerCurrencyHud();
 }
 
@@ -5876,6 +5897,156 @@ function findNearestPlacedPropOfType(propType, x, z, maxDistance = 2.3) {
     return nearest;
 }
 
+function isRaceRampPropType(propType) {
+    const key = String(propType || "");
+    return Object.prototype.hasOwnProperty.call(RACE_RAMP_HEIGHT_BY_TYPE, key);
+}
+
+function isKartNonBlockingPropType(propType) {
+    return propType === PROP_TYPE.RACE_CURB
+        || propType === PROP_TYPE.RACE_BOOST_PAD
+        || isRaceRampPropType(propType);
+}
+
+function getKartBoundsAt(placed, x, y, z, yaw) {
+    const profile = getPropProfileForState(PROP_TYPE.KART, placed?.state);
+    const rotated = getRotatedPropHalfExtents(PROP_TYPE.KART, yaw, placed?.state);
+    const kartHalfX = Math.max(0.1, rotated.x * KART_COLLISION_EXTENT_SCALE_X);
+    const kartHalfZ = Math.max(0.1, rotated.z * KART_COLLISION_EXTENT_SCALE_Z);
+    return {
+        minX: x - kartHalfX,
+        maxX: x + kartHalfX,
+        minY: y + (Number(profile.minY) || 0) + KART_COLLISION_MIN_Y_OFFSET,
+        maxY: y + (Number(profile.maxY) || 1) - KART_COLLISION_MAX_Y_OFFSET,
+        minZ: z - kartHalfZ,
+        maxZ: z + kartHalfZ
+    };
+}
+
+function getPropLocalXZ(placed, worldX, worldZ) {
+    const yaw = Number(placed?.yaw) || 0;
+    const dx = (Number(worldX) || 0) - (Number(placed?.x) || 0);
+    const dz = (Number(worldZ) || 0) - (Number(placed?.z) || 0);
+    const cosYaw = Math.cos(yaw);
+    const sinYaw = Math.sin(yaw);
+    return {
+        x: dx * cosYaw - dz * sinYaw,
+        z: dx * sinYaw + dz * cosYaw
+    };
+}
+
+function getRaceRampSurfaceYAtSample(placed, sampleX, sampleZ) {
+    if (!placed || !isRaceRampPropType(placed.propType)) {
+        return null;
+    }
+    const profile = getPropProfileForState(placed.propType, placed.state);
+    const half = profile.halfExtents || { x: 0.5, z: 0.5 };
+    const local = getPropLocalXZ(placed, sampleX, sampleZ);
+    if (Math.abs(local.x) > (Number(half.x) || 0.5) + 0.01 || Math.abs(local.z) > (Number(half.z) || 0.5) + 0.01) {
+        return null;
+    }
+    const rampHeight = Number(RACE_RAMP_HEIGHT_BY_TYPE[placed.propType]) || 0;
+    if (rampHeight <= 0) {
+        return null;
+    }
+    const halfZ = Math.max(0.0001, Number(half.z) || 0.5);
+    const normalizedZ = THREE.MathUtils.clamp((local.z + halfZ) / (halfZ * 2), 0, 1);
+    return (Number(placed.y) || 0) + rampHeight * normalizedZ;
+}
+
+function getRaceFlatSurfaceYAtSample(placed, sampleX, sampleZ) {
+    if (!placed) {
+        return null;
+    }
+    if (placed.propType !== PROP_TYPE.RACE_CURB && placed.propType !== PROP_TYPE.RACE_BOOST_PAD) {
+        return null;
+    }
+    const bounds = getPlacedPropBounds(placed, 0);
+    if (!bounds) {
+        return null;
+    }
+    if (
+        sampleX < bounds.minX - 0.01
+        || sampleX > bounds.maxX + 0.01
+        || sampleZ < bounds.minZ - 0.01
+        || sampleZ > bounds.maxZ + 0.01
+    ) {
+        return null;
+    }
+    const profile = getPropProfileForState(placed.propType, placed.state);
+    return (Number(placed.y) || 0) + (Number(profile.maxY) || 0);
+}
+
+function resolveRaceSurfaceYAtSample(sampleX, sampleZ, currentY) {
+    const nearbyIds = queryNearbyPropIdsReusable(
+        sampleX - 0.12,
+        sampleX + 0.12,
+        (Number(currentY) || 0) - 1.7,
+        (Number(currentY) || 0) + 2.7,
+        sampleZ - 0.12,
+        sampleZ + 0.12
+    );
+    let bestSurfaceY = null;
+    for (const propId of nearbyIds) {
+        const other = placedProps.get(String(propId));
+        if (!other || !other.node || other.node.visible === false) {
+            continue;
+        }
+        if (!isKartNonBlockingPropType(other.propType)) {
+            continue;
+        }
+        let candidateY = null;
+        if (isRaceRampPropType(other.propType)) {
+            candidateY = getRaceRampSurfaceYAtSample(other, sampleX, sampleZ);
+        } else {
+            candidateY = getRaceFlatSurfaceYAtSample(other, sampleX, sampleZ);
+        }
+        if (!Number.isFinite(candidateY)) {
+            continue;
+        }
+        if (!Number.isFinite(bestSurfaceY) || candidateY > bestSurfaceY) {
+            bestSurfaceY = candidateY;
+        }
+    }
+    return bestSurfaceY;
+}
+
+function collectKartOverlappingPropIdsByType(placed, propType) {
+    const result = new Set();
+    if (!placed) {
+        return result;
+    }
+    const kartBounds = getKartBoundsAt(
+        placed,
+        Number(placed.x) || 0,
+        Number(placed.y) || 0,
+        Number(placed.z) || 0,
+        Number(placed.yaw) || 0
+    );
+    // Include a small vertical tolerance so thin race props (boost pads/finish triggers) are detected reliably.
+    kartBounds.minY -= 0.36;
+    kartBounds.maxY += 0.2;
+    const nearbyIds = queryNearbyPropIdsReusable(
+        kartBounds.minX,
+        kartBounds.maxX,
+        kartBounds.minY,
+        kartBounds.maxY,
+        kartBounds.minZ,
+        kartBounds.maxZ
+    );
+    for (const propId of nearbyIds) {
+        const other = placedProps.get(String(propId));
+        if (!other || other.propType !== propType || !other.node || other.node.visible === false) {
+            continue;
+        }
+        const otherBounds = getPlacedPropBounds(other, 0);
+        if (intersectsAabb(kartBounds, otherBounds)) {
+            result.add(String(propId));
+        }
+    }
+    return result;
+}
+
 function normalizeLampLevel(value) {
     const numeric = Math.floor(Number(value));
     if (!Number.isFinite(numeric) || numeric < 0) {
@@ -7484,11 +7655,11 @@ function buildKartNode(root) {
 }
 
 function buildRaceBarrierNode(root) {
-    root.add(createDetailPart({ x: 1.6, y: 0.18, z: 0.24 }, { x: 0, y: 0.45, z: 0 }, 0xc9493f));
-    root.add(createDetailPart({ x: 1.6, y: 0.18, z: 0.24 }, { x: 0, y: 0.24, z: 0 }, 0xffffff));
-    root.add(createDetailPart({ x: 1.6, y: 0.12, z: 0.2 }, { x: 0, y: 0.08, z: 0 }, 0x343845));
-    root.add(createDetailPart({ x: 0.18, y: 0.76, z: 0.18 }, { x: -0.58, y: 0.38, z: 0 }, 0x2a2f3a));
-    root.add(createDetailPart({ x: 0.18, y: 0.76, z: 0.18 }, { x: 0.58, y: 0.38, z: 0 }, 0x2a2f3a));
+    root.add(createDetailPart({ x: 1.6, y: 0.2, z: 0.3 }, { x: 0, y: 0.6, z: 0 }, 0xc9493f));
+    root.add(createDetailPart({ x: 1.6, y: 0.2, z: 0.3 }, { x: 0, y: 0.36, z: 0 }, 0xffffff));
+    root.add(createDetailPart({ x: 1.6, y: 0.14, z: 0.24 }, { x: 0, y: 0.1, z: 0 }, 0x343845));
+    root.add(createDetailPart({ x: 0.2, y: 1.08, z: 0.2 }, { x: -0.6, y: 0.54, z: 0 }, 0x2a2f3a));
+    root.add(createDetailPart({ x: 0.2, y: 1.08, z: 0.2 }, { x: 0.6, y: 0.54, z: 0 }, 0x2a2f3a));
 }
 
 function buildRaceCurbNode(root) {
@@ -7521,6 +7692,74 @@ function buildRaceCheckpointNode(root) {
         emissiveIntensity: 0.55
     });
     root.add(createDynamicPart({ x: 2.96, y: 0.06, z: 0.06 }, { x: 0, y: 2.0, z: 0.1 }, beamMaterial));
+}
+
+function buildRaceBoostPadNode(root) {
+    root.add(createDetailPart({ x: 1.0, y: 0.08, z: 1.0 }, { x: 0, y: 0.04, z: 0 }, 0x2f3f57));
+    root.add(createDetailPart({ x: 0.92, y: 0.03, z: 0.92 }, { x: 0, y: 0.095, z: 0 }, 0x66b6ff));
+    root.add(createDetailPart({ x: 0.16, y: 0.025, z: 0.22 }, { x: -0.24, y: 0.12, z: 0.08 }, 0xd4f0ff));
+    root.add(createDetailPart({ x: 0.16, y: 0.025, z: 0.22 }, { x: 0, y: 0.12, z: 0.08 }, 0xd4f0ff));
+    root.add(createDetailPart({ x: 0.16, y: 0.025, z: 0.22 }, { x: 0.24, y: 0.12, z: 0.08 }, 0xd4f0ff));
+    root.add(createDetailPart({ x: 0.22, y: 0.025, z: 0.12 }, { x: -0.24, y: 0.12, z: -0.12 }, 0x96ddff));
+    root.add(createDetailPart({ x: 0.22, y: 0.025, z: 0.12 }, { x: 0, y: 0.12, z: -0.12 }, 0x96ddff));
+    root.add(createDetailPart({ x: 0.22, y: 0.025, z: 0.12 }, { x: 0.24, y: 0.12, z: -0.12 }, 0x96ddff));
+}
+
+function buildRaceRampNode(root, {
+    height = 0.66,
+    baseColor = 0xb7bcc7,
+    stripeColor = 0xffffff,
+    sideColor = 0x8a909d
+} = {}) {
+    root.add(createDetailPart({ x: 1.0, y: 0.05, z: 1.0 }, { x: 0, y: 0.025, z: 0 }, 0x2f3642));
+    const stepCount = 7;
+    const stepLength = 1 / stepCount;
+    for (let i = 0; i < stepCount; i += 1) {
+        const t = (i + 1) / stepCount;
+        const stepHeight = Math.max(0.04, height * t);
+        const stepZ = -0.5 + stepLength * (i + 0.5);
+        root.add(createDetailPart(
+            { x: 1.0, y: stepHeight, z: stepLength + 0.002 },
+            { x: 0, y: stepHeight * 0.5, z: stepZ },
+            baseColor
+        ));
+        if (i % 2 === 0) {
+            root.add(createDetailPart(
+                { x: 0.92, y: 0.02, z: stepLength * 0.92 },
+                { x: 0, y: stepHeight + 0.01, z: stepZ },
+                stripeColor
+            ));
+        }
+    }
+    root.add(createDetailPart({ x: 0.07, y: Math.max(0.12, height + 0.02), z: 1.0 }, { x: -0.47, y: Math.max(0.12, height + 0.02) * 0.5, z: 0 }, sideColor));
+    root.add(createDetailPart({ x: 0.07, y: Math.max(0.12, height + 0.02), z: 1.0 }, { x: 0.47, y: Math.max(0.12, height + 0.02) * 0.5, z: 0 }, sideColor));
+}
+
+function buildRaceRampLowNode(root) {
+    buildRaceRampNode(root, {
+        height: 0.34,
+        baseColor: 0xc3c7cf,
+        stripeColor: 0xf4f6fa,
+        sideColor: 0x949aa7
+    });
+}
+
+function buildRaceRampMediumNode(root) {
+    buildRaceRampNode(root, {
+        height: 0.66,
+        baseColor: 0xb3b9c4,
+        stripeColor: 0xeef2f8,
+        sideColor: 0x868d99
+    });
+}
+
+function buildRaceRampHighNode(root) {
+    buildRaceRampNode(root, {
+        height: 1.02,
+        baseColor: 0x9da5b5,
+        stripeColor: 0xe6ecf5,
+        sideColor: 0x757f92
+    });
 }
 
 const PROP_NODE_BUILDERS = Object.freeze({
@@ -7560,7 +7799,11 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.RACE_BARRIER]: buildRaceBarrierNode,
     [PROP_TYPE.RACE_CURB]: buildRaceCurbNode,
     [PROP_TYPE.RACE_FINISH_LINE]: buildRaceFinishLineNode,
-    [PROP_TYPE.RACE_CHECKPOINT]: buildRaceCheckpointNode
+    [PROP_TYPE.RACE_CHECKPOINT]: buildRaceCheckpointNode,
+    [PROP_TYPE.RACE_BOOST_PAD]: buildRaceBoostPadNode,
+    [PROP_TYPE.RACE_RAMP_LOW]: buildRaceRampLowNode,
+    [PROP_TYPE.RACE_RAMP_MEDIUM]: buildRaceRampMediumNode,
+    [PROP_TYPE.RACE_RAMP_HIGH]: buildRaceRampHighNode
 });
 
 const registryValidationIssues = [
@@ -9982,6 +10225,157 @@ function subscribePropSnapshot() {
     });
 }
 
+function normalizeRaceWinnerPayload(rawPayload) {
+    if (!rawPayload || typeof rawPayload !== "object") {
+        return null;
+    }
+    const playerId = String(rawPayload.playerId || "").trim();
+    const playerLabel = String(rawPayload.playerLabel || "").trim();
+    const playerDisplayName = String(rawPayload.playerDisplayName || playerLabel || "").trim();
+    const kartId = String(rawPayload.kartId || "").trim();
+    const finishId = String(rawPayload.finishId || "").trim();
+    const atMsRaw = Math.floor(Number(rawPayload.atMs));
+    const atMs = Number.isFinite(atMsRaw) && atMsRaw > 0 ? atMsRaw : Date.now();
+    if (!playerId || !kartId) {
+        return null;
+    }
+    return {
+        playerId,
+        playerLabel: playerLabel || playerId,
+        playerDisplayName: playerDisplayName || playerId,
+        kartId,
+        finishId,
+        atMs
+    };
+}
+
+function getRaceWinnerAnnouncementKey(winnerPayload) {
+    if (!winnerPayload) {
+        return "";
+    }
+    return [
+        String(winnerPayload.playerId || ""),
+        String(winnerPayload.kartId || ""),
+        String(winnerPayload.finishId || ""),
+        String(winnerPayload.atMs || "")
+    ].join("|");
+}
+
+function clearRaceWinnerState() {
+    raceState.winner = null;
+    raceState.lastAnnouncedKey = "";
+}
+
+function applyRaceWinnerState(rawPayload, announce = true) {
+    const normalized = normalizeRaceWinnerPayload(rawPayload);
+    if (!normalized) {
+        clearRaceWinnerState();
+        return false;
+    }
+    const nextKey = getRaceWinnerAnnouncementKey(normalized);
+    const previousKey = getRaceWinnerAnnouncementKey(raceState.winner);
+    const changed = nextKey !== previousKey;
+    raceState.winner = normalized;
+    if (announce && changed && raceState.lastAnnouncedKey !== nextKey) {
+        showToast(`Meta: ${normalized.playerDisplayName} gano la carrera`, "success", 2200);
+        raceState.lastAnnouncedKey = nextKey;
+    }
+    return changed;
+}
+
+function clearRaceWinnerSubscription() {
+    if (typeof multiplayer.raceWinnerUnsubscribe === "function") {
+        multiplayer.raceWinnerUnsubscribe();
+    }
+    multiplayer.raceWinnerUnsubscribe = null;
+}
+
+function subscribeRaceWinnerState() {
+    if (!multiplayer.ready || multiplayer.raceWinnerUnsubscribe) {
+        return;
+    }
+    const dbModule = multiplayer.firebase?.dbModule;
+    const db = multiplayer.firebase?.db;
+    if (!dbModule || !db) {
+        return;
+    }
+    const winnerRef = multiplayer.refs.raceWinnerRef || dbModule.ref(db, `${multiplayer.worldPath}/meta/${RACE_META_WINNER_KEY}`);
+    multiplayer.refs.raceWinnerRef = winnerRef;
+    multiplayer.raceWinnerUnsubscribe = dbModule.onValue(winnerRef, (snapshot) => {
+        const value = snapshot.val();
+        if (!snapshot.exists() || !value) {
+            clearRaceWinnerState();
+            return;
+        }
+        applyRaceWinnerState(value, true);
+    });
+}
+
+function buildLocalRaceWinnerPayload(kartPlaced, finishPlaced = null) {
+    const profile = multiplayer.profile || resolvePlayerIdentity();
+    return {
+        playerId: String(profile?.id || ""),
+        playerLabel: String(profile?.label || profile?.id || "Invitado"),
+        playerDisplayName: String(profile?.displayName || profile?.label || "Invitado"),
+        kartId: String(kartPlaced?.id || ""),
+        finishId: String(finishPlaced?.id || ""),
+        atMs: Date.now()
+    };
+}
+
+async function submitRaceWinnerIfFirst(kartPlaced, finishPlaced = null) {
+    if (!kartPlaced) {
+        return false;
+    }
+    if (normalizeRaceWinnerPayload(raceState.winner)) {
+        return false;
+    }
+    const payload = buildLocalRaceWinnerPayload(kartPlaced, finishPlaced);
+    if (!normalizeRaceWinnerPayload(payload)) {
+        return false;
+    }
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.firebase?.db) {
+        applyRaceWinnerState(payload, true);
+        return true;
+    }
+    const nowSeconds = performance.now() / 1000;
+    if ((Number(raceState.lastLocalWinnerSubmitAt) || 0) > 0 && (nowSeconds - raceState.lastLocalWinnerSubmitAt) < 0.15) {
+        return false;
+    }
+    raceState.lastLocalWinnerSubmitAt = nowSeconds;
+
+    const dbModule = multiplayer.firebase.dbModule;
+    const db = multiplayer.firebase.db;
+    const winnerRef = multiplayer.refs.raceWinnerRef || dbModule.ref(db, `${multiplayer.worldPath}/meta/${RACE_META_WINNER_KEY}`);
+    multiplayer.refs.raceWinnerRef = winnerRef;
+
+    try {
+        if (typeof dbModule.runTransaction === "function") {
+            await dbModule.runTransaction(
+                winnerRef,
+                (currentValue) => {
+                    const currentWinner = normalizeRaceWinnerPayload(currentValue);
+                    if (currentWinner) {
+                        return currentWinner;
+                    }
+                    return payload;
+                },
+                { applyLocally: false }
+            );
+        } else {
+            const currentSnap = await dbModule.get(winnerRef);
+            const currentWinner = normalizeRaceWinnerPayload(currentSnap.val());
+            if (!currentWinner) {
+                await dbModule.set(winnerRef, payload);
+            }
+        }
+        return true;
+    } catch (error) {
+        console.warn("No pude registrar ganador de carrera", error);
+        return false;
+    }
+}
+
 function clearWildlifeSnapshotSubscription() {
     if (typeof multiplayer.wildlifeSnapshotUnsubscribe === "function") {
         multiplayer.wildlifeSnapshotUnsubscribe();
@@ -10834,6 +11228,8 @@ async function ensureSharedDayNightClock(dbModule, db, worldPath) {
 
 async function setupRealtimeMultiplayer() {
     multiplayer.profile = resolvePlayerIdentity();
+    clearRaceWinnerState();
+    clearRaceWinnerSubscription();
     ensureLocalAvatarPreviewModel();
     const profileLabel = multiplayer.profile.displayName || multiplayer.profile.label;
     setOnlineStatus(`Jugador: ${profileLabel} - modo solo`);
@@ -10872,6 +11268,7 @@ async function setupRealtimeMultiplayer() {
         multiplayer.refs.propsRootRef = dbModule.ref(db, `${worldPath}/props`);
         multiplayer.refs.wildlifeRef = dbModule.ref(db, `${worldPath}/wildlife`);
         multiplayer.refs.metaRef = dbModule.ref(db, `${worldPath}/meta`);
+        multiplayer.refs.raceWinnerRef = dbModule.ref(db, `${worldPath}/meta/${RACE_META_WINNER_KEY}`);
         await ensureSharedDayNightClock(dbModule, db, worldPath);
 
         const connectedRef = dbModule.ref(db, ".info/connected");
@@ -10934,6 +11331,7 @@ async function setupRealtimeMultiplayer() {
         syncChunkEditSubscriptions();
         subscribePropSnapshot();
         subscribeWildlifeSnapshot();
+        subscribeRaceWinnerState();
         multiplayer.wildlifeSnapshotReady = multiplayer.isWildlifeAuthority;
         if (multiplayer.isWildlifeAuthority) {
             publishWildlifeSnapshot(true);
@@ -13584,18 +13982,7 @@ function getPropBoundsCollidesSolidBlocks(bounds) {
 function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
     const placedId = String(placed?.id || "");
     // Use a slightly smaller collision hull than visual mesh to avoid edge-snags on voxel steps/curbs.
-    const profile = getPropProfileForState(PROP_TYPE.KART, placed?.state);
-    const rotated = getRotatedPropHalfExtents(PROP_TYPE.KART, nextYaw, placed?.state);
-    const kartHalfX = Math.max(0.1, rotated.x * KART_COLLISION_EXTENT_SCALE_X);
-    const kartHalfZ = Math.max(0.1, rotated.z * KART_COLLISION_EXTENT_SCALE_Z);
-    const nextBounds = {
-        minX: nextX - kartHalfX,
-        maxX: nextX + kartHalfX,
-        minY: nextY + (Number(profile.minY) || 0) + KART_COLLISION_MIN_Y_OFFSET,
-        maxY: nextY + (Number(profile.maxY) || 1) - KART_COLLISION_MAX_Y_OFFSET,
-        minZ: nextZ - kartHalfZ,
-        maxZ: nextZ + kartHalfZ
-    };
+    const nextBounds = getKartBoundsAt(placed, nextX, nextY, nextZ, nextYaw);
     if (getPropBoundsCollidesSolidBlocks(nextBounds)) {
         return true;
     }
@@ -13620,8 +14007,8 @@ function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
         if (definition && !definition.solid) {
             continue;
         }
-        if (other.propType === PROP_TYPE.RACE_CURB) {
-            // Curbs should be drivable so races don't get stuck at piano edges.
+        if (isKartNonBlockingPropType(other.propType)) {
+            // Curbs/boost/ramp modules are drivable surfaces and should not hard-block the kart hull.
             continue;
         }
         const otherBounds = getPlacedPropBounds(other, 0);
@@ -13637,10 +14024,14 @@ function resolveKartGroundYAt(x, z, currentY) {
     const sampleZ = Math.floor(Number(z) || 0);
     const startY = Math.min(WORLD_MAX_Y - 1, Math.max(0, Math.floor((Number(currentY) || 0) + 3)));
     const scannedY = findColumnSurfaceYAtOrBelow(sampleX, sampleZ, startY);
-    if (Number.isFinite(scannedY)) {
-        return scannedY + 1;
+    const terrainGroundY = Number.isFinite(scannedY)
+        ? scannedY + 1
+        : (Math.floor(Number(terrainHeight(sampleX, sampleZ)) || 0) + 1);
+    const raceSurfaceY = resolveRaceSurfaceYAtSample(Number(x) || 0, Number(z) || 0, currentY);
+    if (Number.isFinite(raceSurfaceY)) {
+        return Math.max(terrainGroundY, raceSurfaceY);
     }
-    return Math.floor(Number(terrainHeight(sampleX, sampleZ)) || 0) + 1;
+    return terrainGroundY;
 }
 
 function resolveKartGroundYMultiSample(x, z, yaw, currentY, motionSign = 0, mode = "adaptive") {
@@ -13756,6 +14147,10 @@ function enterKartDrive(propHit) {
         speed: 0,
         steer: 0,
         drift: false,
+        boostRemaining: 0,
+        boostPadInsideIds: new Set(),
+        finishInsideIds: new Set(),
+        finishCooldown: 0,
         cameraYaw: normalizeYawRadians((Number(placed.yaw) || 0) + KART_CAMERA_YAW_OFFSET),
         cameraEyeY: (Number(placed.y) || 0) + KART_DRIVER_EYE_HEIGHT,
         syncTick: 0,
@@ -13805,6 +14200,48 @@ function exitKartDrive(showFeedback = false) {
     return true;
 }
 
+function refreshKartBoostStateFromPads(placed, drive) {
+    if (!placed || !drive) {
+        return false;
+    }
+    const currentHits = collectKartOverlappingPropIdsByType(placed, PROP_TYPE.RACE_BOOST_PAD);
+    const previousHits = drive.boostPadInsideIds instanceof Set ? drive.boostPadInsideIds : new Set();
+    let activated = false;
+    for (const boostId of currentHits) {
+        if (!previousHits.has(boostId)) {
+            drive.boostRemaining = Math.max(Number(drive.boostRemaining) || 0, KART_BOOST_DURATION_SECONDS);
+            activated = true;
+        }
+    }
+    drive.boostPadInsideIds = currentHits;
+    return activated;
+}
+
+function checkKartFinishLineCrossing(placed, drive) {
+    if (!placed || !drive) {
+        return;
+    }
+    const currentHits = collectKartOverlappingPropIdsByType(placed, PROP_TYPE.RACE_FINISH_LINE);
+    const previousHits = drive.finishInsideIds instanceof Set ? drive.finishInsideIds : new Set();
+    let crossedFinishId = "";
+    for (const finishId of currentHits) {
+        if (!previousHits.has(finishId)) {
+            crossedFinishId = finishId;
+            break;
+        }
+    }
+    drive.finishInsideIds = currentHits;
+    if (!crossedFinishId) {
+        return;
+    }
+    if ((Number(drive.finishCooldown) || 0) > 0.001) {
+        return;
+    }
+    drive.finishCooldown = RACE_FINISH_REPEAT_COOLDOWN_SECONDS;
+    const finishPlaced = placedProps.get(crossedFinishId) || null;
+    void submitRaceWinnerIfFirst(placed, finishPlaced);
+}
+
 function updateKartDrive(deltaSeconds) {
     const drive = interactionState.kartDrive;
     if (!drive) {
@@ -13817,6 +14254,12 @@ function updateKartDrive(deltaSeconds) {
         return false;
     }
 
+    drive.finishCooldown = Math.max(0, (Number(drive.finishCooldown) || 0) - deltaSeconds);
+    drive.boostRemaining = Math.max(0, (Number(drive.boostRemaining) || 0) - deltaSeconds);
+    const boostActive = (Number(drive.boostRemaining) || 0) > 0;
+    const forwardSpeedLimit = KART_MAX_SPEED_FORWARD * (boostActive ? KART_BOOST_SPEED_MULTIPLIER : 1);
+    const accelerationForce = KART_ACCELERATION * (boostActive ? KART_BOOST_ACCELERATION_MULTIPLIER : 1);
+
     // In this yaw system positive rotation turns left, so A must be positive and D negative.
     const steerTarget = (state.keyDown.has("KeyA") ? 1 : 0) - (state.keyDown.has("KeyD") ? 1 : 0);
     const steerLerp = 1 - Math.exp(-KART_STEER_RESPONSE * Math.max(0, deltaSeconds));
@@ -13828,23 +14271,23 @@ function updateKartDrive(deltaSeconds) {
     drive.drift = drifting;
 
     if (pressingForward) {
-        drive.speed += KART_ACCELERATION * deltaSeconds;
+        drive.speed += accelerationForce * deltaSeconds;
     }
     if (pressingBackward) {
         if (drive.speed > 0) {
             drive.speed -= KART_BRAKE_FORCE * deltaSeconds;
         } else {
-            drive.speed -= KART_ACCELERATION * 0.72 * deltaSeconds;
+            drive.speed -= accelerationForce * 0.72 * deltaSeconds;
         }
     }
     if (!pressingForward && !pressingBackward) {
         drive.speed -= drive.speed * Math.min(1, KART_ROLLING_DRAG * deltaSeconds);
     }
     drive.speed -= drive.speed * Math.min(1, KART_COAST_DRAG * (drifting ? 0.55 : 1) * deltaSeconds);
-    drive.speed = THREE.MathUtils.clamp(drive.speed, -KART_MAX_SPEED_REVERSE, KART_MAX_SPEED_FORWARD);
+    drive.speed = THREE.MathUtils.clamp(drive.speed, -KART_MAX_SPEED_REVERSE, forwardSpeedLimit);
     const motionSign = drive.speed > 0.02 ? 1 : (drive.speed < -0.02 ? -1 : 0);
 
-    const speedFactor = Math.min(1, Math.abs(drive.speed) / KART_MAX_SPEED_FORWARD);
+    const speedFactor = Math.min(1, Math.abs(drive.speed) / Math.max(0.001, forwardSpeedLimit));
     const steerRate = drifting ? KART_STEER_RATE_DRIFT : KART_STEER_RATE;
     const turnScale = 0.22 + speedFactor * 0.95;
     const nextYaw = normalizeYawRadians((Number(placed.yaw) || 0) + drive.steer * steerRate * turnScale * deltaSeconds);
@@ -13876,23 +14319,121 @@ function updateKartDrive(deltaSeconds) {
         let travelY = currentY;
         let blocked = wouldKartCollideAt(placed, candidateX, travelY, candidateZ, nextYaw);
         if (blocked && drive.speed > 0.08) {
-            const climbTests = [0.2, 0.4, 0.6, 0.8, 1.0];
-            for (const climbOffset of climbTests) {
-                if (climbOffset > KART_MAX_STEP_UP + 1e-4) {
-                    continue;
+            // Only allow climb heights that are actually supported by sampled ground/ramp surfaces.
+            const sampledClimbGroundY = resolveKartGroundYMultiSample(
+                candidateX,
+                candidateZ,
+                nextYaw,
+                currentY,
+                motionSign,
+                "climb"
+            );
+            const targetClimbOffset = sampledClimbGroundY - currentY;
+            if (targetClimbOffset > 0.001 && targetClimbOffset <= KART_MAX_STEP_UP + 1e-4) {
+                const climbTests = [targetClimbOffset * 0.5, targetClimbOffset];
+                for (const climbOffset of climbTests) {
+                    if (climbOffset <= 0.001 || climbOffset > KART_MAX_STEP_UP + 1e-4) {
+                        continue;
+                    }
+                    const testY = currentY + climbOffset;
+                    if (wouldKartCollideAt(placed, candidateX, testY, candidateZ, nextYaw)) {
+                        continue;
+                    }
+                    travelY = testY;
+                    blocked = false;
+                    break;
                 }
-                const testY = currentY + climbOffset;
-                if (wouldKartCollideAt(placed, candidateX, testY, candidateZ, nextYaw)) {
-                    continue;
+            }
+        }
+        if (blocked && drive.speed > 0.08) {
+            const descendGroundY = resolveKartGroundYMultiSample(
+                candidateX,
+                candidateZ,
+                nextYaw,
+                currentY,
+                motionSign,
+                "descend"
+            );
+            const descendOffset = descendGroundY - currentY;
+            if (descendOffset < -0.001 && descendOffset >= -KART_MAX_STEP_DOWN - 1e-4) {
+                const descendY = currentY + descendOffset;
+                if (!wouldKartCollideAt(placed, candidateX, descendY, candidateZ, nextYaw)) {
+                    travelY = descendY;
+                    blocked = false;
                 }
-                travelY = testY;
+            }
+        }
+        if (blocked) {
+            const raceSupportY = resolveRaceSurfaceYAtSample(candidateX, candidateZ, currentY);
+            if (Number.isFinite(raceSupportY)) {
+                const supportDelta = raceSupportY - currentY;
+                if (
+                    supportDelta <= KART_MAX_STEP_UP + 1e-4
+                    && supportDelta >= -KART_MAX_STEP_DOWN - 1e-4
+                ) {
+                    const supportY = currentY + THREE.MathUtils.clamp(
+                        supportDelta,
+                        -KART_VERTICAL_SETTLE_MAX_PER_STEP,
+                        KART_VERTICAL_SETTLE_MAX_PER_STEP
+                    );
+                    if (!wouldKartCollideAt(placed, candidateX, supportY, candidateZ, nextYaw)) {
+                        travelY = supportY;
+                        blocked = false;
+                    }
+                }
+            }
+        }
+        if (blocked) {
+            const sampledGroundY = resolveKartGroundYMultiSample(
+                candidateX,
+                candidateZ,
+                nextYaw,
+                currentY,
+                motionSign,
+                "adaptive"
+            );
+            const adaptiveDelta = sampledGroundY - currentY;
+            if (
+                adaptiveDelta <= KART_MAX_STEP_UP + 1e-4
+                && adaptiveDelta >= -KART_MAX_STEP_DOWN - 1e-4
+            ) {
+                const adaptiveY = currentY + THREE.MathUtils.clamp(
+                    adaptiveDelta,
+                    -KART_VERTICAL_SETTLE_MAX_PER_STEP,
+                    KART_VERTICAL_SETTLE_MAX_PER_STEP
+                );
+                if (!wouldKartCollideAt(placed, candidateX, adaptiveY, candidateZ, nextYaw)) {
+                    travelY = adaptiveY;
+                    blocked = false;
+                }
+            }
+        }
+        if (blocked) {
+            const keepForwardAtCurrentY = !wouldKartCollideAt(placed, candidateX, currentY, candidateZ, nextYaw);
+            if (keepForwardAtCurrentY) {
+                travelY = currentY;
                 blocked = false;
-                break;
             }
         }
         if (blocked) {
             collided = true;
             break;
+        }
+        if (Math.abs(travelY - currentY) <= 1e-4) {
+            const supportY = resolveRaceSurfaceYAtSample(candidateX, candidateZ, currentY);
+            if (Number.isFinite(supportY)) {
+                const deltaToSupport = supportY - travelY;
+                if (Math.abs(deltaToSupport) > RACE_SURFACE_EPSILON) {
+                    const liftedY = travelY + THREE.MathUtils.clamp(
+                        deltaToSupport,
+                        -KART_VERTICAL_SETTLE_MAX_PER_STEP,
+                        KART_VERTICAL_SETTLE_MAX_PER_STEP
+                    );
+                    if (!wouldKartCollideAt(placed, candidateX, liftedY, candidateZ, nextYaw)) {
+                        travelY = liftedY;
+                    }
+                }
+            }
         }
 
         updatePlacedPropTransformImmediate(placed, candidateX, travelY, candidateZ, nextYaw);
@@ -13982,8 +14523,16 @@ function updateKartDrive(deltaSeconds) {
         drive.speed *= 0.2;
     }
 
+    const boostActivated = refreshKartBoostStateFromPads(placed, drive);
+    if (moved) {
+        checkKartFinishLineCrossing(placed, drive);
+    }
+
     drive.syncTick += deltaSeconds;
     drive.saveTick += deltaSeconds;
+    if (boostActivated && drive.syncTick >= KART_BOOST_SYNC_COOLDOWN_SECONDS) {
+        drive.syncTick = KART_PROP_SYNC_INTERVAL_SECONDS;
+    }
     if (transformChanged && drive.syncTick >= KART_PROP_SYNC_INTERVAL_SECONDS) {
         drive.syncTick = 0;
         publishPropUpsert(placed.id);
@@ -18216,6 +18765,7 @@ function setupEvents() {
         clearChunkEditSubscriptions();
         clearPropSnapshotSubscription();
         clearWildlifeSnapshotSubscription();
+        clearRaceWinnerSubscription();
         clearWildlife();
         clearFish();
         clearSunflowers();
