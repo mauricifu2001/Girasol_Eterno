@@ -127,12 +127,12 @@ const BASE_SPEED = 6.2;
 const SPRINT_SPEED = 9.4;
 const JUMP_SPEED = 9.2;
 const FLIGHT_SPEED = 24;
-const KART_MAX_SPEED_FORWARD_KMH = 50;
+const KART_MAX_SPEED_FORWARD_KMH = 150;
 const KART_MAX_SPEED_FORWARD = KART_MAX_SPEED_FORWARD_KMH / 3.6;
 const KART_MAX_SPEED_REVERSE = 18 / 3.6;
-const KART_ACCELERATION = 5.8;
-const KART_BRAKE_FORCE = 11.5;
-const KART_COAST_DRAG = 1.65;
+const KART_ACCELERATION = 12.5;
+const KART_BRAKE_FORCE = 18;
+const KART_COAST_DRAG = 1.25;
 const KART_ROLLING_DRAG = 0.72;
 const KART_STEER_RESPONSE = 10;
 const KART_STEER_RATE = 2.9;
@@ -154,6 +154,7 @@ const KART_COLLISION_EXTENT_SCALE_X = 0.78;
 const KART_COLLISION_EXTENT_SCALE_Z = 0.66;
 const KART_COLLISION_MIN_Y_OFFSET = 0.14;
 const KART_COLLISION_MAX_Y_OFFSET = 0.04;
+const KART_VERTICAL_SETTLE_MAX_PER_STEP = 0.34;
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
     Object.freeze({ key: "red", label: "Rojo", body: 0xd35046, side: 0xa53d37, accent: 0xef796b }),
@@ -13833,11 +13834,19 @@ function updateKartDrive(deltaSeconds) {
         const climbGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "climb");
         const descendGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "descend");
         const targetCandidates = [adaptiveGroundY, climbGroundY, descendGroundY];
+        const preferClimb = climbGroundY > placed.y + 0.06;
+        const preferDescend = !preferClimb && descendGroundY < placed.y - 0.06;
         if (drive.speed > 0.12) {
             // Probes for successive stair-style ramps (up/down) when direct sample doesn't fit.
             const climbTests = [0.2, 0.4, 0.6, 0.8, 1.0];
-            for (const climbOffset of climbTests) {
-                targetCandidates.push(placed.y + climbOffset, placed.y - climbOffset);
+            for (const stepOffset of climbTests) {
+                if (preferClimb) {
+                    targetCandidates.push(placed.y + stepOffset);
+                } else if (preferDescend) {
+                    targetCandidates.push(placed.y - stepOffset);
+                } else {
+                    targetCandidates.push(placed.y + stepOffset * 0.4, placed.y - stepOffset * 0.4);
+                }
             }
         }
         const uniqueTargets = [];
@@ -13849,8 +13858,6 @@ function updateKartDrive(deltaSeconds) {
                 uniqueTargets.push(value);
             }
         }
-        const preferClimb = climbGroundY > placed.y + 0.06;
-        const preferDescend = descendGroundY < placed.y - 0.06;
         uniqueTargets.sort((a, b) => {
             if (preferClimb) {
                 return b - a;
@@ -13892,12 +13899,18 @@ function updateKartDrive(deltaSeconds) {
             "descend"
         );
         const postMoveDelta = postMoveSettleY - placed.y;
+        const boundedSettleDelta = THREE.MathUtils.clamp(
+            postMoveDelta,
+            -KART_VERTICAL_SETTLE_MAX_PER_STEP,
+            KART_VERTICAL_SETTLE_MAX_PER_STEP
+        );
+        const nextSettleY = placed.y + boundedSettleDelta;
         if (
-            postMoveDelta < -1e-3
-            && postMoveDelta >= -KART_MAX_STEP_DOWN
-            && !wouldKartCollideAt(placed, placed.x, postMoveSettleY, placed.z, placed.yaw)
+            boundedSettleDelta < -1e-3
+            && boundedSettleDelta >= -KART_MAX_STEP_DOWN
+            && !wouldKartCollideAt(placed, placed.x, nextSettleY, placed.z, placed.yaw)
         ) {
-            updatePlacedPropTransformImmediate(placed, placed.x, postMoveSettleY, placed.z, placed.yaw);
+            updatePlacedPropTransformImmediate(placed, placed.x, nextSettleY, placed.z, placed.yaw);
             transformChanged = true;
         }
     }
