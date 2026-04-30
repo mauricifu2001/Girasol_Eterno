@@ -13542,6 +13542,7 @@ function getPropBoundsCollidesSolidBlocks(bounds) {
 }
 
 function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
+    const placedId = String(placed?.id || "");
     const nextBounds = getPlacedPropBoundsAt(PROP_TYPE.KART, nextX, nextY, nextZ, nextYaw, 0.002, placed?.state);
     if (getPropBoundsCollidesSolidBlocks(nextBounds)) {
         return true;
@@ -13556,10 +13557,10 @@ function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
         nextBounds.maxZ
     );
     for (const propId of nearbyIds) {
-        if (propId === placed.id) {
+        if (String(propId) === placedId) {
             continue;
         }
-        const other = placedProps.get(propId);
+        const other = placedProps.get(String(propId));
         if (!other || !other.node || other.node.visible === false) {
             continue;
         }
@@ -16972,7 +16973,7 @@ function attemptMineOrPlace(isPlacing) {
             maxZ: state.playerPosition.z + PLAYER_RADIUS
         };
         const pendingState = getPendingSharedState();
-        const nextPropBounds = getPlacedPropBoundsAt(propTypeToPlace, propX, propY, propZ, propYaw, 0.001, pendingState);
+        const nextPropBounds = getPlacedPropBoundsAt(propTypeToPlace, propX, propY, propZ, propYaw, 0, pendingState);
         if (intersectsAabb(playerBounds, nextPropBounds)) {
             return;
         }
@@ -16993,7 +16994,7 @@ function attemptMineOrPlace(isPlacing) {
             if (definition && !definition.solid) {
                 continue;
             }
-            const otherBounds = getPlacedPropBounds(other, 0.001);
+            const otherBounds = getPlacedPropBounds(other, 0);
             if (intersectsAabb(nextPropBounds, otherBounds)) {
                 showToast("Ese espacio ya esta ocupado por otro objeto", "warning", 900);
                 return;
@@ -17641,6 +17642,19 @@ function onKeyDown(event) {
     if (event.code === INTERACTION_EXIT_KEY && interactionState.pose) {
         event.preventDefault();
         exitLocalPose(true);
+        return;
+    }
+
+    if (interactionState.kartDrive) {
+        if (
+            event.code === "KeyW"
+            || event.code === "KeyA"
+            || event.code === "KeyS"
+            || event.code === "KeyD"
+            || event.code === "Space"
+        ) {
+            state.keyDown.add(event.code);
+        }
         return;
     }
 
