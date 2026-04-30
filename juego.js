@@ -13543,7 +13543,8 @@ function getPropBoundsCollidesSolidBlocks(bounds) {
 
 function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
     const placedId = String(placed?.id || "");
-    const nextBounds = getPlacedPropBoundsAt(PROP_TYPE.KART, nextX, nextY, nextZ, nextYaw, 0.002, placed?.state);
+    // Use exact bounds here so the kart can rest/move on top of the ground without false self-collision against floor voxels.
+    const nextBounds = getPlacedPropBoundsAt(PROP_TYPE.KART, nextX, nextY, nextZ, nextYaw, 0, placed?.state);
     if (getPropBoundsCollidesSolidBlocks(nextBounds)) {
         return true;
     }
@@ -13568,7 +13569,7 @@ function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
         if (definition && !definition.solid) {
             continue;
         }
-        const otherBounds = getPlacedPropBounds(other, 0.001);
+        const otherBounds = getPlacedPropBounds(other, 0);
         if (intersectsAabb(nextBounds, otherBounds)) {
             return true;
         }
@@ -13669,6 +13670,15 @@ function enterKartDrive(propHit) {
         return false;
     }
 
+    if (state.avatarPreviewOpen) {
+        setAvatarPreviewOpen(false);
+    }
+    if (state.inventoryOpen) {
+        setInventoryOpen(false);
+    }
+    if (state.mapOpen) {
+        setMapOpen(false);
+    }
     closeInteractionPanel(false, true);
     clearLocalPoseActivity(true);
     setLocalUsingActivity(placed.id, INTERACTION_USAGE_KIND.KART, true);
@@ -18047,8 +18057,13 @@ function animate() {
     }
     updateAdaptiveQuality(delta);
 
-    if (state.worldStarted && !state.paused && !state.avatarPreviewOpen && !state.inventoryOpen && !isMapBlockingGameplay() && !state.interactionPanelOpen) {
-        updatePlayer(delta);
+    if (state.worldStarted && !state.paused) {
+        const canUpdatePlayer = interactionState.kartDrive
+            ? true
+            : (!state.avatarPreviewOpen && !state.inventoryOpen && !isMapBlockingGameplay() && !state.interactionPanelOpen);
+        if (canUpdatePlayer) {
+            updatePlayer(delta);
+        }
     }
 
     updateSky(delta);
