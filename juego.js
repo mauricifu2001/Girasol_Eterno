@@ -13830,74 +13830,62 @@ function updateKartDrive(deltaSeconds) {
     for (let i = 0; i < steps; i += 1) {
         const candidateX = placed.x + stepX;
         const candidateZ = placed.z + stepZ;
-        const adaptiveGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "adaptive");
-        const climbGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "climb");
-        const descendGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign, "descend");
-        const targetCandidates = [placed.y, adaptiveGroundY, climbGroundY, descendGroundY];
-        const preferClimb = climbGroundY > placed.y + 0.06;
-        const preferDescend = !preferClimb && descendGroundY < placed.y - 0.06;
-        if (drive.speed > 0.12) {
-            // Probes for successive stair-style ramps (up/down) when direct sample doesn't fit.
-            const climbTests = [0.2, 0.4, 0.6, 0.8, 1.0];
-            for (const stepOffset of climbTests) {
-                if (preferClimb) {
-                    targetCandidates.push(placed.y + stepOffset);
-                } else if (preferDescend) {
-                    targetCandidates.push(placed.y - stepOffset);
-                } else {
-                    targetCandidates.push(placed.y + stepOffset * 0.4, placed.y - stepOffset * 0.4);
-                }
-            }
-        }
-        const uniqueTargets = [];
-        for (const value of targetCandidates) {
-            if (!Number.isFinite(value)) {
-                continue;
-            }
-            if (value > placed.y + KART_MAX_STEP_UP + 1e-4) {
-                continue;
-            }
-            if (value < placed.y - KART_VERTICAL_SETTLE_MAX_PER_STEP - 1e-4) {
-                continue;
-            }
-            if (!uniqueTargets.some((existing) => Math.abs(existing - value) <= 1e-4)) {
-                uniqueTargets.push(value);
-            }
-        }
-        uniqueTargets.sort((a, b) => {
-            if (preferClimb) {
-                return b - a;
-            }
-            if (preferDescend) {
-                const da = Math.abs(a - placed.y);
-                const db = Math.abs(b - placed.y);
-                if (Math.abs(da - db) > 1e-4) {
-                    return da - db;
-                }
-                return a - b;
-            }
-            return Math.abs(a - placed.y) - Math.abs(b - placed.y);
-        });
+        const currentY = Number(placed.y) || 0;
 
-        let acceptedY = null;
-        for (const testY of uniqueTargets) {
-            const stepUp = testY - placed.y;
-            if (stepUp > KART_MAX_STEP_UP || stepUp < -KART_MAX_STEP_DOWN) {
-                continue;
+        // Phase 1: keep forward motion, only raising if the frontal collision requires it.
+        let travelY = currentY;
+        let blocked = wouldKartCollideAt(placed, candidateX, travelY, candidateZ, nextYaw);
+        if (blocked && drive.speed > 0.08) {
+            const climbTests = [0.2, 0.4, 0.6, 0.8, 1.0];
+            for (const climbOffset of climbTests) {
+                if (climbOffset > KART_MAX_STEP_UP + 1e-4) {
+                    continue;
+                }
+                const testY = currentY + climbOffset;
+                if (wouldKartCollideAt(placed, candidateX, testY, candidateZ, nextYaw)) {
+                    continue;
+                }
+                travelY = testY;
+                blocked = false;
+                break;
             }
-            if (wouldKartCollideAt(placed, candidateX, testY, candidateZ, nextYaw)) {
-                continue;
-            }
-            acceptedY = testY;
-            break;
         }
-        if (!Number.isFinite(acceptedY)) {
+        if (blocked) {
             collided = true;
             break;
         }
-        updatePlacedPropTransformImmediate(placed, candidateX, acceptedY, candidateZ, nextYaw);
+
+        updatePlacedPropTransformImmediate(placed, candidateX, travelY, candidateZ, nextYaw);
         moved = true;
         transformChanged = true;
+
+        // Phase 2: settle vertically after advancing, to avoid edge-stop on multi-step stairs.
+        const targetGroundY = resolveKartGroundYMultiSample(
+            Number(placed.x) || 0,
+            Number(placed.z) || 0,
+            Number(placed.yaw) || 0,
+            Number(placed.y) || 0,
+            motionSign,
+            "adaptive"
+        );
+        const verticalDelta = targetGroundY - placed.y;
+        const boundedVerticalDelta = THREE.MathUtils.clamp(
+            verticalDelta,
+            -KART_VERTICAL_SETTLE_MAX_PER_STEP,
+            KART_VERTICAL_SETTLE_MAX_PER_STEP
+        );
+        if (Math.abs(boundedVerticalDelta) > 1e-3) {
+            const settleY = placed.y + boundedVerticalDelta;
+            const relativeStep = settleY - currentY;
+            if (
+                relativeStep <= KART_MAX_STEP_UP + 1e-4
+                && relativeStep >= -KART_MAX_STEP_DOWN - 1e-4
+                && !wouldKartCollideAt(placed, placed.x, settleY, placed.z, placed.yaw)
+            ) {
+                updatePlacedPropTransformImmediate(placed, placed.x, settleY, placed.z, placed.yaw);
+                transformChanged = true;
+            }
+        }
     }
 
     if (moved) {
