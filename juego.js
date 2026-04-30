@@ -127,20 +127,21 @@ const BASE_SPEED = 6.2;
 const SPRINT_SPEED = 9.4;
 const JUMP_SPEED = 9.2;
 const FLIGHT_SPEED = 24;
-const KART_MAX_SPEED_FORWARD = 22;
-const KART_MAX_SPEED_REVERSE = 7;
-const KART_ACCELERATION = 21;
-const KART_BRAKE_FORCE = 29;
-const KART_COAST_DRAG = 3.9;
-const KART_ROLLING_DRAG = 1.25;
+const KART_MAX_SPEED_FORWARD_KMH = 50;
+const KART_MAX_SPEED_FORWARD = KART_MAX_SPEED_FORWARD_KMH / 3.6;
+const KART_MAX_SPEED_REVERSE = 18 / 3.6;
+const KART_ACCELERATION = 5.8;
+const KART_BRAKE_FORCE = 11.5;
+const KART_COAST_DRAG = 1.65;
+const KART_ROLLING_DRAG = 0.72;
 const KART_STEER_RESPONSE = 10;
 const KART_STEER_RATE = 2.9;
 const KART_STEER_RATE_DRIFT = 4.3;
 const KART_DRIFT_SLIP_ANGLE = 0.32;
 const KART_MAX_STEP_UP = 1.12;
 const KART_MAX_STEP_DOWN = 1.6;
-const KART_GROUND_SAMPLE_FORWARD = 0.78;
-const KART_GROUND_SAMPLE_RIGHT = 0.62;
+const KART_GROUND_SAMPLE_FORWARD = 0.76;
+const KART_GROUND_SAMPLE_RIGHT = 0.56;
 const KART_PROP_SYNC_INTERVAL_SECONDS = 0.09;
 const KART_WORLD_SAVE_INTERVAL_SECONDS = 0.42;
 const KART_INTERACTION_DISTANCE = 4.4;
@@ -149,6 +150,10 @@ const KART_DRIVER_SEAT_OFFSET_FORWARD = -0.06;
 const KART_DRIVER_SEAT_OFFSET_RIGHT = 0;
 const KART_DRIVER_SEAT_OFFSET_UP = 0.6;
 const KART_CAMERA_YAW_OFFSET = Math.PI;
+const KART_COLLISION_EXTENT_SCALE_X = 0.84;
+const KART_COLLISION_EXTENT_SCALE_Z = 0.84;
+const KART_COLLISION_MIN_Y_OFFSET = 0.03;
+const KART_COLLISION_MAX_Y_OFFSET = 0.04;
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
     Object.freeze({ key: "red", label: "Rojo", body: 0xd35046, side: 0xa53d37, accent: 0xef796b }),
@@ -13543,8 +13548,19 @@ function getPropBoundsCollidesSolidBlocks(bounds) {
 
 function wouldKartCollideAt(placed, nextX, nextY, nextZ, nextYaw) {
     const placedId = String(placed?.id || "");
-    // Use exact bounds here so the kart can rest/move on top of the ground without false self-collision against floor voxels.
-    const nextBounds = getPlacedPropBoundsAt(PROP_TYPE.KART, nextX, nextY, nextZ, nextYaw, 0, placed?.state);
+    // Use a slightly smaller collision hull than visual mesh to avoid edge-snags on voxel steps/curbs.
+    const profile = getPropProfileForState(PROP_TYPE.KART, placed?.state);
+    const rotated = getRotatedPropHalfExtents(PROP_TYPE.KART, nextYaw, placed?.state);
+    const kartHalfX = Math.max(0.1, rotated.x * KART_COLLISION_EXTENT_SCALE_X);
+    const kartHalfZ = Math.max(0.1, rotated.z * KART_COLLISION_EXTENT_SCALE_Z);
+    const nextBounds = {
+        minX: nextX - kartHalfX,
+        maxX: nextX + kartHalfX,
+        minY: nextY + (Number(profile.minY) || 0) + KART_COLLISION_MIN_Y_OFFSET,
+        maxY: nextY + (Number(profile.maxY) || 1) - KART_COLLISION_MAX_Y_OFFSET,
+        minZ: nextZ - kartHalfZ,
+        maxZ: nextZ + kartHalfZ
+    };
     if (getPropBoundsCollidesSolidBlocks(nextBounds)) {
         return true;
     }
@@ -13592,33 +13608,45 @@ function resolveKartGroundYAt(x, z, currentY) {
     return Math.floor(Number(terrainHeight(sampleX, sampleZ)) || 0) + 1;
 }
 
-function resolveKartGroundYMultiSample(x, z, yaw, currentY) {
+function resolveKartGroundYMultiSample(x, z, yaw, currentY, motionSign = 0) {
     const forwardX = Math.sin(yaw);
     const forwardZ = Math.cos(yaw);
     const rightX = Math.sin(yaw + Math.PI * 0.5);
     const rightZ = Math.cos(yaw + Math.PI * 0.5);
     const samples = [
-        { fx: 0, rz: 0 },
-        { fx: KART_GROUND_SAMPLE_FORWARD, rz: 0 },
-        { fx: -KART_GROUND_SAMPLE_FORWARD * 0.7, rz: 0 },
-        { fx: KART_GROUND_SAMPLE_FORWARD * 0.55, rz: KART_GROUND_SAMPLE_RIGHT },
-        { fx: KART_GROUND_SAMPLE_FORWARD * 0.55, rz: -KART_GROUND_SAMPLE_RIGHT },
-        { fx: -KART_GROUND_SAMPLE_FORWARD * 0.45, rz: KART_GROUND_SAMPLE_RIGHT * 0.85 },
-        { fx: -KART_GROUND_SAMPLE_FORWARD * 0.45, rz: -KART_GROUND_SAMPLE_RIGHT * 0.85 }
+        { key: "center", fx: 0, rz: 0 },
+        { key: "front", fx: KART_GROUND_SAMPLE_FORWARD, rz: 0 },
+        { key: "rear", fx: -KART_GROUND_SAMPLE_FORWARD * 0.72, rz: 0 },
+        { key: "frontRight", fx: KART_GROUND_SAMPLE_FORWARD * 0.56, rz: KART_GROUND_SAMPLE_RIGHT },
+        { key: "frontLeft", fx: KART_GROUND_SAMPLE_FORWARD * 0.56, rz: -KART_GROUND_SAMPLE_RIGHT },
+        { key: "rearRight", fx: -KART_GROUND_SAMPLE_FORWARD * 0.46, rz: KART_GROUND_SAMPLE_RIGHT * 0.85 },
+        { key: "rearLeft", fx: -KART_GROUND_SAMPLE_FORWARD * 0.46, rz: -KART_GROUND_SAMPLE_RIGHT * 0.85 }
     ];
-    let maxSurfaceY = Number.NEGATIVE_INFINITY;
+    const sampledHeights = new Map();
     for (const sample of samples) {
         const sampleX = x + forwardX * sample.fx + rightX * sample.rz;
         const sampleZ = z + forwardZ * sample.fx + rightZ * sample.rz;
         const sampleGroundY = resolveKartGroundYAt(sampleX, sampleZ, currentY);
-        if (sampleGroundY > maxSurfaceY) {
-            maxSurfaceY = sampleGroundY;
-        }
+        sampledHeights.set(sample.key, sampleGroundY);
     }
-    if (!Number.isFinite(maxSurfaceY)) {
+
+    const centerY = sampledHeights.get("center");
+    const frontY = Math.max(
+        sampledHeights.get("front") ?? Number.NEGATIVE_INFINITY,
+        sampledHeights.get("frontLeft") ?? Number.NEGATIVE_INFINITY,
+        sampledHeights.get("frontRight") ?? Number.NEGATIVE_INFINITY
+    );
+    const rearY = Math.max(
+        sampledHeights.get("rear") ?? Number.NEGATIVE_INFINITY,
+        sampledHeights.get("rearLeft") ?? Number.NEGATIVE_INFINITY,
+        sampledHeights.get("rearRight") ?? Number.NEGATIVE_INFINITY
+    );
+    const leadY = motionSign >= 0 ? frontY : rearY;
+    const supportY = Math.max(centerY, leadY);
+    if (!Number.isFinite(supportY)) {
         return Number(currentY) || 0;
     }
-    return maxSurfaceY;
+    return supportY;
 }
 
 function applyKartDriverCamera(placed, deltaSeconds = 0) {
@@ -13638,19 +13666,7 @@ function applyKartDriverCamera(placed, deltaSeconds = 0) {
     state.playerPosition.z = anchor.z;
     state.velocityY = 0;
     state.onGround = true;
-    const cameraTargetYaw = normalizeYawRadians((Number(placed?.yaw) || 0) + KART_CAMERA_YAW_OFFSET);
-    if (drive) {
-        if (!Number.isFinite(drive.cameraYaw)) {
-            drive.cameraYaw = cameraTargetYaw;
-        }
-        const yawLerp = Math.min(1, Math.max(0, deltaSeconds) * 9.5);
-        drive.cameraYaw = approachAngle(drive.cameraYaw, cameraTargetYaw, yawLerp);
-    }
-    controls.getObject().rotation.y = approachAngle(
-        controls.getObject().rotation.y || 0,
-        drive && Number.isFinite(drive.cameraYaw) ? drive.cameraYaw : cameraTargetYaw,
-        Math.min(1, Math.max(0, deltaSeconds) * 7.5)
-    );
+    // Keep camera free while driving (no forced recenter every frame).
     controls.getObject().position.set(anchor.x, eyeY, anchor.z);
 }
 
@@ -13777,6 +13793,7 @@ function updateKartDrive(deltaSeconds) {
     }
     drive.speed -= drive.speed * Math.min(1, KART_COAST_DRAG * (drifting ? 0.55 : 1) * deltaSeconds);
     drive.speed = THREE.MathUtils.clamp(drive.speed, -KART_MAX_SPEED_REVERSE, KART_MAX_SPEED_FORWARD);
+    const motionSign = drive.speed > 0.02 ? 1 : (drive.speed < -0.02 ? -1 : 0);
 
     const speedFactor = Math.min(1, Math.abs(drive.speed) / KART_MAX_SPEED_FORWARD);
     const steerRate = drifting ? KART_STEER_RATE_DRIFT : KART_STEER_RATE;
@@ -13798,7 +13815,7 @@ function updateKartDrive(deltaSeconds) {
     for (let i = 0; i < steps; i += 1) {
         const candidateX = placed.x + stepX;
         const candidateZ = placed.z + stepZ;
-        const targetGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y);
+        const targetGroundY = resolveKartGroundYMultiSample(candidateX, candidateZ, nextYaw, placed.y, motionSign);
         let candidateY = targetGroundY;
         const stepUp = candidateY - placed.y;
         if (stepUp > KART_MAX_STEP_UP || stepUp < -KART_MAX_STEP_DOWN) {
@@ -13828,6 +13845,29 @@ function updateKartDrive(deltaSeconds) {
         updatePlacedPropTransformImmediate(placed, candidateX, candidateY, candidateZ, nextYaw);
         moved = true;
         transformChanged = true;
+    }
+
+    // If horizontal move was blocked, still try to settle to valid ground to avoid floating/stuck states.
+    if (!moved) {
+        const settleGroundY = resolveKartGroundYMultiSample(
+            Number(placed.x) || 0,
+            Number(placed.z) || 0,
+            Number(placed.yaw) || 0,
+            Number(placed.y) || 0,
+            0
+        );
+        const settleDelta = settleGroundY - placed.y;
+        if (
+            Math.abs(settleDelta) > 1e-3
+            && settleDelta <= KART_MAX_STEP_UP
+            && settleDelta >= -KART_MAX_STEP_DOWN
+            && !wouldKartCollideAt(placed, placed.x, settleGroundY, placed.z, placed.yaw)
+        ) {
+            updatePlacedPropTransformImmediate(placed, placed.x, settleGroundY, placed.z, placed.yaw);
+            transformChanged = true;
+            moved = true;
+            collided = false;
+        }
     }
 
     if (!moved && !collided) {
