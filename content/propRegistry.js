@@ -480,7 +480,7 @@ const RAW_PROP_DEFINITIONS = [
         category: "racing",
         tags: ["race", "ramp", "track", "low"],
         visual: { tint: "rgba(194, 196, 202, 0.42)" },
-        profile: { halfExtents: { x: 0.5, z: 0.5 }, minY: 0, maxY: 0.34, supportY: 0.12 }
+        profile: { halfExtents: { x: 1.08, z: 1.16 }, minY: 0, maxY: 1.1, supportY: 1.1 }
     },
     {
         id: PROP_TYPE.RACE_RAMP_MEDIUM,
@@ -488,7 +488,7 @@ const RAW_PROP_DEFINITIONS = [
         category: "racing",
         tags: ["race", "ramp", "track", "medium"],
         visual: { tint: "rgba(179, 183, 191, 0.42)" },
-        profile: { halfExtents: { x: 0.5, z: 0.5 }, minY: 0, maxY: 0.66, supportY: 0.2 }
+        profile: { halfExtents: { x: 1.08, z: 1.16 }, minY: 0, maxY: 1.85, supportY: 1.85 }
     },
     {
         id: PROP_TYPE.RACE_RAMP_HIGH,
@@ -496,7 +496,7 @@ const RAW_PROP_DEFINITIONS = [
         category: "racing",
         tags: ["race", "ramp", "track", "high"],
         visual: { tint: "rgba(160, 166, 178, 0.42)" },
-        profile: { halfExtents: { x: 0.5, z: 0.5 }, minY: 0, maxY: 1.02, supportY: 0.24 }
+        profile: { halfExtents: { x: 1.08, z: 1.16 }, minY: 0, maxY: 2.6, supportY: 2.6 }
     }
 ];
 

@@ -163,9 +163,9 @@ const RACE_SURFACE_EPSILON = 0.04;
 const RACE_FINISH_REPEAT_COOLDOWN_SECONDS = 1.2;
 const RACE_META_WINNER_KEY = "raceWinner";
 const RACE_RAMP_HEIGHT_BY_TYPE = Object.freeze({
-    [PROP_TYPE.RACE_RAMP_LOW]: 0.34,
-    [PROP_TYPE.RACE_RAMP_MEDIUM]: 0.66,
-    [PROP_TYPE.RACE_RAMP_HIGH]: 1.02
+    [PROP_TYPE.RACE_RAMP_LOW]: 1.1,
+    [PROP_TYPE.RACE_RAMP_MEDIUM]: 1.85,
+    [PROP_TYPE.RACE_RAMP_HIGH]: 2.6
 });
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
@@ -7706,38 +7706,43 @@ function buildRaceBoostPadNode(root) {
 }
 
 function buildRaceRampNode(root, {
-    height = 0.66,
+    height = 1.85,
     baseColor = 0xb7bcc7,
     stripeColor = 0xffffff,
     sideColor = 0x8a909d
 } = {}) {
-    root.add(createDetailPart({ x: 1.0, y: 0.05, z: 1.0 }, { x: 0, y: 0.025, z: 0 }, 0x2f3642));
-    const stepCount = 7;
-    const stepLength = 1 / stepCount;
-    for (let i = 0; i < stepCount; i += 1) {
-        const t = (i + 1) / stepCount;
-        const stepHeight = Math.max(0.04, height * t);
-        const stepZ = -0.5 + stepLength * (i + 0.5);
+    const rampWidth = 2.16;
+    const rampLength = 2.32;
+    const rampHalfLength = rampLength * 0.5;
+    root.add(createDetailPart({ x: rampWidth, y: 0.08, z: rampLength }, { x: 0, y: 0.04, z: 0 }, 0x2f3642));
+    const sliceCount = 16;
+    const sliceDepth = rampLength / sliceCount;
+    for (let i = 0; i < sliceCount; i += 1) {
+        const t = (i + 1) / sliceCount;
+        const sliceHeight = Math.max(0.06, height * t);
+        const sliceZ = -rampHalfLength + sliceDepth * (i + 0.5);
         root.add(createDetailPart(
-            { x: 1.0, y: stepHeight, z: stepLength + 0.002 },
-            { x: 0, y: stepHeight * 0.5, z: stepZ },
+            { x: rampWidth, y: sliceHeight, z: sliceDepth + 0.004 },
+            { x: 0, y: sliceHeight * 0.5, z: sliceZ },
             baseColor
         ));
-        if (i % 2 === 0) {
+        if (i % 4 === 0) {
             root.add(createDetailPart(
-                { x: 0.92, y: 0.02, z: stepLength * 0.92 },
-                { x: 0, y: stepHeight + 0.01, z: stepZ },
+                { x: rampWidth * 0.88, y: 0.018, z: sliceDepth * 0.9 },
+                { x: 0, y: sliceHeight + 0.01, z: sliceZ },
                 stripeColor
             ));
         }
     }
-    root.add(createDetailPart({ x: 0.07, y: Math.max(0.12, height + 0.02), z: 1.0 }, { x: -0.47, y: Math.max(0.12, height + 0.02) * 0.5, z: 0 }, sideColor));
-    root.add(createDetailPart({ x: 0.07, y: Math.max(0.12, height + 0.02), z: 1.0 }, { x: 0.47, y: Math.max(0.12, height + 0.02) * 0.5, z: 0 }, sideColor));
+    const sideWallHeight = Math.max(0.22, height + 0.04);
+    root.add(createDetailPart({ x: 0.08, y: sideWallHeight, z: rampLength }, { x: -(rampWidth * 0.5) + 0.04, y: sideWallHeight * 0.5, z: 0 }, sideColor));
+    root.add(createDetailPart({ x: 0.08, y: sideWallHeight, z: rampLength }, { x: (rampWidth * 0.5) - 0.04, y: sideWallHeight * 0.5, z: 0 }, sideColor));
+    root.add(createDetailPart({ x: rampWidth * 0.96, y: 0.06, z: 0.16 }, { x: 0, y: sideWallHeight - 0.02, z: rampHalfLength - 0.08 }, 0xdfe7f2));
 }
 
 function buildRaceRampLowNode(root) {
     buildRaceRampNode(root, {
-        height: 0.34,
+        height: 1.1,
         baseColor: 0xc3c7cf,
         stripeColor: 0xf4f6fa,
         sideColor: 0x949aa7
@@ -7746,7 +7751,7 @@ function buildRaceRampLowNode(root) {
 
 function buildRaceRampMediumNode(root) {
     buildRaceRampNode(root, {
-        height: 0.66,
+        height: 1.85,
         baseColor: 0xb3b9c4,
         stripeColor: 0xeef2f8,
         sideColor: 0x868d99
@@ -7755,7 +7760,7 @@ function buildRaceRampMediumNode(root) {
 
 function buildRaceRampHighNode(root) {
     buildRaceRampNode(root, {
-        height: 1.02,
+        height: 2.6,
         baseColor: 0x9da5b5,
         stripeColor: 0xe6ecf5,
         sideColor: 0x757f92
@@ -17676,7 +17681,8 @@ function attemptMineOrPlace(isPlacing) {
             return;
         }
 
-        if (hasPropNearPosition(propX, propY, propZ, 0.34)) {
+        const placingRaceRamp = isRaceRampPropType(propTypeToPlace);
+        if (!placingRaceRamp && hasPropNearPosition(propX, propY, propZ, 0.34)) {
             showToast("Ya hay un objeto en ese espacio", "warning", 900);
             return;
         }
@@ -17708,6 +17714,17 @@ function attemptMineOrPlace(isPlacing) {
         for (const otherId of nearbyIdsForPlacement) {
             const other = placedProps.get(otherId);
             if (!other || !other.node || other.node.visible === false) {
+                continue;
+            }
+            if (placingRaceRamp && isRaceRampPropType(other.propType)) {
+                const dx = Math.abs((Number(other.x) || 0) - propX);
+                const dy = Math.abs((Number(other.y) || 0) - propY);
+                const dz = Math.abs((Number(other.z) || 0) - propZ);
+                if (dx < 0.04 && dy < 0.04 && dz < 0.04) {
+                    showToast("Ya existe una rampa en ese punto", "warning", 900);
+                    return;
+                }
+                // Allow ramp modules to overlap/interlock so players can chain and stack hills.
                 continue;
             }
             const definition = getPropDefinition(other.propType);
