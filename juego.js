@@ -168,6 +168,85 @@ const RACE_RAMP_HEIGHT_BY_TYPE = Object.freeze({
     [PROP_TYPE.RACE_RAMP_MEDIUM]: 1.85,
     [PROP_TYPE.RACE_RAMP_HIGH]: 2.6
 });
+const RACE_TRACK_MODEL_PROP_TYPES = Object.freeze([
+    PROP_TYPE.RACE_TRACK_MODEL_ONE,
+    PROP_TYPE.RACE_TRACK_MODEL_TWO
+]);
+const RACE_TRACK_TEMPLATE_CONFIG = Object.freeze({
+    [PROP_TYPE.RACE_TRACK_MODEL_ONE]: Object.freeze({
+        name: "Modelo 1",
+        sampleStep: 3.15,
+        roadHalfWidth: 4,
+        maxGradeStep: 1,
+        waypoints: Object.freeze([
+            Object.freeze({ x: 0, z: 0, h: 0 }),
+            Object.freeze({ x: 28, z: 0, h: 0 }),
+            Object.freeze({ x: 46, z: 12, h: 1 }),
+            Object.freeze({ x: 56, z: 32, h: 2 }),
+            Object.freeze({ x: 46, z: 54, h: 3 }),
+            Object.freeze({ x: 22, z: 70, h: 2 }),
+            Object.freeze({ x: -6, z: 72, h: 1 }),
+            Object.freeze({ x: -30, z: 58, h: 0 }),
+            Object.freeze({ x: -44, z: 38, h: 0 }),
+            Object.freeze({ x: -46, z: 16, h: 1 }),
+            Object.freeze({ x: -30, z: 0, h: 2 }),
+            Object.freeze({ x: -8, z: -12, h: 1 }),
+            Object.freeze({ x: 14, z: -10, h: 0 }),
+            Object.freeze({ x: 0, z: 0, h: 0 })
+        ]),
+        boostFractions: Object.freeze([0.08, 0.17, 0.29, 0.41, 0.57, 0.71, 0.84, 0.93]),
+        checkpointFractions: Object.freeze([0.26, 0.52, 0.78]),
+        rampSpawns: Object.freeze([
+            Object.freeze({ t: 0.14, type: PROP_TYPE.RACE_RAMP_LOW }),
+            Object.freeze({ t: 0.36, type: PROP_TYPE.RACE_RAMP_MEDIUM }),
+            Object.freeze({ t: 0.63, type: PROP_TYPE.RACE_RAMP_LOW }),
+            Object.freeze({ t: 0.88, type: PROP_TYPE.RACE_RAMP_MEDIUM })
+        ]),
+        barrierStride: 2,
+        curbStride: 1
+    }),
+    [PROP_TYPE.RACE_TRACK_MODEL_TWO]: Object.freeze({
+        name: "Modelo 2",
+        sampleStep: 3.0,
+        roadHalfWidth: 4,
+        maxGradeStep: 1,
+        waypoints: Object.freeze([
+            Object.freeze({ x: 0, z: 0, h: 0 }),
+            Object.freeze({ x: 32, z: -2, h: 0 }),
+            Object.freeze({ x: 58, z: 12, h: 1 }),
+            Object.freeze({ x: 70, z: 36, h: 2 }),
+            Object.freeze({ x: 60, z: 60, h: 3 }),
+            Object.freeze({ x: 34, z: 76, h: 4 }),
+            Object.freeze({ x: 6, z: 72, h: 4 }),
+            Object.freeze({ x: -14, z: 54, h: 3 }),
+            Object.freeze({ x: -20, z: 30, h: 2 }),
+            Object.freeze({ x: -6, z: 12, h: 1 }),
+            Object.freeze({ x: 22, z: 14, h: 2 }),
+            Object.freeze({ x: 40, z: 28, h: 5 }),
+            Object.freeze({ x: 30, z: 48, h: 6 }),
+            Object.freeze({ x: 4, z: 46, h: 5 }),
+            Object.freeze({ x: -18, z: 26, h: 3 }),
+            Object.freeze({ x: -12, z: 4, h: 2 }),
+            Object.freeze({ x: 10, z: -12, h: 1 }),
+            Object.freeze({ x: 0, z: 0, h: 0 })
+        ]),
+        boostFractions: Object.freeze([0.06, 0.15, 0.24, 0.35, 0.46, 0.58, 0.69, 0.82, 0.92]),
+        checkpointFractions: Object.freeze([0.24, 0.49, 0.74]),
+        rampSpawns: Object.freeze([
+            Object.freeze({ t: 0.11, type: PROP_TYPE.RACE_RAMP_LOW }),
+            Object.freeze({ t: 0.31, type: PROP_TYPE.RACE_RAMP_MEDIUM }),
+            Object.freeze({ t: 0.48, type: PROP_TYPE.RACE_RAMP_HIGH }),
+            Object.freeze({ t: 0.67, type: PROP_TYPE.RACE_RAMP_MEDIUM }),
+            Object.freeze({ t: 0.86, type: PROP_TYPE.RACE_RAMP_LOW })
+        ]),
+        barrierStride: 2,
+        curbStride: 1
+    })
+});
+const RACE_TRACK_SURFACE_BLOCK_ID = BLOCK.SLATE;
+const RACE_TRACK_FILL_BLOCK_ID = BLOCK.STONE_BRICKS;
+const RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT = 14;
+const RACE_TRACK_CLEARANCE_HEIGHT = 2;
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
     Object.freeze({ key: "red", label: "Rojo", body: 0xd35046, side: 0xa53d37, accent: 0xef796b }),
@@ -7845,6 +7924,23 @@ function buildRaceRampHighNode(root) {
     });
 }
 
+function buildRaceTrackTemplateNode(root, primaryColor = 0x4fa7df, accentColor = 0xbde8ff) {
+    root.add(createDetailPart({ x: 1.04, y: 0.08, z: 1.04 }, { x: 0, y: 0.04, z: 0 }, 0x1e2836));
+    root.add(createDetailPart({ x: 0.9, y: 0.06, z: 0.9 }, { x: 0, y: 0.11, z: 0 }, primaryColor));
+    root.add(createDetailPart({ x: 0.9, y: 0.02, z: 0.2 }, { x: 0, y: 0.155, z: -0.25 }, accentColor));
+    root.add(createDetailPart({ x: 0.9, y: 0.02, z: 0.2 }, { x: 0, y: 0.155, z: 0.25 }, accentColor));
+    root.add(createDetailPart({ x: 0.16, y: 0.12, z: 0.16 }, { x: -0.22, y: 0.18, z: 0 }, 0x0f1622));
+    root.add(createDetailPart({ x: 0.16, y: 0.12, z: 0.16 }, { x: 0.22, y: 0.18, z: 0 }, 0x0f1622));
+}
+
+function buildRaceTrackModelOneNode(root) {
+    buildRaceTrackTemplateNode(root, 0x4ca5de, 0xcdeeff);
+}
+
+function buildRaceTrackModelTwoNode(root) {
+    buildRaceTrackTemplateNode(root, 0xe09b55, 0xffdebc);
+}
+
 const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.CHAIR]: buildChairNode,
     [PROP_TYPE.TABLE]: buildTableNode,
@@ -7886,7 +7982,9 @@ const PROP_NODE_BUILDERS = Object.freeze({
     [PROP_TYPE.RACE_BOOST_PAD]: buildRaceBoostPadNode,
     [PROP_TYPE.RACE_RAMP_LOW]: buildRaceRampLowNode,
     [PROP_TYPE.RACE_RAMP_MEDIUM]: buildRaceRampMediumNode,
-    [PROP_TYPE.RACE_RAMP_HIGH]: buildRaceRampHighNode
+    [PROP_TYPE.RACE_RAMP_HIGH]: buildRaceRampHighNode,
+    [PROP_TYPE.RACE_TRACK_MODEL_ONE]: buildRaceTrackModelOneNode,
+    [PROP_TYPE.RACE_TRACK_MODEL_TWO]: buildRaceTrackModelTwoNode
 });
 
 const registryValidationIssues = [
@@ -17588,6 +17686,407 @@ function hasPropNearPosition(x, y, z, radius = 0.32) {
     return false;
 }
 
+function isRaceTrackModelPropType(propType) {
+    return RACE_TRACK_MODEL_PROP_TYPES.includes(String(propType || ""));
+}
+
+function getRaceTrackTemplateConfig(propType) {
+    return RACE_TRACK_TEMPLATE_CONFIG[String(propType || "")] || null;
+}
+
+function sampleTrackSurfaceTopY(worldX, worldZ, preferredStartY = null) {
+    const sampleX = Math.floor(Number(worldX) || 0);
+    const sampleZ = Math.floor(Number(worldZ) || 0);
+    const terrainY = Math.floor(Number(terrainHeight(sampleX, sampleZ)) || 0);
+    const startY = Number.isFinite(preferredStartY)
+        ? Math.floor(Number(preferredStartY))
+        : (terrainY + 8);
+    const scannedY = findColumnSurfaceYAtOrBelow(sampleX, sampleZ, Math.min(WORLD_MAX_Y - 1, Math.max(0, startY)));
+    return Number.isFinite(scannedY) ? (scannedY + 1) : (terrainY + 1);
+}
+
+function resolveRaceTrackTemplateAnchor(targetedBlock, targetedProp, blockDistance = Number.POSITIVE_INFINITY) {
+    let anchorCellX = null;
+    let anchorCellY = null;
+    let anchorCellZ = null;
+
+    if (targetedProp && targetedProp.distance <= blockDistance + 0.001) {
+        const normal = getWorldNormalFromRayHit(targetedProp.hit);
+        if (!normal || normal.y < 0.45) {
+            showToast("Apunta al suelo o a la parte superior de un objeto para construir la pista", "warning", 1300);
+            return null;
+        }
+        anchorCellX = Math.floor(Number(targetedProp.hit.point?.x) || 0);
+        anchorCellZ = Math.floor(Number(targetedProp.hit.point?.z) || 0);
+        anchorCellY = Math.round(getPlacedPropSupportY(targetedProp.placed));
+    } else if (targetedBlock) {
+        const { hit, lookup } = targetedBlock;
+        const normal = getWorldNormalFromRayHit(hit) || hit.face?.normal?.clone();
+        if (!normal || normal.y < 0.4) {
+            showToast("La pista se construye sobre una superficie", "warning", 1100);
+            return null;
+        }
+        anchorCellX = lookup.x + Math.round(normal.x);
+        anchorCellY = lookup.y + Math.round(normal.y);
+        anchorCellZ = lookup.z + Math.round(normal.z);
+    } else {
+        showToast("Apunta a una superficie para construir la pista", "warning", 1100);
+        return null;
+    }
+
+    if (!inWorldBounds(anchorCellX, anchorCellY, anchorCellZ)) {
+        return null;
+    }
+    const topY = sampleTrackSurfaceTopY(anchorCellX + 0.5, anchorCellZ + 0.5, anchorCellY + 12);
+    return {
+        x: anchorCellX + 0.5,
+        y: topY,
+        z: anchorCellZ + 0.5
+    };
+}
+
+function buildRaceTrackNodesFromTemplate(templateConfig, anchor) {
+    const waypoints = Array.isArray(templateConfig?.waypoints) ? templateConfig.waypoints : [];
+    if (waypoints.length < 2 || !anchor) {
+        return [];
+    }
+    const sampleStep = Math.max(1.4, Number(templateConfig.sampleStep) || 3.1);
+    const maxGradeStep = Math.max(1, Math.floor(Number(templateConfig.maxGradeStep) || 1));
+    const nodes = [];
+    let previousTopY = Math.floor(Number(anchor.y) || 0);
+    let initialized = false;
+
+    for (let i = 0; i < waypoints.length - 1; i += 1) {
+        const from = waypoints[i];
+        const to = waypoints[i + 1];
+        const dx = (Number(to.x) || 0) - (Number(from.x) || 0);
+        const dz = (Number(to.z) || 0) - (Number(from.z) || 0);
+        const distance = Math.hypot(dx, dz);
+        const steps = Math.max(1, Math.ceil(distance / sampleStep));
+        for (let step = 0; step <= steps; step += 1) {
+            if (i > 0 && step === 0) {
+                continue;
+            }
+            const t = step / steps;
+            const localX = lerp(Number(from.x) || 0, Number(to.x) || 0, t);
+            const localZ = lerp(Number(from.z) || 0, Number(to.z) || 0, t);
+            const localH = lerp(Number(from.h) || 0, Number(to.h) || 0, t);
+            const worldX = anchor.x + localX;
+            const worldZ = anchor.z + localZ;
+            const groundTopY = sampleTrackSurfaceTopY(worldX, worldZ, previousTopY + 10);
+            const desiredTopY = Math.round(groundTopY + localH);
+            if (!initialized) {
+                previousTopY = Math.max(groundTopY, desiredTopY);
+                initialized = true;
+            } else {
+                const delta = THREE.MathUtils.clamp(desiredTopY - previousTopY, -maxGradeStep, maxGradeStep);
+                previousTopY = Math.max(groundTopY, previousTopY + delta);
+            }
+            nodes.push({
+                x: worldX,
+                z: worldZ,
+                topY: previousTopY
+            });
+        }
+    }
+    return nodes;
+}
+
+function getRaceTrackNodeYaw(nodes, index) {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+        return 0;
+    }
+    const safeIndex = THREE.MathUtils.clamp(Math.floor(index), 0, nodes.length - 1);
+    const previous = nodes[Math.max(0, safeIndex - 1)] || nodes[safeIndex];
+    const next = nodes[Math.min(nodes.length - 1, safeIndex + 1)] || nodes[safeIndex];
+    const dx = (Number(next.x) || 0) - (Number(previous.x) || 0);
+    const dz = (Number(next.z) || 0) - (Number(previous.z) || 0);
+    if (Math.abs(dx) < 1e-4 && Math.abs(dz) < 1e-4) {
+        return 0;
+    }
+    return normalizeYawRadians(Math.atan2(dx, dz));
+}
+
+function createRaceTrackColumnPlan(nodes, roadHalfWidth) {
+    const columns = new Map();
+    const halfWidth = Math.max(2, Math.floor(Number(roadHalfWidth) || 4));
+    for (let i = 0; i < nodes.length; i += 1) {
+        const node = nodes[i];
+        const yaw = getRaceTrackNodeYaw(nodes, i);
+        const rightX = Math.sin(yaw + Math.PI * 0.5);
+        const rightZ = Math.cos(yaw + Math.PI * 0.5);
+        for (let lateral = -halfWidth; lateral <= halfWidth; lateral += 1) {
+            const sampleX = Math.round((Number(node.x) || 0) + rightX * lateral);
+            const sampleZ = Math.round((Number(node.z) || 0) + rightZ * lateral);
+            const key = blockColumnKey(sampleX, sampleZ);
+            let entry = columns.get(key);
+            if (!entry) {
+                entry = { x: sampleX, z: sampleZ, sumTopY: 0, count: 0 };
+                columns.set(key, entry);
+            }
+            entry.sumTopY += Number(node.topY) || 0;
+            entry.count += 1;
+        }
+    }
+    return columns;
+}
+
+function applyRaceTrackColumnPlan(columns, stats) {
+    const topYByColumnKey = new Map();
+    for (const entry of columns.values()) {
+        const x = Math.floor(Number(entry.x) || 0);
+        const z = Math.floor(Number(entry.z) || 0);
+        const averagedTopY = Math.round((Number(entry.sumTopY) || 0) / Math.max(1, Number(entry.count) || 1));
+        let targetTopY = THREE.MathUtils.clamp(averagedTopY, 2, WORLD_MAX_Y - 4);
+        const currentTopY = sampleTrackSurfaceTopY(x + 0.5, z + 0.5, targetTopY + 10);
+        const currentTopSolidY = currentTopY - 1;
+        let targetTopSolidY = targetTopY - 1;
+
+        const verticalDelta = targetTopSolidY - currentTopSolidY;
+        if (verticalDelta > RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT) {
+            targetTopSolidY = currentTopSolidY + RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT;
+            targetTopY = targetTopSolidY + 1;
+        } else if (verticalDelta < -RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT) {
+            targetTopSolidY = currentTopSolidY - RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT;
+            targetTopY = targetTopSolidY + 1;
+        }
+
+        if (!inWorldBounds(x, targetTopSolidY, z)) {
+            continue;
+        }
+
+        if (currentTopSolidY < targetTopSolidY) {
+            for (let y = currentTopSolidY + 1; y <= targetTopSolidY; y += 1) {
+                applyBlockMutation(x, y, z, RACE_TRACK_FILL_BLOCK_ID, "local");
+                stats.blocksEdited += 1;
+            }
+        } else if (currentTopSolidY > targetTopSolidY) {
+            for (let y = targetTopSolidY + 1; y <= currentTopSolidY; y += 1) {
+                applyBlockMutation(x, y, z, BLOCK.AIR, "local");
+                stats.blocksEdited += 1;
+            }
+        }
+
+        applyBlockMutation(x, targetTopSolidY, z, RACE_TRACK_SURFACE_BLOCK_ID, "local");
+        stats.blocksEdited += 1;
+        for (let y = targetTopSolidY + 1; y <= targetTopSolidY + RACE_TRACK_CLEARANCE_HEIGHT; y += 1) {
+            if (!inWorldBounds(x, y, z)) {
+                break;
+            }
+            applyBlockMutation(x, y, z, BLOCK.AIR, "local");
+            stats.blocksEdited += 1;
+        }
+        topYByColumnKey.set(blockColumnKey(x, z), targetTopY);
+    }
+    return topYByColumnKey;
+}
+
+function getRaceTrackTopYAt(topYByColumnKey, x, z, fallbackTopY = 1) {
+    const sampleX = Math.round(Number(x) || 0);
+    const sampleZ = Math.round(Number(z) || 0);
+    const direct = topYByColumnKey.get(blockColumnKey(sampleX, sampleZ));
+    if (Number.isFinite(direct)) {
+        return direct;
+    }
+    return sampleTrackSurfaceTopY(sampleX + 0.5, sampleZ + 0.5, fallbackTopY + 8);
+}
+
+function addRaceTrackProp(propType, worldX, worldY, worldZ, yaw, stats, dedupeSet = null) {
+    const safeType = String(propType || "");
+    if (!safeType || !VALID_PROP_TYPES.has(safeType)) {
+        return false;
+    }
+    const x = Number(worldX) || 0;
+    const y = Math.floor(Number(worldY) || 0);
+    const z = Number(worldZ) || 0;
+    if (!inWorldBounds(Math.floor(x), y, Math.floor(z))) {
+        stats.skippedProps += 1;
+        return false;
+    }
+    const key = `${safeType}|${Math.round(x * 10)}|${Math.round(y * 10)}|${Math.round(z * 10)}`;
+    if (dedupeSet && dedupeSet.has(key)) {
+        return false;
+    }
+    if (hasPropNearPosition(x, y, z, 0.2)) {
+        stats.skippedProps += 1;
+        return false;
+    }
+    const normalizedYaw = isRaceRampPropType(safeType)
+        ? snapYawToStep(yaw, RACE_RAMP_ROTATION_STEP)
+        : snapYawToStep(yaw);
+    const result = addPlacedPropEntry({
+        propType: safeType,
+        x,
+        y,
+        z,
+        yaw: normalizedYaw
+    }, "local");
+    if (!result) {
+        stats.skippedProps += 1;
+        return false;
+    }
+    if (dedupeSet) {
+        dedupeSet.add(key);
+    }
+    stats.propsPlaced += 1;
+    return true;
+}
+
+function getRaceTrackNodeIndexByFraction(nodes, fraction) {
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+        return 0;
+    }
+    const clamped = THREE.MathUtils.clamp(Number(fraction) || 0, 0, 1);
+    return THREE.MathUtils.clamp(Math.round((nodes.length - 1) * clamped), 0, nodes.length - 1);
+}
+
+function placeRaceTrackFeatures(templateConfig, nodes, topYByColumnKey, stats) {
+    const roadHalfWidth = Math.max(2, Math.floor(Number(templateConfig.roadHalfWidth) || 4));
+    const barrierStride = Math.max(1, Math.floor(Number(templateConfig.barrierStride) || 2));
+    const curbStride = Math.max(1, Math.floor(Number(templateConfig.curbStride) || 1));
+    const dedupeSet = new Set();
+
+    for (let i = 0; i < nodes.length; i += 1) {
+        const node = nodes[i];
+        const yaw = getRaceTrackNodeYaw(nodes, i);
+        const rightX = Math.sin(yaw + Math.PI * 0.5);
+        const rightZ = Math.cos(yaw + Math.PI * 0.5);
+        const curbYaw = normalizeYawRadians(yaw - Math.PI * 0.5);
+
+        if (i % curbStride === 0) {
+            for (const side of [-1, 1]) {
+                const curbOffset = side * (roadHalfWidth + 0.35);
+                const curbX = Math.round((Number(node.x) || 0) + rightX * curbOffset);
+                const curbZ = Math.round((Number(node.z) || 0) + rightZ * curbOffset);
+                const curbTopY = getRaceTrackTopYAt(topYByColumnKey, curbX, curbZ, node.topY);
+                addRaceTrackProp(PROP_TYPE.RACE_CURB, curbX + 0.5, curbTopY, curbZ + 0.5, curbYaw, stats, dedupeSet);
+            }
+        }
+        if (i % barrierStride === 0) {
+            for (const side of [-1, 1]) {
+                const barrierOffset = side * (roadHalfWidth + 1.35);
+                const barrierX = Math.round((Number(node.x) || 0) + rightX * barrierOffset);
+                const barrierZ = Math.round((Number(node.z) || 0) + rightZ * barrierOffset);
+                const barrierTopY = getRaceTrackTopYAt(topYByColumnKey, barrierX, barrierZ, node.topY);
+                addRaceTrackProp(PROP_TYPE.RACE_BARRIER, barrierX + 0.5, barrierTopY, barrierZ + 0.5, curbYaw, stats, dedupeSet);
+            }
+        }
+    }
+
+    const finishIndex = Math.max(2, getRaceTrackNodeIndexByFraction(nodes, 0.03));
+    const finishNode = nodes[finishIndex];
+    const finishYaw = getRaceTrackNodeYaw(nodes, finishIndex);
+    addRaceTrackProp(
+        PROP_TYPE.RACE_FINISH_LINE,
+        Math.round(finishNode.x) + 0.5,
+        getRaceTrackTopYAt(topYByColumnKey, finishNode.x, finishNode.z, finishNode.topY),
+        Math.round(finishNode.z) + 0.5,
+        finishYaw,
+        stats,
+        dedupeSet
+    );
+
+    for (const fraction of templateConfig.checkpointFractions || []) {
+        const checkpointIndex = getRaceTrackNodeIndexByFraction(nodes, fraction);
+        const checkpointNode = nodes[checkpointIndex];
+        const checkpointYaw = getRaceTrackNodeYaw(nodes, checkpointIndex);
+        addRaceTrackProp(
+            PROP_TYPE.RACE_CHECKPOINT,
+            Math.round(checkpointNode.x) + 0.5,
+            getRaceTrackTopYAt(topYByColumnKey, checkpointNode.x, checkpointNode.z, checkpointNode.topY),
+            Math.round(checkpointNode.z) + 0.5,
+            checkpointYaw,
+            stats,
+            dedupeSet
+        );
+    }
+
+    for (const fraction of templateConfig.boostFractions || []) {
+        const boostIndex = getRaceTrackNodeIndexByFraction(nodes, fraction);
+        const boostNode = nodes[boostIndex];
+        addRaceTrackProp(
+            PROP_TYPE.RACE_BOOST_PAD,
+            Math.round(boostNode.x) + 0.5,
+            getRaceTrackTopYAt(topYByColumnKey, boostNode.x, boostNode.z, boostNode.topY),
+            Math.round(boostNode.z) + 0.5,
+            getRaceTrackNodeYaw(nodes, boostIndex),
+            stats,
+            dedupeSet
+        );
+    }
+
+    for (const rampSpawn of templateConfig.rampSpawns || []) {
+        const rampType = String(rampSpawn?.type || "");
+        if (!isRaceRampPropType(rampType)) {
+            continue;
+        }
+        const rampIndex = getRaceTrackNodeIndexByFraction(nodes, Number(rampSpawn.t) || 0);
+        const rampNode = nodes[rampIndex];
+        const rampYaw = getRaceTrackNodeYaw(nodes, rampIndex);
+        addRaceTrackProp(
+            rampType,
+            Math.round(rampNode.x) + 0.5,
+            getRaceTrackTopYAt(topYByColumnKey, rampNode.x, rampNode.z, rampNode.topY),
+            Math.round(rampNode.z) + 0.5,
+            rampYaw,
+            stats,
+            dedupeSet
+        );
+    }
+}
+
+function buildRaceTrackModelFromAnchor(propType, anchor) {
+    const templateConfig = getRaceTrackTemplateConfig(propType);
+    if (!templateConfig || !anchor) {
+        return null;
+    }
+
+    const stats = {
+        blocksEdited: 0,
+        propsPlaced: 0,
+        skippedProps: 0
+    };
+    const nodes = buildRaceTrackNodesFromTemplate(templateConfig, anchor);
+    if (nodes.length < 8) {
+        return null;
+    }
+    const roadColumns = createRaceTrackColumnPlan(nodes, templateConfig.roadHalfWidth);
+    const topYByColumnKey = applyRaceTrackColumnPlan(roadColumns, stats);
+    placeRaceTrackFeatures(templateConfig, nodes, topYByColumnKey, stats);
+    scheduleWorldSave();
+    flushCloudEditWrites();
+    flushCloudPropWrites();
+    return {
+        templateName: templateConfig.name,
+        nodesBuilt: nodes.length,
+        columnsBuilt: roadColumns.size,
+        ...stats
+    };
+}
+
+function tryBuildRaceTrackFromSelection(trackPropType, targetedBlock, targetedProp, blockDistance) {
+    const templateConfig = getRaceTrackTemplateConfig(trackPropType);
+    if (!templateConfig) {
+        return false;
+    }
+    const anchor = resolveRaceTrackTemplateAnchor(targetedBlock, targetedProp, blockDistance);
+    if (!anchor) {
+        return true;
+    }
+    showToast(`Construyendo ${templateConfig.name}...`, "info", 1100);
+    const result = buildRaceTrackModelFromAnchor(trackPropType, anchor);
+    if (!result) {
+        showToast("No pude construir la pista en este punto", "warning", 1400);
+        return true;
+    }
+    showToast(
+        `${templateConfig.name}: ${result.columnsBuilt} columnas, ${result.propsPlaced} objetos`,
+        "success",
+        2200
+    );
+    return true;
+}
+
 function attemptMineOrPlace(isPlacing) {
     if (!state.worldStarted || !state.worldReady) {
         return;
@@ -17613,6 +18112,10 @@ function attemptMineOrPlace(isPlacing) {
 
     const selectedType = selectedPropType();
     if (selectedType) {
+        if (isRaceTrackModelPropType(selectedType)) {
+            tryBuildRaceTrackFromSelection(selectedType, targetedBlock, targetedProp, blockDistance);
+            return;
+        }
         let propTypeToPlace = selectedType;
         let selectedTvSizeInches = null;
         let propX = 0;

@@ -39,7 +39,9 @@ export const PROP_TYPE = Object.freeze({
     RACE_BOOST_PAD: "race_boost_pad",
     RACE_RAMP_LOW: "race_ramp_low",
     RACE_RAMP_MEDIUM: "race_ramp_medium",
-    RACE_RAMP_HIGH: "race_ramp_high"
+    RACE_RAMP_HIGH: "race_ramp_high",
+    RACE_TRACK_MODEL_ONE: "race_track_model_one",
+    RACE_TRACK_MODEL_TWO: "race_track_model_two"
 });
 
 const PROP_KIND = "prop";
@@ -497,6 +499,24 @@ const RAW_PROP_DEFINITIONS = [
         tags: ["race", "ramp", "track", "high"],
         visual: { tint: "rgba(160, 166, 178, 0.42)" },
         profile: { halfExtents: { x: 1.08, z: 1.16 }, minY: 0, maxY: 2.6, supportY: 2.6 }
+    },
+    {
+        id: PROP_TYPE.RACE_TRACK_MODEL_ONE,
+        label: "Pista modelo 1",
+        category: "racing",
+        tags: ["race", "track", "template", "autoload"],
+        solid: false,
+        visual: { tint: "rgba(90, 182, 240, 0.44)" },
+        profile: { halfExtents: { x: 0.52, z: 0.52 }, minY: 0, maxY: 0.42, supportY: 0.38 }
+    },
+    {
+        id: PROP_TYPE.RACE_TRACK_MODEL_TWO,
+        label: "Pista modelo 2",
+        category: "racing",
+        tags: ["race", "track", "template", "autoload"],
+        solid: false,
+        visual: { tint: "rgba(255, 175, 96, 0.44)" },
+        profile: { halfExtents: { x: 0.52, z: 0.52 }, minY: 0, maxY: 0.42, supportY: 0.38 }
     }
 ];
 
