@@ -155,12 +155,13 @@ const KART_COLLISION_EXTENT_SCALE_Z = 0.66;
 const KART_COLLISION_MIN_Y_OFFSET = 0.14;
 const KART_COLLISION_MAX_Y_OFFSET = 0.04;
 const KART_VERTICAL_SETTLE_MAX_PER_STEP = 0.34;
-const KART_BOOST_SPEED_MULTIPLIER = 1.55;
-const KART_BOOST_ACCELERATION_MULTIPLIER = 1.8;
-const KART_BOOST_DURATION_SECONDS = 1.65;
+const KART_BOOST_SPEED_MULTIPLIER = 2.15;
+const KART_BOOST_ACCELERATION_MULTIPLIER = 2.8;
+const KART_BOOST_DURATION_SECONDS = 2.05;
 const KART_BOOST_SYNC_COOLDOWN_SECONDS = 0.18;
 const RACE_SURFACE_EPSILON = 0.04;
 const RACE_FINISH_REPEAT_COOLDOWN_SECONDS = 1.2;
+const RACE_RAMP_ROTATION_STEP = Math.PI * 0.25;
 const RACE_META_WINNER_KEY = "raceWinner";
 const RACE_RAMP_HEIGHT_BY_TYPE = Object.freeze({
     [PROP_TYPE.RACE_RAMP_LOW]: 1.1,
@@ -1549,7 +1550,8 @@ const interactionState = {
 const raceState = {
     winner: null,
     lastAnnouncedKey: "",
-    lastLocalWinnerSubmitAt: 0
+    lastLocalWinnerSubmitAt: 0,
+    celebrationTimerId: null
 };
 
 const jukeboxState = {
@@ -1682,6 +1684,66 @@ function showToast(message, tone = "info", durationMs = 1500) {
             uiState.toastHideTimerId = null;
         }, 170);
     }, durationMs);
+}
+
+function hideRaceWinnerCelebration() {
+    const overlay = typeof document !== "undefined"
+        ? document.getElementById("raceWinnerCelebration")
+        : null;
+    if (!overlay) {
+        return;
+    }
+    overlay.style.opacity = "0";
+    overlay.style.transform = "translate(-50%, -50%) scale(0.94)";
+}
+
+function showRaceWinnerCelebration(winnerPayload) {
+    if (!winnerPayload || typeof document === "undefined") {
+        return;
+    }
+    let overlay = document.getElementById("raceWinnerCelebration");
+    if (!overlay) {
+        overlay = document.createElement("div");
+        overlay.id = "raceWinnerCelebration";
+        overlay.style.position = "fixed";
+        overlay.style.left = "50%";
+        overlay.style.top = "44%";
+        overlay.style.transform = "translate(-50%, -50%) scale(0.94)";
+        overlay.style.zIndex = "1400";
+        overlay.style.minWidth = "54vw";
+        overlay.style.maxWidth = "88vw";
+        overlay.style.padding = "28px 34px";
+        overlay.style.borderRadius = "18px";
+        overlay.style.border = "2px solid rgba(255, 236, 132, 0.9)";
+        overlay.style.background = "linear-gradient(135deg, rgba(31, 55, 95, 0.95), rgba(12, 23, 44, 0.97))";
+        overlay.style.boxShadow = "0 26px 60px rgba(0, 0, 0, 0.55), 0 0 28px rgba(255, 222, 120, 0.34)";
+        overlay.style.backdropFilter = "blur(2px)";
+        overlay.style.pointerEvents = "none";
+        overlay.style.textAlign = "center";
+        overlay.style.opacity = "0";
+        overlay.style.transition = "opacity 180ms ease, transform 220ms ease";
+        overlay.style.fontFamily = "\"Trebuchet MS\", \"Segoe UI\", sans-serif";
+        document.body.appendChild(overlay);
+    }
+    const localId = String(multiplayer.profile?.id || "");
+    const winnerName = String(winnerPayload.playerDisplayName || winnerPayload.playerLabel || "Jugador");
+    const isLocalWinner = localId && String(winnerPayload.playerId || "") === localId;
+    overlay.innerHTML = [
+        `<div style="font-size:18px; font-weight:700; letter-spacing:0.12em; color:#ffe8a8; margin-bottom:8px;">META CRUZADA</div>`,
+        `<div style="font-size:54px; font-weight:900; color:#ffffff; line-height:1.02; text-shadow:0 6px 18px rgba(0,0,0,0.5);">GANADOR</div>`,
+        `<div style="margin-top:12px; font-size:40px; font-weight:900; color:#8cd7ff; line-height:1.08; text-shadow:0 4px 14px rgba(0,0,0,0.42);">${winnerName}</div>`,
+        `<div style="margin-top:12px; font-size:18px; color:${isLocalWinner ? "#9dffbf" : "#d0ddf3"};">${isLocalWinner ? "Victoria confirmada para tu avatar" : "Carrera finalizada"}</div>`
+    ].join("");
+    overlay.style.opacity = "1";
+    overlay.style.transform = "translate(-50%, -50%) scale(1)";
+    if (raceState.celebrationTimerId !== null) {
+        window.clearTimeout(raceState.celebrationTimerId);
+        raceState.celebrationTimerId = null;
+    }
+    raceState.celebrationTimerId = window.setTimeout(() => {
+        hideRaceWinnerCelebration();
+        raceState.celebrationTimerId = null;
+    }, 4200);
 }
 
 function setDebugVisible(visible, showFeedback = false) {
@@ -5935,7 +5997,7 @@ function getPropLocalXZ(placed, worldX, worldZ) {
     };
 }
 
-function getRaceRampSurfaceYAtSample(placed, sampleX, sampleZ) {
+function getRaceRampSurfaceYAtSample(placed, sampleX, sampleZ, currentY = 0) {
     if (!placed || !isRaceRampPropType(placed.propType)) {
         return null;
     }
@@ -5951,7 +6013,15 @@ function getRaceRampSurfaceYAtSample(placed, sampleX, sampleZ) {
     }
     const halfZ = Math.max(0.0001, Number(half.z) || 0.5);
     const normalizedZ = THREE.MathUtils.clamp((local.z + halfZ) / (halfZ * 2), 0, 1);
-    return (Number(placed.y) || 0) + rampHeight * normalizedZ;
+    const surfaceY = (Number(placed.y) || 0) + rampHeight * normalizedZ;
+    // One-way ramp behavior: entering through the rear half from low altitude should not latch to the slope.
+    if (local.z > halfZ * 0.24) {
+        const supportTolerance = 0.4;
+        if ((Number(currentY) || 0) < surfaceY - supportTolerance) {
+            return null;
+        }
+    }
+    return surfaceY;
 }
 
 function getRaceFlatSurfaceYAtSample(placed, sampleX, sampleZ) {
@@ -5997,7 +6067,7 @@ function resolveRaceSurfaceYAtSample(sampleX, sampleZ, currentY) {
         }
         let candidateY = null;
         if (isRaceRampPropType(other.propType)) {
-            candidateY = getRaceRampSurfaceYAtSample(other, sampleX, sampleZ);
+            candidateY = getRaceRampSurfaceYAtSample(other, sampleX, sampleZ, currentY);
         } else {
             candidateY = getRaceFlatSurfaceYAtSample(other, sampleX, sampleZ);
         }
@@ -6023,9 +6093,18 @@ function collectKartOverlappingPropIdsByType(placed, propType) {
         Number(placed.z) || 0,
         Number(placed.yaw) || 0
     );
-    // Include a small vertical tolerance so thin race props (boost pads/finish triggers) are detected reliably.
-    kartBounds.minY -= 0.36;
-    kartBounds.maxY += 0.2;
+    const triggerPaddingXZ = propType === PROP_TYPE.RACE_BOOST_PAD
+        ? 0.2
+        : (propType === PROP_TYPE.RACE_FINISH_LINE ? 0.12 : 0);
+    if (triggerPaddingXZ > 0) {
+        kartBounds.minX -= triggerPaddingXZ;
+        kartBounds.maxX += triggerPaddingXZ;
+        kartBounds.minZ -= triggerPaddingXZ;
+        kartBounds.maxZ += triggerPaddingXZ;
+    }
+    // Include vertical tolerance so thin race props (boost pads/finish triggers) are detected reliably.
+    kartBounds.minY -= propType === PROP_TYPE.RACE_BOOST_PAD ? 0.48 : 0.36;
+    kartBounds.maxY += propType === PROP_TYPE.RACE_BOOST_PAD ? 0.28 : 0.2;
     const nearbyIds = queryNearbyPropIdsReusable(
         kartBounds.minX,
         kartBounds.maxX,
@@ -6888,6 +6967,10 @@ function resolvePropPlacementYaw(propType, propX, propZ) {
         }
     }
 
+    if (isRaceRampPropType(propType)) {
+        return snapYawToStep(yaw, RACE_RAMP_ROTATION_STEP);
+    }
+
     return snapYawToStep(yaw);
 }
 
@@ -7708,44 +7791,41 @@ function buildRaceBoostPadNode(root) {
 function buildRaceRampNode(root, {
     height = 1.85,
     baseColor = 0xb7bcc7,
-    stripeColor = 0xffffff,
-    sideColor = 0x8a909d
+    stripeColor = 0xffffff
 } = {}) {
     const rampWidth = 2.16;
     const rampLength = 2.32;
     const rampHalfLength = rampLength * 0.5;
-    root.add(createDetailPart({ x: rampWidth, y: 0.08, z: rampLength }, { x: 0, y: 0.04, z: 0 }, 0x2f3642));
-    const sliceCount = 16;
+    const sliceCount = 24;
     const sliceDepth = rampLength / sliceCount;
     for (let i = 0; i < sliceCount; i += 1) {
-        const t = (i + 1) / sliceCount;
-        const sliceHeight = Math.max(0.06, height * t);
+        const t0 = i / sliceCount;
+        const t1 = (i + 1) / sliceCount;
+        const sliceHeight = Math.max(0.04, height * t1);
+        const previousHeight = Math.max(0, height * t0);
+        const layerHeight = Math.max(0.02, sliceHeight - previousHeight + 0.008);
         const sliceZ = -rampHalfLength + sliceDepth * (i + 0.5);
         root.add(createDetailPart(
-            { x: rampWidth, y: sliceHeight, z: sliceDepth + 0.004 },
-            { x: 0, y: sliceHeight * 0.5, z: sliceZ },
+            { x: rampWidth, y: layerHeight, z: sliceDepth + 0.002 },
+            { x: 0, y: previousHeight + layerHeight * 0.5, z: sliceZ },
             baseColor
         ));
-        if (i % 4 === 0) {
+        if (i % 6 === 0) {
             root.add(createDetailPart(
                 { x: rampWidth * 0.88, y: 0.018, z: sliceDepth * 0.9 },
-                { x: 0, y: sliceHeight + 0.01, z: sliceZ },
+                { x: 0, y: previousHeight + layerHeight + 0.008, z: sliceZ },
                 stripeColor
             ));
         }
     }
-    const sideWallHeight = Math.max(0.22, height + 0.04);
-    root.add(createDetailPart({ x: 0.08, y: sideWallHeight, z: rampLength }, { x: -(rampWidth * 0.5) + 0.04, y: sideWallHeight * 0.5, z: 0 }, sideColor));
-    root.add(createDetailPart({ x: 0.08, y: sideWallHeight, z: rampLength }, { x: (rampWidth * 0.5) - 0.04, y: sideWallHeight * 0.5, z: 0 }, sideColor));
-    root.add(createDetailPart({ x: rampWidth * 0.96, y: 0.06, z: 0.16 }, { x: 0, y: sideWallHeight - 0.02, z: rampHalfLength - 0.08 }, 0xdfe7f2));
+    // No side walls/caps so consecutive ramps visually merge into one continuous slope.
 }
 
 function buildRaceRampLowNode(root) {
     buildRaceRampNode(root, {
         height: 1.1,
         baseColor: 0xc3c7cf,
-        stripeColor: 0xf4f6fa,
-        sideColor: 0x949aa7
+        stripeColor: 0xf4f6fa
     });
 }
 
@@ -7753,8 +7833,7 @@ function buildRaceRampMediumNode(root) {
     buildRaceRampNode(root, {
         height: 1.85,
         baseColor: 0xb3b9c4,
-        stripeColor: 0xeef2f8,
-        sideColor: 0x868d99
+        stripeColor: 0xeef2f8
     });
 }
 
@@ -7762,8 +7841,7 @@ function buildRaceRampHighNode(root) {
     buildRaceRampNode(root, {
         height: 2.6,
         baseColor: 0x9da5b5,
-        stripeColor: 0xe6ecf5,
-        sideColor: 0x757f92
+        stripeColor: 0xe6ecf5
     });
 }
 
@@ -10269,6 +10347,11 @@ function getRaceWinnerAnnouncementKey(winnerPayload) {
 function clearRaceWinnerState() {
     raceState.winner = null;
     raceState.lastAnnouncedKey = "";
+    if (raceState.celebrationTimerId !== null) {
+        window.clearTimeout(raceState.celebrationTimerId);
+        raceState.celebrationTimerId = null;
+    }
+    hideRaceWinnerCelebration();
 }
 
 function applyRaceWinnerState(rawPayload, announce = true) {
@@ -10283,6 +10366,7 @@ function applyRaceWinnerState(rawPayload, announce = true) {
     raceState.winner = normalized;
     if (announce && changed && raceState.lastAnnouncedKey !== nextKey) {
         showToast(`Meta: ${normalized.playerDisplayName} gano la carrera`, "success", 2200);
+        showRaceWinnerCelebration(normalized);
         raceState.lastAnnouncedKey = nextKey;
     }
     return changed;
@@ -14153,6 +14237,7 @@ function enterKartDrive(propHit) {
         steer: 0,
         drift: false,
         boostRemaining: 0,
+        boostFeedbackCooldown: 0,
         boostPadInsideIds: new Set(),
         finishInsideIds: new Set(),
         finishCooldown: 0,
@@ -14215,6 +14300,12 @@ function refreshKartBoostStateFromPads(placed, drive) {
     for (const boostId of currentHits) {
         if (!previousHits.has(boostId)) {
             drive.boostRemaining = Math.max(Number(drive.boostRemaining) || 0, KART_BOOST_DURATION_SECONDS);
+            const minBoostLaunchSpeed = Math.max(12 / 3.6, KART_MAX_SPEED_FORWARD * 0.35);
+            drive.speed = Math.max(Number(drive.speed) || 0, minBoostLaunchSpeed);
+            if ((Number(drive.boostFeedbackCooldown) || 0) <= 0.001) {
+                showToast("BOOST ACTIVADO", "success", 900);
+                drive.boostFeedbackCooldown = 0.7;
+            }
             activated = true;
         }
     }
@@ -14261,6 +14352,7 @@ function updateKartDrive(deltaSeconds) {
 
     drive.finishCooldown = Math.max(0, (Number(drive.finishCooldown) || 0) - deltaSeconds);
     drive.boostRemaining = Math.max(0, (Number(drive.boostRemaining) || 0) - deltaSeconds);
+    drive.boostFeedbackCooldown = Math.max(0, (Number(drive.boostFeedbackCooldown) || 0) - deltaSeconds);
     const boostActive = (Number(drive.boostRemaining) || 0) > 0;
     const forwardSpeedLimit = KART_MAX_SPEED_FORWARD * (boostActive ? KART_BOOST_SPEED_MULTIPLIER : 1);
     const accelerationForce = KART_ACCELERATION * (boostActive ? KART_BOOST_ACCELERATION_MULTIPLIER : 1);
@@ -14376,11 +14468,7 @@ function updateKartDrive(deltaSeconds) {
                     supportDelta <= KART_MAX_STEP_UP + 1e-4
                     && supportDelta >= -KART_MAX_STEP_DOWN - 1e-4
                 ) {
-                    const supportY = currentY + THREE.MathUtils.clamp(
-                        supportDelta,
-                        -KART_VERTICAL_SETTLE_MAX_PER_STEP,
-                        KART_VERTICAL_SETTLE_MAX_PER_STEP
-                    );
+                    const supportY = currentY + supportDelta;
                     if (!wouldKartCollideAt(placed, candidateX, supportY, candidateZ, nextYaw)) {
                         travelY = supportY;
                         blocked = false;
@@ -14402,11 +14490,7 @@ function updateKartDrive(deltaSeconds) {
                 adaptiveDelta <= KART_MAX_STEP_UP + 1e-4
                 && adaptiveDelta >= -KART_MAX_STEP_DOWN - 1e-4
             ) {
-                const adaptiveY = currentY + THREE.MathUtils.clamp(
-                    adaptiveDelta,
-                    -KART_VERTICAL_SETTLE_MAX_PER_STEP,
-                    KART_VERTICAL_SETTLE_MAX_PER_STEP
-                );
+                const adaptiveY = currentY + adaptiveDelta;
                 if (!wouldKartCollideAt(placed, candidateX, adaptiveY, candidateZ, nextYaw)) {
                     travelY = adaptiveY;
                     blocked = false;
@@ -14418,6 +14502,22 @@ function updateKartDrive(deltaSeconds) {
             if (keepForwardAtCurrentY) {
                 travelY = currentY;
                 blocked = false;
+            }
+        }
+        if (blocked) {
+            // Last-chance rescue against random voxel edge snags while preserving hard obstacles.
+            const rescueOffsets = [0.1, -0.1, 0.22, -0.22, 0.36, -0.36, 0.52, -0.52, 0.76, -0.76, 1.0, -1.0];
+            for (const rescueOffset of rescueOffsets) {
+                if (rescueOffset > KART_MAX_STEP_UP + 1e-4 || rescueOffset < -KART_MAX_STEP_DOWN - 1e-4) {
+                    continue;
+                }
+                const rescueY = currentY + rescueOffset;
+                if (wouldKartCollideAt(placed, candidateX, rescueY, candidateZ, nextYaw)) {
+                    continue;
+                }
+                travelY = rescueY;
+                blocked = false;
+                break;
             }
         }
         if (blocked) {
