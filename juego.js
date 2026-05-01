@@ -3845,6 +3845,156 @@ function getRandomHardResetWord() {
     return String(WORLD_HARD_RESET_CONFIRM_WORDS[index] || "girasol");
 }
 
+function requestHardResetWordConfirmation(challengeWord) {
+    if (typeof document === "undefined" || !document.body) {
+        const fallback = window.prompt(
+            `Confirmacion 3/3.\nComentario del juego: "Si de verdad quieres borrarlo TODO, escribe exactamente la palabra: ${challengeWord}"\n\nEscribe la palabra para continuar:`,
+            ""
+        );
+        return Promise.resolve(fallback === null ? null : String(fallback));
+    }
+
+    return new Promise((resolve) => {
+        const existing = document.getElementById("hardResetWordConfirmOverlay");
+        if (existing) {
+            existing.remove();
+        }
+
+        let keyHandlingEnabled = false;
+
+        const overlay = document.createElement("div");
+        overlay.id = "hardResetWordConfirmOverlay";
+        overlay.style.position = "fixed";
+        overlay.style.inset = "0";
+        overlay.style.zIndex = "2200";
+        overlay.style.background = "rgba(5, 10, 18, 0.72)";
+        overlay.style.display = "flex";
+        overlay.style.alignItems = "center";
+        overlay.style.justifyContent = "center";
+        overlay.style.padding = "16px";
+
+        const panel = document.createElement("div");
+        panel.style.width = "min(560px, 92vw)";
+        panel.style.background = "rgba(14, 22, 34, 0.98)";
+        panel.style.border = "1px solid rgba(255, 182, 120, 0.42)";
+        panel.style.borderRadius = "14px";
+        panel.style.boxShadow = "0 18px 48px rgba(0,0,0,0.45)";
+        panel.style.padding = "18px 18px 16px";
+        panel.style.color = "#ecf3ff";
+        panel.style.fontFamily = "\"Segoe UI\", sans-serif";
+
+        const title = document.createElement("div");
+        title.textContent = "Confirmacion 3/3 - Borrado total";
+        title.style.fontSize = "18px";
+        title.style.fontWeight = "700";
+        title.style.marginBottom = "10px";
+
+        const text = document.createElement("div");
+        text.textContent = `Comentario del juego: escribe exactamente "${challengeWord}" para continuar.`;
+        text.style.fontSize = "14px";
+        text.style.lineHeight = "1.5";
+        text.style.opacity = "0.95";
+        text.style.marginBottom = "12px";
+
+        const input = document.createElement("input");
+        input.type = "text";
+        input.autocomplete = "off";
+        input.spellcheck = false;
+        input.placeholder = "Escribe la palabra aqui";
+        input.style.width = "100%";
+        input.style.borderRadius = "10px";
+        input.style.border = "1px solid rgba(255, 255, 255, 0.24)";
+        input.style.background = "rgba(255,255,255,0.08)";
+        input.style.color = "#ffffff";
+        input.style.padding = "11px 12px";
+        input.style.fontSize = "15px";
+        input.style.marginBottom = "12px";
+        input.style.outline = "none";
+
+        const actions = document.createElement("div");
+        actions.style.display = "flex";
+        actions.style.justifyContent = "flex-end";
+        actions.style.gap = "8px";
+
+        const cancelButton = document.createElement("button");
+        cancelButton.type = "button";
+        cancelButton.textContent = "Cancelar";
+        cancelButton.style.border = "1px solid rgba(255,255,255,0.28)";
+        cancelButton.style.background = "rgba(255,255,255,0.08)";
+        cancelButton.style.color = "#f6f7fb";
+        cancelButton.style.borderRadius = "9px";
+        cancelButton.style.padding = "8px 12px";
+        cancelButton.style.cursor = "pointer";
+
+        const confirmButton = document.createElement("button");
+        confirmButton.type = "button";
+        confirmButton.textContent = "Borrar todo";
+        confirmButton.style.border = "1px solid rgba(255, 174, 120, 0.45)";
+        confirmButton.style.background = "rgba(198, 62, 37, 0.94)";
+        confirmButton.style.color = "#fff";
+        confirmButton.style.borderRadius = "9px";
+        confirmButton.style.padding = "8px 12px";
+        confirmButton.style.cursor = "pointer";
+        confirmButton.style.fontWeight = "700";
+
+        const finalize = (value) => {
+            document.removeEventListener("keydown", onGlobalKeyDown, true);
+            input.removeEventListener("keydown", onInputKeyDown);
+            overlay.remove();
+            resolve(value);
+        };
+
+        const onGlobalKeyDown = (event) => {
+            if (!keyHandlingEnabled) {
+                return;
+            }
+            if (event.key === "Escape") {
+                event.preventDefault();
+                event.stopPropagation();
+                finalize(null);
+            }
+        };
+
+        const onInputKeyDown = (event) => {
+            if (!keyHandlingEnabled || event.key !== "Enter") {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            finalize(String(input.value || ""));
+        };
+
+        cancelButton.addEventListener("click", () => finalize(null));
+        confirmButton.addEventListener("click", () => finalize(String(input.value || "")));
+        overlay.addEventListener("click", (event) => {
+            if (event.target === overlay) {
+                finalize(null);
+            }
+        });
+        document.addEventListener("keydown", onGlobalKeyDown, true);
+        input.addEventListener("keydown", onInputKeyDown);
+
+        actions.appendChild(cancelButton);
+        actions.appendChild(confirmButton);
+        panel.appendChild(title);
+        panel.appendChild(text);
+        panel.appendChild(input);
+        panel.appendChild(actions);
+        overlay.appendChild(panel);
+        document.body.appendChild(overlay);
+        window.setTimeout(() => {
+            try {
+                input.focus();
+                input.select();
+            } catch (error) {
+            }
+        }, 0);
+        window.setTimeout(() => {
+            keyHandlingEnabled = true;
+        }, 120);
+    });
+}
+
 function clearLocalWorldPersistenceKeys() {
     const storageKeys = [
         WORLD_SAVE_KEY,
@@ -3933,11 +4083,9 @@ async function runHardWorldResetFlow() {
     }
 
     const challengeWord = getRandomHardResetWord();
-    const typedWord = window.prompt(
-        `Confirmacion 3/3.\nComentario del juego: "Si de verdad quieres borrarlo TODO, escribe exactamente la palabra: ${challengeWord}"\n\nEscribe la palabra para continuar:`,
-        ""
-    );
+    const typedWord = await requestHardResetWordConfirmation(challengeWord);
     if (typedWord === null) {
+        showToast("Borrado total cancelado", "info", 1100);
         return false;
     }
     if (String(typedWord).trim().toLowerCase() !== challengeWord.toLowerCase()) {
