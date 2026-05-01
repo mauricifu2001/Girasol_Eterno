@@ -10364,7 +10364,7 @@ function applyRaceWinnerState(rawPayload, announce = true) {
     const previousKey = getRaceWinnerAnnouncementKey(raceState.winner);
     const changed = nextKey !== previousKey;
     raceState.winner = normalized;
-    if (announce && changed && raceState.lastAnnouncedKey !== nextKey) {
+    if (announce && changed) {
         showToast(`Meta: ${normalized.playerDisplayName} gano la carrera`, "success", 2200);
         showRaceWinnerCelebration(normalized);
         raceState.lastAnnouncedKey = nextKey;
@@ -10416,9 +10416,6 @@ async function submitRaceWinnerIfFirst(kartPlaced, finishPlaced = null) {
     if (!kartPlaced) {
         return false;
     }
-    if (normalizeRaceWinnerPayload(raceState.winner)) {
-        return false;
-    }
     const payload = buildLocalRaceWinnerPayload(kartPlaced, finishPlaced);
     if (!normalizeRaceWinnerPayload(payload)) {
         return false;
@@ -10442,21 +10439,11 @@ async function submitRaceWinnerIfFirst(kartPlaced, finishPlaced = null) {
         if (typeof dbModule.runTransaction === "function") {
             await dbModule.runTransaction(
                 winnerRef,
-                (currentValue) => {
-                    const currentWinner = normalizeRaceWinnerPayload(currentValue);
-                    if (currentWinner) {
-                        return currentWinner;
-                    }
-                    return payload;
-                },
+                () => payload,
                 { applyLocally: false }
             );
         } else {
-            const currentSnap = await dbModule.get(winnerRef);
-            const currentWinner = normalizeRaceWinnerPayload(currentSnap.val());
-            if (!currentWinner) {
-                await dbModule.set(winnerRef, payload);
-            }
+            await dbModule.set(winnerRef, payload);
         }
         return true;
     } catch (error) {
