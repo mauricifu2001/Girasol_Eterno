@@ -742,13 +742,19 @@ body {
     background: rgba(3, 5, 8, 0.56);
     display: grid;
     place-items: center;
+    padding: 12px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .pause-card {
     width: min(92vw, 360px);
+    max-height: min(92vh, 760px);
     padding: 18px;
     display: grid;
     gap: 10px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 #pauseMenu h2 {
@@ -780,6 +786,9 @@ body {
 #pauseSettingsSection {
     padding: 10px;
     margin-top: 2px;
+    max-height: min(58vh, 460px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .settings-hint {

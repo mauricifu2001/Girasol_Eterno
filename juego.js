@@ -494,6 +494,8 @@ const WORLD_HARD_RESET_CONFIRM_WORDS = Object.freeze([
     "aurora",
     "palmera"
 ]);
+const WORLD_HARD_RESET_META_KEY = "hardResetEvent";
+const WORLD_HARD_RESET_EVENT_SEEN_STORAGE_KEY = `girasolHardResetSeenV1:${ACTIVE_ROOM_ID}`;
 const INTERACTION_KEY = "KeyE";
 const INTERACTION_EXIT_KEY = "ShiftLeft";
 const INTERACTION_MAX_DISTANCE = 3.2;
@@ -1448,13 +1450,15 @@ const multiplayer = {
         metaRef: null,
         dayNightRef: null,
         wildlifeRef: null,
-        raceWinnerRef: null
+        raceWinnerRef: null,
+        hardResetEventRef: null
     },
     remotePlayers: new Map(),
     chunkEditSubscriptions: new Map(),
     propSnapshotUnsubscribe: null,
     wildlifeSnapshotUnsubscribe: null,
     raceWinnerUnsubscribe: null,
+    hardResetEventUnsubscribe: null,
     sendIntervalMs: 120,
     lastBroadcastMs: 0,
     unsubscribers: [],
@@ -1476,7 +1480,8 @@ const saveState = {
     lastSavedAt: 0
 };
 const hardResetState = {
-    inProgress: false
+    inProgress: false,
+    lastAppliedEventKey: ""
 };
 
 const perfState = {
@@ -3995,10 +4000,147 @@ function requestHardResetWordConfirmation(challengeWord) {
     });
 }
 
+function normalizeWorldHardResetPayload(rawPayload) {
+    if (!rawPayload || typeof rawPayload !== "object") {
+        return null;
+    }
+    const eventId = String(rawPayload.eventId || rawPayload.requestId || "").trim();
+    if (!eventId) {
+        return null;
+    }
+    const atMsRaw = Math.floor(Number(rawPayload.atMs));
+    const atMs = Number.isFinite(atMsRaw) && atMsRaw > 0 ? atMsRaw : Date.now();
+    const actorId = String(rawPayload.actorId || "").trim();
+    const actorDisplayName = String(rawPayload.actorDisplayName || rawPayload.actorLabel || actorId || "Un jugador").trim() || "Un jugador";
+    return {
+        eventId,
+        atMs,
+        actorId,
+        actorDisplayName
+    };
+}
+
+function getWorldHardResetEventKey(payload) {
+    if (!payload) {
+        return "";
+    }
+    const eventId = String(payload.eventId || "").trim();
+    const atMs = Math.floor(Number(payload.atMs) || 0);
+    if (!eventId || atMs <= 0) {
+        return "";
+    }
+    return `${eventId}|${atMs}`;
+}
+
+function getSeenWorldHardResetEventKey() {
+    try {
+        return String(window.localStorage.getItem(WORLD_HARD_RESET_EVENT_SEEN_STORAGE_KEY) || "");
+    } catch (error) {
+        return "";
+    }
+}
+
+function markWorldHardResetEventSeen(eventKey) {
+    if (!eventKey) {
+        return;
+    }
+    try {
+        window.localStorage.setItem(WORLD_HARD_RESET_EVENT_SEEN_STORAGE_KEY, eventKey);
+    } catch (error) {
+    }
+}
+
+function hasSeenWorldHardResetEvent(eventKey) {
+    if (!eventKey) {
+        return false;
+    }
+    return getSeenWorldHardResetEventKey() === eventKey;
+}
+
+function clearPendingMultiplayerWorldWritesForHardReset() {
+    multiplayer.pendingEditWrites.clear();
+    multiplayer.pendingPropWrites.clear();
+    if (multiplayer.writeTimerId !== null) {
+        window.clearTimeout(multiplayer.writeTimerId);
+        multiplayer.writeTimerId = null;
+    }
+    if (multiplayer.propWriteTimerId !== null) {
+        window.clearTimeout(multiplayer.propWriteTimerId);
+        multiplayer.propWriteTimerId = null;
+    }
+    if (multiplayer.wildlifeWriteTimerId !== null) {
+        window.clearTimeout(multiplayer.wildlifeWriteTimerId);
+        multiplayer.wildlifeWriteTimerId = null;
+    }
+}
+
+function prepareLocalRuntimeForHardReset() {
+    state.keyDown.clear();
+    clearAllTemporaryInteractionState(false);
+    clearInteractionPanelState();
+    clearRuntimeWorldStateForHardReset();
+    clearPendingMultiplayerWorldWritesForHardReset();
+}
+
+function buildLocalWorldHardResetPayload() {
+    const profile = multiplayer.profile || resolvePlayerIdentity();
+    const now = Date.now();
+    const randomSuffix = Math.floor(Math.random() * 0xffffff).toString(36);
+    return {
+        eventId: `reset-${now.toString(36)}-${randomSuffix}`,
+        atMs: now,
+        actorId: String(profile?.id || ""),
+        actorDisplayName: String(profile?.displayName || profile?.label || "Un jugador")
+    };
+}
+
+function applyIncomingWorldHardReset(rawPayload) {
+    const normalized = normalizeWorldHardResetPayload(rawPayload);
+    if (!normalized) {
+        return false;
+    }
+    const eventKey = getWorldHardResetEventKey(normalized);
+    if (!eventKey) {
+        return false;
+    }
+    if (hardResetState.lastAppliedEventKey === eventKey) {
+        return false;
+    }
+    hardResetState.lastAppliedEventKey = eventKey;
+
+    if (hasSeenWorldHardResetEvent(eventKey)) {
+        return false;
+    }
+    markWorldHardResetEventSeen(eventKey);
+
+    const localPlayerId = String(multiplayer.profile?.id || "");
+    const initiatedByLocalPlayer = Boolean(localPlayerId && normalized.actorId && localPlayerId === normalized.actorId);
+    if (hardResetState.inProgress && initiatedByLocalPlayer) {
+        return false;
+    }
+
+    hardResetState.inProgress = true;
+    prepareLocalRuntimeForHardReset();
+    clearLocalWorldPersistenceKeys();
+    const actorLabel = normalized.actorDisplayName || "otro jugador";
+    showToast(
+        initiatedByLocalPlayer
+            ? "Reinicio total aplicado. Recargando..."
+            : `Mundo reiniciado por ${actorLabel}. Sincronizando...`,
+        "warning",
+        1900
+    );
+    window.setTimeout(() => {
+        window.location.reload();
+    }, 130);
+    return true;
+}
+
 function clearLocalWorldPersistenceKeys() {
     const storageKeys = [
         WORLD_SAVE_KEY,
         PLAYER_STATE_STORAGE_KEY,
+        DAY_NIGHT_EPOCH_STORAGE_KEY,
         MAP_PIN_STORAGE_KEY,
         MAP_HOME_PIN_STORAGE_KEY,
         JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY,
@@ -4014,6 +4156,7 @@ function clearLocalWorldPersistenceKeys() {
     const scopedPrefixes = [
         "girasolWorldEdits:",
         "girasolPlayerStateV1:",
+        "girasolDayNightEpochV1:",
         `${MAP_PIN_STORAGE_KEY_PREFIX}:`,
         `${MAP_HOME_PIN_STORAGE_KEY_PREFIX}:`,
         `${JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY_PREFIX}:`
@@ -4053,7 +4196,7 @@ function clearRuntimeWorldStateForHardReset() {
     updateSunflowerCurrencyHud();
 }
 
-async function resetSharedWorldDataFromCloud() {
+async function resetSharedWorldDataFromCloud(resetEventPayload = null) {
     if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.firebase?.db || !multiplayer.worldPath) {
         return true;
     }
@@ -4068,6 +4211,12 @@ async function resetSharedWorldDataFromCloud() {
         edits: null,
         ops: null
     });
+    const normalizedResetEvent = normalizeWorldHardResetPayload(resetEventPayload);
+    if (normalizedResetEvent) {
+        await dbModule.update(worldRef, {
+            [`meta/${WORLD_HARD_RESET_META_KEY}`]: normalizedResetEvent
+        });
+    }
     return true;
 }
 
@@ -4093,30 +4242,20 @@ async function runHardWorldResetFlow() {
         return false;
     }
 
+    const resetEventPayload = buildLocalWorldHardResetPayload();
+    const normalizedResetEvent = normalizeWorldHardResetPayload(resetEventPayload);
+    const resetEventKey = getWorldHardResetEventKey(normalizedResetEvent);
+    if (resetEventKey) {
+        markWorldHardResetEventSeen(resetEventKey);
+        hardResetState.lastAppliedEventKey = resetEventKey;
+    }
+
     hardResetState.inProgress = true;
     showToast("Borrando mundo completo...", "warning", 1400);
-    state.keyDown.clear();
-    clearAllTemporaryInteractionState(false);
-    clearInteractionPanelState();
-    clearRuntimeWorldStateForHardReset();
-
-    multiplayer.pendingEditWrites.clear();
-    multiplayer.pendingPropWrites.clear();
-    if (multiplayer.writeTimerId !== null) {
-        window.clearTimeout(multiplayer.writeTimerId);
-        multiplayer.writeTimerId = null;
-    }
-    if (multiplayer.propWriteTimerId !== null) {
-        window.clearTimeout(multiplayer.propWriteTimerId);
-        multiplayer.propWriteTimerId = null;
-    }
-    if (multiplayer.wildlifeWriteTimerId !== null) {
-        window.clearTimeout(multiplayer.wildlifeWriteTimerId);
-        multiplayer.wildlifeWriteTimerId = null;
-    }
+    prepareLocalRuntimeForHardReset();
 
     try {
-        await resetSharedWorldDataFromCloud();
+        await resetSharedWorldDataFromCloud(normalizedResetEvent);
     } catch (error) {
         hardResetState.inProgress = false;
         console.warn("No pude borrar el mundo compartido en la nube", error);
@@ -10650,6 +10789,33 @@ function subscribeRaceWinnerState() {
     });
 }
 
+function clearWorldHardResetEventSubscription() {
+    if (typeof multiplayer.hardResetEventUnsubscribe === "function") {
+        multiplayer.hardResetEventUnsubscribe();
+    }
+    multiplayer.hardResetEventUnsubscribe = null;
+}
+
+function subscribeWorldHardResetEvent() {
+    if (!multiplayer.ready || multiplayer.hardResetEventUnsubscribe) {
+        return;
+    }
+    const dbModule = multiplayer.firebase?.dbModule;
+    const db = multiplayer.firebase?.db;
+    if (!dbModule || !db) {
+        return;
+    }
+    const resetRef = multiplayer.refs.hardResetEventRef || dbModule.ref(db, `${multiplayer.worldPath}/meta/${WORLD_HARD_RESET_META_KEY}`);
+    multiplayer.refs.hardResetEventRef = resetRef;
+    multiplayer.hardResetEventUnsubscribe = dbModule.onValue(resetRef, (snapshot) => {
+        const value = snapshot.val();
+        if (!snapshot.exists() || !value) {
+            return;
+        }
+        applyIncomingWorldHardReset(value);
+    });
+}
+
 function buildLocalRaceWinnerPayload(kartPlaced, finishPlaced = null) {
     const profile = multiplayer.profile || resolvePlayerIdentity();
     return {
@@ -11556,6 +11722,7 @@ async function setupRealtimeMultiplayer() {
     multiplayer.profile = resolvePlayerIdentity();
     clearRaceWinnerState();
     clearRaceWinnerSubscription();
+    clearWorldHardResetEventSubscription();
     ensureLocalAvatarPreviewModel();
     const profileLabel = multiplayer.profile.displayName || multiplayer.profile.label;
     setOnlineStatus(`Jugador: ${profileLabel} - modo solo`);
@@ -11595,6 +11762,7 @@ async function setupRealtimeMultiplayer() {
         multiplayer.refs.wildlifeRef = dbModule.ref(db, `${worldPath}/wildlife`);
         multiplayer.refs.metaRef = dbModule.ref(db, `${worldPath}/meta`);
         multiplayer.refs.raceWinnerRef = dbModule.ref(db, `${worldPath}/meta/${RACE_META_WINNER_KEY}`);
+        multiplayer.refs.hardResetEventRef = dbModule.ref(db, `${worldPath}/meta/${WORLD_HARD_RESET_META_KEY}`);
         await ensureSharedDayNightClock(dbModule, db, worldPath);
 
         const connectedRef = dbModule.ref(db, ".info/connected");
@@ -11658,6 +11826,7 @@ async function setupRealtimeMultiplayer() {
         subscribePropSnapshot();
         subscribeWildlifeSnapshot();
         subscribeRaceWinnerState();
+        subscribeWorldHardResetEvent();
         multiplayer.wildlifeSnapshotReady = multiplayer.isWildlifeAuthority;
         if (multiplayer.isWildlifeAuthority) {
             publishWildlifeSnapshot(true);
@@ -19559,6 +19728,7 @@ function setupEvents() {
         clearPropSnapshotSubscription();
         clearWildlifeSnapshotSubscription();
         clearRaceWinnerSubscription();
+        clearWorldHardResetEventSubscription();
         clearWildlife();
         clearFish();
         clearSunflowers();
