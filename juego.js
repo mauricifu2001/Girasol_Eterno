@@ -245,8 +245,12 @@ const RACE_TRACK_TEMPLATE_CONFIG = Object.freeze({
 });
 const RACE_TRACK_SURFACE_BLOCK_ID = BLOCK.SLATE;
 const RACE_TRACK_FILL_BLOCK_ID = BLOCK.STONE_BRICKS;
-const RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT = 14;
+const RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT = 6;
 const RACE_TRACK_CLEARANCE_HEIGHT = 2;
+const RACE_TRACK_CORRIDOR_SAMPLE_STEP = 0.82;
+const RACE_TRACK_MAX_ABOVE_TERRAIN = 2;
+const RACE_TRACK_MAX_BELOW_TERRAIN = 2;
+const RACE_TRACK_DESIGN_HEIGHT_BLEND = 0.52;
 const KART_COLOR_OPTIONS = Object.freeze([
     Object.freeze({ key: "cyan", label: "Cian", body: 0x27c8e7, side: 0x1f9fb8, accent: 0x3adbf2 }),
     Object.freeze({ key: "red", label: "Rojo", body: 0xd35046, side: 0xa53d37, accent: 0xef796b }),
@@ -17750,10 +17754,12 @@ function buildRaceTrackNodesFromTemplate(templateConfig, anchor) {
     if (waypoints.length < 2 || !anchor) {
         return [];
     }
-    const sampleStep = Math.max(1.4, Number(templateConfig.sampleStep) || 3.1);
+    const templateStep = Math.max(0.9, Number(templateConfig.sampleStep) || 1.2);
+    const sampleStep = Math.min(1.35, templateStep);
     const maxGradeStep = Math.max(1, Math.floor(Number(templateConfig.maxGradeStep) || 1));
     const nodes = [];
-    let previousTopY = Math.floor(Number(anchor.y) || 0);
+    const designAnchorTopY = Math.floor(Number(anchor.y) || 0);
+    let previousTopY = designAnchorTopY;
     let initialized = false;
 
     for (let i = 0; i < waypoints.length - 1; i += 1) {
@@ -17774,14 +17780,19 @@ function buildRaceTrackNodesFromTemplate(templateConfig, anchor) {
             const worldX = anchor.x + localX;
             const worldZ = anchor.z + localZ;
             const groundTopY = sampleTrackSurfaceTopY(worldX, worldZ, previousTopY + 10);
-            const desiredTopY = Math.round(groundTopY + localH);
+            const designedTopY = Math.round(designAnchorTopY + localH);
+            const blendedTopY = Math.round(lerp(groundTopY, designedTopY, RACE_TRACK_DESIGN_HEIGHT_BLEND));
             if (!initialized) {
-                previousTopY = Math.max(groundTopY, desiredTopY);
+                previousTopY = blendedTopY;
                 initialized = true;
             } else {
-                const delta = THREE.MathUtils.clamp(desiredTopY - previousTopY, -maxGradeStep, maxGradeStep);
-                previousTopY = Math.max(groundTopY, previousTopY + delta);
+                const delta = THREE.MathUtils.clamp(blendedTopY - previousTopY, -maxGradeStep, maxGradeStep);
+                previousTopY += delta;
             }
+            const maxTop = groundTopY + RACE_TRACK_MAX_ABOVE_TERRAIN;
+            const minTop = groundTopY - RACE_TRACK_MAX_BELOW_TERRAIN;
+            previousTopY = THREE.MathUtils.clamp(previousTopY, minTop, maxTop);
+            previousTopY = THREE.MathUtils.clamp(previousTopY, 2, WORLD_MAX_Y - 4);
             nodes.push({
                 x: worldX,
                 z: worldZ,
@@ -17810,22 +17821,49 @@ function getRaceTrackNodeYaw(nodes, index) {
 function createRaceTrackColumnPlan(nodes, roadHalfWidth) {
     const columns = new Map();
     const halfWidth = Math.max(2, Math.floor(Number(roadHalfWidth) || 4));
-    for (let i = 0; i < nodes.length; i += 1) {
-        const node = nodes[i];
-        const yaw = getRaceTrackNodeYaw(nodes, i);
+    if (!Array.isArray(nodes) || nodes.length < 2) {
+        return columns;
+    }
+
+    const accumulateColumn = (sampleX, sampleZ, sampleTopY, weight = 1) => {
+        const roundedX = Math.round(Number(sampleX) || 0);
+        const roundedZ = Math.round(Number(sampleZ) || 0);
+        const key = blockColumnKey(roundedX, roundedZ);
+        let entry = columns.get(key);
+        if (!entry) {
+            entry = { x: roundedX, z: roundedZ, sumTopY: 0, count: 0 };
+            columns.set(key, entry);
+        }
+        entry.sumTopY += (Number(sampleTopY) || 0) * weight;
+        entry.count += weight;
+    };
+
+    for (let i = 0; i < nodes.length - 1; i += 1) {
+        const from = nodes[i];
+        const to = nodes[i + 1];
+        const segmentDx = (Number(to.x) || 0) - (Number(from.x) || 0);
+        const segmentDz = (Number(to.z) || 0) - (Number(from.z) || 0);
+        const segmentDistance = Math.hypot(segmentDx, segmentDz);
+        const segmentSteps = Math.max(1, Math.ceil(segmentDistance / RACE_TRACK_CORRIDOR_SAMPLE_STEP));
+        const yaw = Math.atan2(segmentDx, segmentDz);
+        const forwardX = Math.sin(yaw);
+        const forwardZ = Math.cos(yaw);
         const rightX = Math.sin(yaw + Math.PI * 0.5);
         const rightZ = Math.cos(yaw + Math.PI * 0.5);
-        for (let lateral = -halfWidth; lateral <= halfWidth; lateral += 1) {
-            const sampleX = Math.round((Number(node.x) || 0) + rightX * lateral);
-            const sampleZ = Math.round((Number(node.z) || 0) + rightZ * lateral);
-            const key = blockColumnKey(sampleX, sampleZ);
-            let entry = columns.get(key);
-            if (!entry) {
-                entry = { x: sampleX, z: sampleZ, sumTopY: 0, count: 0 };
-                columns.set(key, entry);
+
+        for (let s = 0; s <= segmentSteps; s += 1) {
+            const t = s / segmentSteps;
+            const centerX = lerp(Number(from.x) || 0, Number(to.x) || 0, t);
+            const centerZ = lerp(Number(from.z) || 0, Number(to.z) || 0, t);
+            const centerTopY = lerp(Number(from.topY) || 0, Number(to.topY) || 0, t);
+            for (let lateral = -halfWidth - 1; lateral <= halfWidth + 1; lateral += 1) {
+                for (const forwardOffset of [-0.45, 0, 0.45]) {
+                    const worldX = centerX + rightX * lateral + forwardX * forwardOffset;
+                    const worldZ = centerZ + rightZ * lateral + forwardZ * forwardOffset;
+                    const weight = Math.abs(lateral) <= halfWidth ? 1 : 0.55;
+                    accumulateColumn(worldX, worldZ, centerTopY, weight);
+                }
             }
-            entry.sumTopY += Number(node.topY) || 0;
-            entry.count += 1;
         }
     }
     return columns;
