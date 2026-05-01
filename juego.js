@@ -163,6 +163,7 @@ const RACE_SURFACE_EPSILON = 0.04;
 const RACE_FINISH_REPEAT_COOLDOWN_SECONDS = 1.2;
 const RACE_RAMP_ROTATION_STEP = Math.PI * 0.25;
 const RACE_META_WINNER_KEY = "raceWinner";
+const MAP_NAMED_POINTS_META_KEY = "namedMapPoints";
 const RACE_RAMP_HEIGHT_BY_TYPE = Object.freeze({
     [PROP_TYPE.RACE_RAMP_LOW]: 1.1,
     [PROP_TYPE.RACE_RAMP_MEDIUM]: 1.85,
@@ -1458,7 +1459,8 @@ const multiplayer = {
         dayNightRef: null,
         wildlifeRef: null,
         raceWinnerRef: null,
-        hardResetEventRef: null
+        hardResetEventRef: null,
+        namedMapPointsRef: null
     },
     remotePlayers: new Map(),
     chunkEditSubscriptions: new Map(),
@@ -1466,6 +1468,7 @@ const multiplayer = {
     wildlifeSnapshotUnsubscribe: null,
     raceWinnerUnsubscribe: null,
     hardResetEventUnsubscribe: null,
+    namedMapPointsUnsubscribe: null,
     sendIntervalMs: 120,
     lastBroadcastMs: 0,
     unsubscribers: [],
@@ -1478,7 +1481,8 @@ const multiplayer = {
     idleHeartbeatMs: 1200,
     lastSentState: null,
     isWildlifeAuthority: false,
-    wildlifeSnapshotReady: false
+    wildlifeSnapshotReady: false,
+    namedPointsInitialSyncDone: false
 };
 
 const saveState = {
@@ -2873,6 +2877,26 @@ function sanitizeNamedMapPointList(rawList) {
     return normalized;
 }
 
+function mergeNamedMapPointLists(primaryList, secondaryList) {
+    const merged = sanitizeNamedMapPointList(primaryList);
+    if (merged.length >= MAP_NAMED_POINTS_MAX) {
+        return merged;
+    }
+    const seenIds = new Set(merged.map((point) => point.id));
+    const extras = sanitizeNamedMapPointList(secondaryList);
+    for (const point of extras) {
+        if (seenIds.has(point.id)) {
+            continue;
+        }
+        seenIds.add(point.id);
+        merged.push(point);
+        if (merged.length >= MAP_NAMED_POINTS_MAX) {
+            break;
+        }
+    }
+    return merged;
+}
+
 function loadStoredNamedMapPoints(storageKey) {
     try {
         const raw = window.localStorage.getItem(storageKey);
@@ -2896,6 +2920,17 @@ function persistNamedMapPointsToStorage() {
             JSON.stringify(mapState.namedPoints)
         );
     } catch (error) {
+    }
+}
+
+function applyNamedMapPointsToState(rawList, preferredSelectedId = mapState.selectedNamedPointId) {
+    mapState.namedPoints = sanitizeNamedMapPointList(rawList);
+    setSelectedNamedMapPointById(preferredSelectedId, true);
+    persistNamedMapPointsToStorage();
+    refreshNamedMapPointsUi();
+    mapState.refreshTick = 0;
+    if (state.mapOpen) {
+        renderMapPanelNow();
     }
 }
 
@@ -2967,9 +3002,10 @@ function refreshNamedMapPointsUi() {
 }
 
 function loadNamedMapPointsFromStorage() {
-    mapState.namedPoints = loadStoredNamedMapPoints(MAP_NAMED_POINTS_STORAGE_KEY);
-    setSelectedNamedMapPointById("", true);
-    refreshNamedMapPointsUi();
+    applyNamedMapPointsToState(
+        loadStoredNamedMapPoints(MAP_NAMED_POINTS_STORAGE_KEY),
+        ""
+    );
 }
 
 function saveNamedMapPointAtWorldCoordinates(
@@ -3005,14 +3041,11 @@ function saveNamedMapPointAtWorldCoordinates(
         return false;
     }
 
-    mapState.namedPoints.push(nextPoint);
-    setSelectedNamedMapPointById(nextPoint.id, true);
-    persistNamedMapPointsToStorage();
-    refreshNamedMapPointsUi();
-    mapState.refreshTick = 0;
-    if (state.mapOpen) {
-        renderMapPanelNow();
-    }
+    applyNamedMapPointsToState(
+        [...mapState.namedPoints, nextPoint],
+        nextPoint.id
+    );
+    void pushNamedMapPointToCloud(nextPoint);
     if (showFeedback) {
         showToast(`Punto guardado: ${nextPoint.name}`, "success", 1200);
     }
@@ -3067,17 +3100,12 @@ function removeSelectedNamedMapPoint(showFeedback = true) {
         return false;
     }
     const previousCount = mapState.namedPoints.length;
-    mapState.namedPoints = mapState.namedPoints.filter((point) => point.id !== selectedPoint.id);
-    if (mapState.namedPoints.length === previousCount) {
+    const nextPoints = mapState.namedPoints.filter((point) => point.id !== selectedPoint.id);
+    if (nextPoints.length === previousCount) {
         return false;
     }
-    setSelectedNamedMapPointById("", true);
-    persistNamedMapPointsToStorage();
-    refreshNamedMapPointsUi();
-    mapState.refreshTick = 0;
-    if (state.mapOpen) {
-        renderMapPanelNow();
-    }
+    applyNamedMapPointsToState(nextPoints, "");
+    void removeNamedMapPointFromCloud(selectedPoint.id);
     if (showFeedback) {
         showToast(`Punto eliminado: ${selectedPoint.name}`, "info", 1000);
     }
@@ -11133,6 +11161,155 @@ function subscribeWorldHardResetEvent() {
     });
 }
 
+function clearNamedMapPointsSubscription() {
+    if (typeof multiplayer.namedMapPointsUnsubscribe === "function") {
+        multiplayer.namedMapPointsUnsubscribe();
+    }
+    multiplayer.namedMapPointsUnsubscribe = null;
+    multiplayer.namedPointsInitialSyncDone = false;
+}
+
+async function mergeLocalNamedMapPointsIntoCloud(localPoints) {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.firebase?.db) {
+        return false;
+    }
+    const localList = sanitizeNamedMapPointList(localPoints);
+    if (localList.length <= 0) {
+        return false;
+    }
+    const dbModule = multiplayer.firebase.dbModule;
+    const db = multiplayer.firebase.db;
+    const namedRef = multiplayer.refs.namedMapPointsRef || dbModule.ref(db, `${multiplayer.worldPath}/meta/${MAP_NAMED_POINTS_META_KEY}`);
+    multiplayer.refs.namedMapPointsRef = namedRef;
+
+    try {
+        if (typeof dbModule.runTransaction === "function") {
+            await dbModule.runTransaction(
+                namedRef,
+                (currentValue) => mergeNamedMapPointLists(currentValue, localList),
+                { applyLocally: false }
+            );
+        } else {
+            const snapshot = await dbModule.get(namedRef);
+            const merged = mergeNamedMapPointLists(snapshot.val(), localList);
+            await dbModule.set(namedRef, merged);
+        }
+        return true;
+    } catch (error) {
+        console.warn("No pude fusionar puntos locales del mapa con la nube", error);
+        return false;
+    }
+}
+
+async function pushNamedMapPointToCloud(point) {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.firebase?.db) {
+        return false;
+    }
+    const normalizedPoint = sanitizeNamedMapPoint(point, "Punto", 0);
+    if (!normalizedPoint) {
+        return false;
+    }
+    const dbModule = multiplayer.firebase.dbModule;
+    const db = multiplayer.firebase.db;
+    const namedRef = multiplayer.refs.namedMapPointsRef || dbModule.ref(db, `${multiplayer.worldPath}/meta/${MAP_NAMED_POINTS_META_KEY}`);
+    multiplayer.refs.namedMapPointsRef = namedRef;
+
+    try {
+        if (typeof dbModule.runTransaction === "function") {
+            await dbModule.runTransaction(
+                namedRef,
+                (currentValue) => {
+                    const currentList = sanitizeNamedMapPointList(currentValue);
+                    if (currentList.some((item) => item.id === normalizedPoint.id)) {
+                        return currentList;
+                    }
+                    if (currentList.length >= MAP_NAMED_POINTS_MAX) {
+                        return currentList;
+                    }
+                    currentList.push(normalizedPoint);
+                    return currentList;
+                },
+                { applyLocally: false }
+            );
+        } else {
+            const snapshot = await dbModule.get(namedRef);
+            const currentList = sanitizeNamedMapPointList(snapshot.val());
+            if (currentList.some((item) => item.id === normalizedPoint.id)) {
+                return true;
+            }
+            if (currentList.length >= MAP_NAMED_POINTS_MAX) {
+                return false;
+            }
+            currentList.push(normalizedPoint);
+            await dbModule.set(namedRef, currentList);
+        }
+        return true;
+    } catch (error) {
+        console.warn("No pude guardar el punto del mapa en la nube", error);
+        return false;
+    }
+}
+
+async function removeNamedMapPointFromCloud(pointId) {
+    if (!multiplayer.ready || !multiplayer.firebase?.dbModule || !multiplayer.firebase?.db) {
+        return false;
+    }
+    const targetId = String(pointId || "").trim();
+    if (!targetId) {
+        return false;
+    }
+    const dbModule = multiplayer.firebase.dbModule;
+    const db = multiplayer.firebase.db;
+    const namedRef = multiplayer.refs.namedMapPointsRef || dbModule.ref(db, `${multiplayer.worldPath}/meta/${MAP_NAMED_POINTS_META_KEY}`);
+    multiplayer.refs.namedMapPointsRef = namedRef;
+
+    try {
+        if (typeof dbModule.runTransaction === "function") {
+            await dbModule.runTransaction(
+                namedRef,
+                (currentValue) => sanitizeNamedMapPointList(currentValue).filter((item) => item.id !== targetId),
+                { applyLocally: false }
+            );
+        } else {
+            const snapshot = await dbModule.get(namedRef);
+            const filtered = sanitizeNamedMapPointList(snapshot.val()).filter((item) => item.id !== targetId);
+            await dbModule.set(namedRef, filtered);
+        }
+        return true;
+    } catch (error) {
+        console.warn("No pude eliminar el punto del mapa en la nube", error);
+        return false;
+    }
+}
+
+function subscribeNamedMapPointsSharedState() {
+    if (!multiplayer.ready || multiplayer.namedMapPointsUnsubscribe) {
+        return;
+    }
+    const dbModule = multiplayer.firebase?.dbModule;
+    const db = multiplayer.firebase?.db;
+    if (!dbModule || !db) {
+        return;
+    }
+    const namedRef = multiplayer.refs.namedMapPointsRef || dbModule.ref(db, `${multiplayer.worldPath}/meta/${MAP_NAMED_POINTS_META_KEY}`);
+    multiplayer.refs.namedMapPointsRef = namedRef;
+    multiplayer.namedMapPointsUnsubscribe = dbModule.onValue(namedRef, (snapshot) => {
+        const cloudList = sanitizeNamedMapPointList(snapshot.val());
+        const selectedId = String(mapState.selectedNamedPointId || "");
+        if (!multiplayer.namedPointsInitialSyncDone) {
+            multiplayer.namedPointsInitialSyncDone = true;
+            const localList = sanitizeNamedMapPointList(mapState.namedPoints);
+            const mergedPreview = mergeNamedMapPointLists(cloudList, localList);
+            applyNamedMapPointsToState(mergedPreview, selectedId);
+            if (mergedPreview.length > cloudList.length) {
+                void mergeLocalNamedMapPointsIntoCloud(localList);
+            }
+            return;
+        }
+        applyNamedMapPointsToState(cloudList, selectedId);
+    });
+}
+
 function buildLocalRaceWinnerPayload(kartPlaced, finishPlaced = null) {
     const profile = multiplayer.profile || resolvePlayerIdentity();
     return {
@@ -12040,6 +12217,7 @@ async function setupRealtimeMultiplayer() {
     clearRaceWinnerState();
     clearRaceWinnerSubscription();
     clearWorldHardResetEventSubscription();
+    clearNamedMapPointsSubscription();
     ensureLocalAvatarPreviewModel();
     const profileLabel = multiplayer.profile.displayName || multiplayer.profile.label;
     setOnlineStatus(`Jugador: ${profileLabel} - modo solo`);
@@ -12080,6 +12258,7 @@ async function setupRealtimeMultiplayer() {
         multiplayer.refs.metaRef = dbModule.ref(db, `${worldPath}/meta`);
         multiplayer.refs.raceWinnerRef = dbModule.ref(db, `${worldPath}/meta/${RACE_META_WINNER_KEY}`);
         multiplayer.refs.hardResetEventRef = dbModule.ref(db, `${worldPath}/meta/${WORLD_HARD_RESET_META_KEY}`);
+        multiplayer.refs.namedMapPointsRef = dbModule.ref(db, `${worldPath}/meta/${MAP_NAMED_POINTS_META_KEY}`);
         await ensureSharedDayNightClock(dbModule, db, worldPath);
 
         const connectedRef = dbModule.ref(db, ".info/connected");
@@ -12144,6 +12323,7 @@ async function setupRealtimeMultiplayer() {
         subscribeWildlifeSnapshot();
         subscribeRaceWinnerState();
         subscribeWorldHardResetEvent();
+        subscribeNamedMapPointsSharedState();
         multiplayer.wildlifeSnapshotReady = multiplayer.isWildlifeAuthority;
         if (multiplayer.isWildlifeAuthority) {
             publishWildlifeSnapshot(true);
@@ -20091,6 +20271,7 @@ function setupEvents() {
         clearWildlifeSnapshotSubscription();
         clearRaceWinnerSubscription();
         clearWorldHardResetEventSubscription();
+        clearNamedMapPointsSubscription();
         clearWildlife();
         clearFish();
         clearSunflowers();
