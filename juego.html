@@ -6,7 +6,7 @@
     <title>Nuestro Mundo 3D</title>
     <meta name="description" content="Sandbox 3D tipo voxel para probar mecanicas estilo Minecraft.">
     <link rel="icon" type="image/svg+xml" href="favicon.svg">
-    <link rel="stylesheet" href="juego.css?v=16">
+    <link rel="stylesheet" href="juego.css?v=17">
 </head>
 <body>
     <canvas id="gameCanvas" aria-label="Juego 3D"></canvas>
@@ -85,6 +85,15 @@
             <button id="mapGoPinButton" type="button">Ir al pin</button>
             <button id="mapGoHomePinButton" type="button">Ir casa</button>
             <button id="mapClearPinButton" type="button">Quitar pin</button>
+            <button id="mapSaveNamedPointButton" type="button">Guardar punto con nombre</button>
+        </div>
+        <div class="map-saved-points">
+            <p class="map-note">Puntos guardados</p>
+            <select id="mapSavedPointsSelect" size="6" aria-label="Lista de puntos guardados"></select>
+            <div class="map-saved-actions">
+                <button id="mapGoSavedPointButton" type="button">Ir al seleccionado</button>
+                <button id="mapDeleteSavedPointButton" type="button">Eliminar seleccionado</button>
+            </div>
         </div>
     </aside>
 
@@ -178,6 +187,6 @@
     </div>
 
     <script src="config.js"></script>
-    <script type="module" src="juego.js?v=36"></script>
+    <script type="module" src="juego.js?v=37"></script>
 </body>
 </html>

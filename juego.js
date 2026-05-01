@@ -273,6 +273,7 @@ const GLOBAL_MAP_RENDER_RESOLUTION = 224;
 const GLOBAL_MAP_REFRESH_INTERVAL = 0.85;
 const GLOBAL_MAP_MIN_ZOOM = 0.8;
 const GLOBAL_MAP_MAX_ZOOM = 4.2;
+const MAP_NAMED_POINTS_MAX = 120;
 
 const PORTAL_UNLOCK_STORAGE_KEY = "girasolPortalUnlocked";
 const PORTAL_ACCESS_LABEL_STORAGE_KEY = "girasolPortalAccessLabel";
@@ -286,6 +287,7 @@ const HOTBAR_STORAGE_KEY = "girasolHotbarSlotsV1";
 const SUNFLOWER_CURRENCY_STORAGE_KEY = "girasolSunflowerCurrencyV1";
 const MAP_PIN_STORAGE_KEY_PREFIX = "girasolMapPinV1";
 const MAP_HOME_PIN_STORAGE_KEY_PREFIX = "girasolMapHomePinV1";
+const MAP_NAMED_POINTS_STORAGE_KEY_PREFIX = "girasolMapNamedPointsV1";
 const JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY_PREFIX = "girasolJukeboxTracksV2";
 const GRAPHICS_MODE = Object.freeze({
     AUTO: "auto",
@@ -428,6 +430,7 @@ const DAY_NIGHT_EPOCH_STORAGE_KEY = `girasolDayNightEpochV1:${ACTIVE_ROOM_ID}`;
 const JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY = `${JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const MAP_PIN_STORAGE_KEY = `${MAP_PIN_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const MAP_HOME_PIN_STORAGE_KEY = `${MAP_HOME_PIN_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
+const MAP_NAMED_POINTS_STORAGE_KEY = `${MAP_NAMED_POINTS_STORAGE_KEY_PREFIX}:${ACTIVE_ROOM_ID}`;
 const WORLD_SAVE_VERSION = 2;
 const AUTO_SAVE_SECONDS = 12;
 const PLAYER_STATE_SAVE_INTERVAL_SECONDS = 1.8;
@@ -587,6 +590,10 @@ const mapGoPinButtonEl = document.getElementById("mapGoPinButton");
 const mapClearPinButtonEl = document.getElementById("mapClearPinButton");
 const mapSetHomePinButtonEl = document.getElementById("mapSetHomePinButton");
 const mapGoHomePinButtonEl = document.getElementById("mapGoHomePinButton");
+const mapSaveNamedPointButtonEl = document.getElementById("mapSaveNamedPointButton");
+const mapSavedPointsSelectEl = document.getElementById("mapSavedPointsSelect");
+const mapGoSavedPointButtonEl = document.getElementById("mapGoSavedPointButton");
+const mapDeleteSavedPointButtonEl = document.getElementById("mapDeleteSavedPointButton");
 const targetBlockLabelEl = document.getElementById("targetBlockLabel");
 const crosshairEl = document.getElementById("crosshair");
 const toastContainerEl = document.getElementById("toastContainer");
@@ -1549,6 +1556,8 @@ const uiState = {
 const mapState = {
     pin: null,
     homePin: null,
+    namedPoints: [],
+    selectedNamedPointId: "",
     mode: MAP_MODE.LOCAL,
     globalZoom: 1,
     globalCenterX: 0,
@@ -2809,6 +2818,272 @@ function persistMapHomePinToStorage() {
     persistStoredMapPin(MAP_HOME_PIN_STORAGE_KEY, mapState.homePin);
 }
 
+function sanitizeMapPointName(rawName, fallbackName = "Punto") {
+    let name = String(rawName ?? "").replace(/\s+/g, " ").trim();
+    if (!name) {
+        name = String(fallbackName || "Punto").trim();
+    }
+    if (name.length > 42) {
+        name = name.slice(0, 42).trim();
+    }
+    return name || "Punto";
+}
+
+function createNamedMapPointId() {
+    const now = Date.now();
+    const randomSuffix = Math.floor(Math.random() * 0xffffff).toString(36);
+    return `mp-${now.toString(36)}-${randomSuffix}`;
+}
+
+function sanitizeNamedMapPoint(rawPoint, fallbackName = "Punto", fallbackIndex = 0) {
+    const basePin = sanitizeMapPin(rawPoint);
+    if (!basePin) {
+        return null;
+    }
+    const rawId = String(rawPoint?.id || "").trim();
+    const createdAt = Number(basePin.createdAt) || Date.now();
+    return {
+        id: rawId || `legacy-${createdAt.toString(36)}-${Math.max(0, Number(fallbackIndex) || 0).toString(36)}`,
+        name: sanitizeMapPointName(rawPoint?.name, fallbackName),
+        x: Number(basePin.x),
+        z: Number(basePin.z),
+        createdAt
+    };
+}
+
+function sanitizeNamedMapPointList(rawList) {
+    const source = Array.isArray(rawList) ? rawList : [];
+    const normalized = [];
+    const seenIds = new Set();
+    for (let i = 0; i < source.length; i += 1) {
+        const fallbackName = `Punto ${normalized.length + 1}`;
+        const nextPoint = sanitizeNamedMapPoint(source[i], fallbackName, i);
+        if (!nextPoint) {
+            continue;
+        }
+        if (seenIds.has(nextPoint.id)) {
+            nextPoint.id = `${nextPoint.id}-${i.toString(36)}`;
+        }
+        seenIds.add(nextPoint.id);
+        normalized.push(nextPoint);
+        if (normalized.length >= MAP_NAMED_POINTS_MAX) {
+            break;
+        }
+    }
+    return normalized;
+}
+
+function loadStoredNamedMapPoints(storageKey) {
+    try {
+        const raw = window.localStorage.getItem(storageKey);
+        if (!raw) {
+            return [];
+        }
+        return sanitizeNamedMapPointList(JSON.parse(raw));
+    } catch (error) {
+        return [];
+    }
+}
+
+function persistNamedMapPointsToStorage() {
+    try {
+        if (!Array.isArray(mapState.namedPoints) || mapState.namedPoints.length <= 0) {
+            window.localStorage.removeItem(MAP_NAMED_POINTS_STORAGE_KEY);
+            return;
+        }
+        window.localStorage.setItem(
+            MAP_NAMED_POINTS_STORAGE_KEY,
+            JSON.stringify(mapState.namedPoints)
+        );
+    } catch (error) {
+    }
+}
+
+function setSelectedNamedMapPointById(pointId, useFallback = true) {
+    const requestedId = String(pointId || "");
+    const hasRequested = mapState.namedPoints.some((point) => point.id === requestedId);
+    if (hasRequested) {
+        mapState.selectedNamedPointId = requestedId;
+        return;
+    }
+    if (!useFallback || mapState.namedPoints.length <= 0) {
+        mapState.selectedNamedPointId = "";
+        return;
+    }
+    mapState.selectedNamedPointId = String(mapState.namedPoints[0].id || "");
+}
+
+function getSelectedNamedMapPoint() {
+    const selectedId = String(mapState.selectedNamedPointId || "");
+    if (!selectedId) {
+        return null;
+    }
+    return mapState.namedPoints.find((point) => point.id === selectedId) || null;
+}
+
+function formatNamedMapPointOptionLabel(point, index = 0) {
+    const labelName = sanitizeMapPointName(point?.name, `Punto ${index + 1}`);
+    const x = Number(point?.x) || 0;
+    const z = Number(point?.z) || 0;
+    return `${labelName} (X ${x.toFixed(1)} Z ${z.toFixed(1)})`;
+}
+
+function refreshNamedMapPointsUi() {
+    if (!mapSavedPointsSelectEl) {
+        return;
+    }
+    const points = Array.isArray(mapState.namedPoints) ? mapState.namedPoints : [];
+    setSelectedNamedMapPointById(mapState.selectedNamedPointId, true);
+    const selectedId = String(mapState.selectedNamedPointId || "");
+
+    mapSavedPointsSelectEl.innerHTML = "";
+    if (points.length <= 0) {
+        const emptyOption = document.createElement("option");
+        emptyOption.value = "";
+        emptyOption.textContent = "Sin puntos guardados";
+        emptyOption.disabled = true;
+        emptyOption.selected = true;
+        mapSavedPointsSelectEl.appendChild(emptyOption);
+    } else {
+        for (let i = 0; i < points.length; i += 1) {
+            const point = points[i];
+            const option = document.createElement("option");
+            option.value = point.id;
+            option.textContent = formatNamedMapPointOptionLabel(point, i);
+            if (point.id === selectedId) {
+                option.selected = true;
+            }
+            mapSavedPointsSelectEl.appendChild(option);
+        }
+    }
+
+    const hasPoints = points.length > 0;
+    if (mapGoSavedPointButtonEl) {
+        mapGoSavedPointButtonEl.disabled = !hasPoints;
+    }
+    if (mapDeleteSavedPointButtonEl) {
+        mapDeleteSavedPointButtonEl.disabled = !hasPoints;
+    }
+}
+
+function loadNamedMapPointsFromStorage() {
+    mapState.namedPoints = loadStoredNamedMapPoints(MAP_NAMED_POINTS_STORAGE_KEY);
+    setSelectedNamedMapPointById("", true);
+    refreshNamedMapPointsUi();
+}
+
+function saveNamedMapPointAtWorldCoordinates(
+    x,
+    z,
+    pointName,
+    showFeedback = true
+) {
+    const nx = Number(x);
+    const nz = Number(z);
+    if (!Number.isFinite(nx) || !Number.isFinite(nz)) {
+        return false;
+    }
+    if (!Array.isArray(mapState.namedPoints)) {
+        mapState.namedPoints = [];
+    }
+    if (mapState.namedPoints.length >= MAP_NAMED_POINTS_MAX) {
+        if (showFeedback) {
+            showToast(`Limite alcanzado (${MAP_NAMED_POINTS_MAX} puntos). Elimina uno para guardar otro`, "warning", 1600);
+        }
+        return false;
+    }
+
+    const nextName = sanitizeMapPointName(pointName, `Punto ${mapState.namedPoints.length + 1}`);
+    const nextPoint = sanitizeNamedMapPoint({
+        id: createNamedMapPointId(),
+        name: nextName,
+        x: Number(nx.toFixed(2)),
+        z: Number(nz.toFixed(2)),
+        createdAt: Date.now()
+    }, nextName, mapState.namedPoints.length);
+    if (!nextPoint) {
+        return false;
+    }
+
+    mapState.namedPoints.push(nextPoint);
+    setSelectedNamedMapPointById(nextPoint.id, true);
+    persistNamedMapPointsToStorage();
+    refreshNamedMapPointsUi();
+    mapState.refreshTick = 0;
+    if (state.mapOpen) {
+        renderMapPanelNow();
+    }
+    if (showFeedback) {
+        showToast(`Punto guardado: ${nextPoint.name}`, "success", 1200);
+    }
+    return true;
+}
+
+function saveNamedMapPointAtCurrentPosition(showFeedback = true) {
+    const nextX = Number(state.playerPosition.x) || 0;
+    const nextZ = Number(state.playerPosition.z) || 0;
+    const fallbackName = `Punto ${Math.max(1, (mapState.namedPoints?.length || 0) + 1)}`;
+    let inputName = fallbackName;
+    try {
+        const response = window.prompt(
+            `Nombre del punto para X ${nextX.toFixed(1)} Z ${nextZ.toFixed(1)}:`,
+            fallbackName
+        );
+        if (response === null) {
+            if (showFeedback) {
+                showToast("Guardado de punto cancelado", "info", 900);
+            }
+            return false;
+        }
+        inputName = response;
+    } catch (error) {
+    }
+    return saveNamedMapPointAtWorldCoordinates(nextX, nextZ, inputName, showFeedback);
+}
+
+function goToSelectedNamedMapPoint(showFeedback = true) {
+    const selectedPoint = getSelectedNamedMapPoint();
+    if (!selectedPoint) {
+        if (showFeedback) {
+            showToast("No hay punto guardado seleccionado", "warning", 1000);
+        }
+        return false;
+    }
+    return goToStoredMapPoint(
+        selectedPoint,
+        "No hay punto guardado seleccionado",
+        "El punto guardado seleccionado es invalido",
+        `Fuiste a ${selectedPoint.name}`,
+        showFeedback
+    );
+}
+
+function removeSelectedNamedMapPoint(showFeedback = true) {
+    const selectedPoint = getSelectedNamedMapPoint();
+    if (!selectedPoint) {
+        if (showFeedback) {
+            showToast("No hay punto guardado seleccionado", "warning", 1000);
+        }
+        return false;
+    }
+    const previousCount = mapState.namedPoints.length;
+    mapState.namedPoints = mapState.namedPoints.filter((point) => point.id !== selectedPoint.id);
+    if (mapState.namedPoints.length === previousCount) {
+        return false;
+    }
+    setSelectedNamedMapPointById("", true);
+    persistNamedMapPointsToStorage();
+    refreshNamedMapPointsUi();
+    mapState.refreshTick = 0;
+    if (state.mapOpen) {
+        renderMapPanelNow();
+    }
+    if (showFeedback) {
+        showToast(`Punto eliminado: ${selectedPoint.name}`, "info", 1000);
+    }
+    return true;
+}
+
 function projectWorldToMap(x, z, centerX, centerZ, rangeBlocks, width, height) {
     const safeRange = Math.max(1, Number(rangeBlocks) || MAP_VIEW_RADIUS_BLOCKS);
     const relX = (Number(x) - centerX) / safeRange;
@@ -3195,6 +3470,34 @@ function drawMapMarkersAndInfo(mode, centerX, centerZ, range, canvasWidth, canva
         worldMapCtx.setLineDash([]);
     }
 
+    if (Array.isArray(mapState.namedPoints) && mapState.namedPoints.length > 0) {
+        const selectedId = String(mapState.selectedNamedPointId || "");
+        for (const namedPoint of mapState.namedPoints) {
+            const pointProjection = projectWorldToMap(
+                namedPoint.x,
+                namedPoint.z,
+                centerX,
+                centerZ,
+                range,
+                canvasWidth,
+                canvasHeight
+            );
+            const isSelected = String(namedPoint.id || "") === selectedId;
+            const radius = isSelected ? 4.4 : 3.4;
+            worldMapCtx.beginPath();
+            worldMapCtx.fillStyle = isSelected
+                ? "rgba(244, 207, 133, 0.98)"
+                : "rgba(192, 166, 255, 0.95)";
+            worldMapCtx.strokeStyle = isSelected
+                ? "rgba(255, 241, 199, 0.98)"
+                : "rgba(234, 225, 255, 0.95)";
+            worldMapCtx.lineWidth = isSelected ? 1.5 : 1.1;
+            worldMapCtx.arc(pointProjection.x, pointProjection.y, radius, 0, Math.PI * 2);
+            worldMapCtx.fill();
+            worldMapCtx.stroke();
+        }
+    }
+
     for (const remoteNode of multiplayer.remotePlayers.values()) {
         const projection = projectWorldToMap(
             remoteNode?.targetPosition?.x ?? remoteNode?.group?.position?.x ?? 0,
@@ -3281,6 +3584,16 @@ function drawMapMarkersAndInfo(mode, centerX, centerZ, range, canvasWidth, canva
         infoText += ` | Casa: ${homeDistance.toFixed(1)}m ${homeDirection}`;
     } else {
         infoText += " | Casa: no definida";
+    }
+    const namedCount = Array.isArray(mapState.namedPoints) ? mapState.namedPoints.length : 0;
+    if (namedCount > 0) {
+        const selectedNamedPoint = getSelectedNamedMapPoint();
+        const selectedName = selectedNamedPoint
+            ? sanitizeMapPointName(selectedNamedPoint.name, "Punto")
+            : "ninguno";
+        infoText += ` | Puntos: ${namedCount} (seleccionado: ${selectedName})`;
+    } else {
+        infoText += " | Puntos: 0";
     }
     if (mapInfoEl) {
         mapInfoEl.textContent = infoText;
@@ -3386,6 +3699,7 @@ function setMapOpen(open, showFeedback = false) {
     const next = Boolean(open);
     if (next === state.mapOpen) {
         if (next) {
+            refreshNamedMapPointsUi();
             renderMapPanelNow();
         }
         return;
@@ -3404,6 +3718,7 @@ function setMapOpen(open, showFeedback = false) {
     }
 
     if (state.mapOpen) {
+        refreshNamedMapPointsUi();
         if (state.avatarPreviewOpen) {
             setAvatarPreviewOpen(false);
         }
@@ -4143,6 +4458,7 @@ function clearLocalWorldPersistenceKeys() {
         DAY_NIGHT_EPOCH_STORAGE_KEY,
         MAP_PIN_STORAGE_KEY,
         MAP_HOME_PIN_STORAGE_KEY,
+        MAP_NAMED_POINTS_STORAGE_KEY,
         JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY,
         SUNFLOWER_CURRENCY_STORAGE_KEY
     ];
@@ -4159,6 +4475,7 @@ function clearLocalWorldPersistenceKeys() {
         "girasolDayNightEpochV1:",
         `${MAP_PIN_STORAGE_KEY_PREFIX}:`,
         `${MAP_HOME_PIN_STORAGE_KEY_PREFIX}:`,
+        `${MAP_NAMED_POINTS_STORAGE_KEY_PREFIX}:`,
         `${JUKEBOX_CUSTOM_TRACKS_STORAGE_KEY_PREFIX}:`
     ];
     try {
@@ -19611,6 +19928,51 @@ function setupEvents() {
         });
     }
 
+    if (mapSaveNamedPointButtonEl) {
+        mapSaveNamedPointButtonEl.addEventListener("click", () => {
+            saveNamedMapPointAtCurrentPosition(true);
+        });
+    }
+
+    if (mapSavedPointsSelectEl) {
+        mapSavedPointsSelectEl.addEventListener("change", () => {
+            setSelectedNamedMapPointById(mapSavedPointsSelectEl.value, true);
+            mapState.refreshTick = 0;
+            if (state.mapOpen) {
+                renderMapPanelNow();
+            }
+            if (state.worldStarted && state.worldReady) {
+                goToSelectedNamedMapPoint(true);
+            }
+        });
+    }
+
+    if (mapGoSavedPointButtonEl) {
+        mapGoSavedPointButtonEl.addEventListener("click", () => {
+            goToSelectedNamedMapPoint(true);
+        });
+    }
+
+    if (mapDeleteSavedPointButtonEl) {
+        mapDeleteSavedPointButtonEl.addEventListener("click", () => {
+            const selectedPoint = getSelectedNamedMapPoint();
+            if (!selectedPoint) {
+                showToast("No hay punto guardado seleccionado", "warning", 1000);
+                return;
+            }
+            let accepted = true;
+            try {
+                accepted = window.confirm(`Eliminar el punto "${selectedPoint.name}"?`);
+            } catch (error) {
+                accepted = true;
+            }
+            if (!accepted) {
+                return;
+            }
+            removeSelectedNamedMapPoint(true);
+        });
+    }
+
     if (interactionCloseButtonEl) {
         interactionCloseButtonEl.addEventListener("click", () => {
             closeInteractionPanel(true, true);
@@ -19867,6 +20229,7 @@ function init() {
     loadGameplayPreferences();
     loadJukeboxCustomTracksFromStorage();
     loadMapPinFromStorage();
+    loadNamedMapPointsFromStorage();
     populateInventoryCategoryQuickFillOptions();
     updateMapModeButtons();
     updateMapPanelLayout();

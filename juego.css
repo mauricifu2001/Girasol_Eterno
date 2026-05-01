@@ -383,6 +383,7 @@ body {
     padding: 10px;
     display: grid;
     gap: 8px;
+    overflow-y: auto;
 }
 
 #mapPanel.global-mode {
@@ -486,6 +487,42 @@ body {
     color: #efe9db;
     padding: 8px 9px;
     font-size: 0.71rem;
+    cursor: pointer;
+}
+
+.map-saved-points {
+    display: grid;
+    gap: 6px;
+}
+
+#mapSavedPointsSelect {
+    width: 100%;
+    min-height: 124px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 9px;
+    background: rgba(8, 12, 18, 0.72);
+    color: #efe9db;
+    padding: 4px;
+    font-size: 0.7rem;
+}
+
+#mapSavedPointsSelect option {
+    padding: 5px 6px;
+}
+
+.map-saved-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+}
+
+.map-saved-actions button {
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 9px;
+    background: rgba(255, 255, 255, 0.06);
+    color: #efe9db;
+    padding: 8px 9px;
+    font-size: 0.7rem;
     cursor: pointer;
 }
 
@@ -1054,6 +1091,10 @@ body {
 
     .interaction-slots {
         grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .map-saved-actions {
+        grid-template-columns: 1fr;
     }
 
     #toastContainer {
