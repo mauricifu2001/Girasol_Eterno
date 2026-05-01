@@ -3,3 +3,13 @@
 
 [functions]
   directory = "netlify/functions"
+
+[[headers]]
+  for = "/juego.js"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, max-age=0"
+
+[[headers]]
+  for = "/juego.html"
+  [headers.values]
+    Cache-Control = "no-store, no-cache, must-revalidate, max-age=0"
