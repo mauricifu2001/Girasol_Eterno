@@ -553,7 +553,9 @@ const TERRAIN_SYNC_SAMPLE_POINTS = [
 const TERRAIN_REACOMODO_MIN_COLUMNS = 12;
 const TERRAIN_REACOMODO_MIN_ABS_SHIFT = 2;
 const TERRAIN_REACOMODO_MAX_SHIFT = 320;
-const TERRAIN_GENERATION_VERSION = 4;
+const TERRAIN_GENERATION_VERSION = 6;
+const TERRAIN_FLAT_ZONE_CELL_SIZE = 58;
+const TERRAIN_FLAT_ZONE_CORE_THRESHOLD = 0.66;
 
 const WORLD_SEED = Number(gameConfig.worldSeed) || 42173;
 const INITIAL_CHUNK_RADIUS = clampInt(
@@ -12832,6 +12834,76 @@ function getColumnInfo(x, z) {
     const spawnBlend = smoothstep(84, 190, centerDistance);
     const legacyBase = SEA_LEVEL + 4 + fractalNoise2D(x, z, 0.018, 2, 0.5, 11) * 6;
     rawHeight = lerp(legacyBase, rawHeight, spawnBlend);
+    let flatZoneMask = 0;
+    const flatZoneEligible = spawnBlend > 0.22
+        && continental > -0.2
+        && mountainMask < 0.58
+        && ridgePeaks < 0.56
+        && volcanicMaskRaw < 0.26
+        && lakeMaskRaw < 0.35
+        && riverMaskRaw < 0.44;
+    if (flatZoneEligible) {
+        const flatZoneSignal = fractalNoise2D(wx + 2480, wz - 3180, 0.0011, 3, 0.57, 611);
+        const flatZonePatchSignal = fractalNoise2D(wx - 1720, wz + 2260, 0.0018, 2, 0.55, 612);
+        const flatZoneStrength = clamp01(
+            clamp01((flatZoneSignal + 1) * 0.5) * 0.66
+            + clamp01((flatZonePatchSignal + 1) * 0.5) * 0.34
+            + (1 - mountainMask) * 0.24
+            - ridgePeaks * 0.24
+            - valleyMask * 0.1
+            + 0.18
+        );
+        flatZoneMask = smoothstep(0.48, 0.82, flatZoneStrength);
+        if (flatZoneMask > 0.001) {
+            const cellSize = TERRAIN_FLAT_ZONE_CELL_SIZE;
+            const cellOffset = 200000;
+            const cellX = Math.floor((x + cellOffset) / cellSize);
+            const cellZ = Math.floor((z + cellOffset) / cellSize);
+            const cellCenterX = cellX * cellSize + cellSize * 0.5 - cellOffset;
+            const cellCenterZ = cellZ * cellSize + cellSize * 0.5 - cellOffset;
+            const cellBandNoise = fractalNoise2D(cellCenterX + 3340, cellCenterZ - 2870, 0.00062, 3, 0.58, 613);
+            const cellVariation = valueNoise2D(cellCenterX - 780, cellCenterZ + 640, 0.00145, 614);
+            const flatTargetHeight = clampInt(
+                SEA_LEVEL + 3
+                + cellBandNoise * 7
+                + cellVariation * 2
+                + (continental01 - 0.5) * 6,
+                SEA_LEVEL + 2,
+                SEA_LEVEL + 34
+            );
+            const flatBlend = Math.pow(flatZoneMask, 1.1);
+            rawHeight = lerp(rawHeight, flatTargetHeight, flatBlend);
+            if (flatZoneMask >= TERRAIN_FLAT_ZONE_CORE_THRESHOLD) {
+                rawHeight = flatTargetHeight;
+            }
+        }
+    }
+    const guaranteedFlatCenters = [
+        [280, 0],
+        [-280, 0],
+        [0, 280],
+        [0, -280]
+    ];
+    let guaranteedFlatMask = 0;
+    for (const [gx, gz] of guaranteedFlatCenters) {
+        const distanceToCenter = Math.hypot(x - gx, z - gz);
+        const patchMask = smoothstep(122, 58, distanceToCenter);
+        if (patchMask > guaranteedFlatMask) {
+            guaranteedFlatMask = patchMask;
+        }
+    }
+    if (guaranteedFlatMask > 0.001) {
+        flatZoneMask = Math.max(flatZoneMask, guaranteedFlatMask);
+        const guaranteedTargetHeight = clampInt(
+            SEA_LEVEL + 6 + valueNoise2D(x - 640, z + 710, 0.0012, 615) * 2,
+            SEA_LEVEL + 4,
+            SEA_LEVEL + 14
+        );
+        rawHeight = lerp(rawHeight, guaranteedTargetHeight, Math.pow(guaranteedFlatMask, 1.08));
+        if (guaranteedFlatMask >= TERRAIN_FLAT_ZONE_CORE_THRESHOLD) {
+            rawHeight = guaranteedTargetHeight;
+        }
+    }
     const height = clampInt(rawHeight, 4, WORLD_MAX_Y - 6);
 
     const altitude01 = clamp01((height - (SEA_LEVEL + 10)) / Math.max(1, WORLD_MAX_Y - SEA_LEVEL - 14));
@@ -12896,6 +12968,15 @@ function getColumnInfo(x, z) {
     } else if (forestScore > 0.47 && mountainMask < 0.6) {
         biome = BIOME.FOREST;
     }
+    if (
+        flatZoneMask > 0.62
+        && biome !== BIOME.MARITIME
+        && biome !== BIOME.LAKE
+        && biome !== BIOME.VOLCANIC
+        && biome !== BIOME.DESERT
+    ) {
+        biome = BIOME.PLAINS;
+    }
 
     const openFieldSignal = clamp01((fractalNoise2D(wx + 1320, wz - 1460, 0.0009, 3, 0.57, 351) + 1) * 0.5);
     const openFieldMask = smoothstep(0.46, 0.88, openFieldSignal);
@@ -12914,6 +12995,12 @@ function getColumnInfo(x, z) {
         treeChanceBase *= 1 - openFieldMask * 0.92;
     } else if (biome === BIOME.FOREST) {
         treeChanceBase *= 1 - openFieldMask * 0.72;
+    }
+    if (flatZoneMask > 0.55) {
+        treeChanceBase *= 0.08;
+    }
+    if (flatZoneMask > 0.74) {
+        treeChanceBase = 0;
     }
 
     const treePenalty = mountainMask * 0.66 + snowMask * 0.92 + lakeMask * 1.12 + riverMask * 0.32 + volcanicMask * 0.9;
@@ -13000,11 +13087,15 @@ function getColumnInfo(x, z) {
             floraType = "cold_shrub";
         }
     }
+    if (flatZoneMask > 0.74) {
+        floraType = "none";
+    }
     const floraHeight = clampInt(1 + (hash2D(x, z, 1183) % 2), 1, 2);
 
     const info = {
         height,
         mountainMask,
+        flatZoneMask,
         valleyMask,
         riverMask,
         lakeMask,
