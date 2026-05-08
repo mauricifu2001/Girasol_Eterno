@@ -208,44 +208,65 @@ const RACE_TRACK_TEMPLATE_CONFIG = Object.freeze({
     }),
     [PROP_TYPE.RACE_TRACK_MODEL_TWO]: Object.freeze({
         name: "Modelo 2",
-        sampleStep: 3.0,
+        sampleStep: 2.9,
         roadHalfWidth: 4,
         maxGradeStep: 1,
+        designHeightBlend: 0.18,
+        maxAboveTerrain: 2,
+        maxBelowTerrain: 2,
+        columnMaxVerticalEdit: 6,
+        layerMergeDelta: 1.5,
+        layerMinVerticalGap: 5,
+        layerNoiseRatioThreshold: 0.8,
+        maxLayersPerColumn: 1,
+        bridgeFillDepth: 0,
+        forceSingleLayer: true,
+        startMarkerFraction: 0.04,
+        startMarkerType: PROP_TYPE.RACE_CHECKPOINT,
+        finishFraction: 0.56,
+        directionArrowSpacingNodes: 0,
+        strictOuterBarrierCheck: false,
+        forceBarrierOnAllEdges: true,
         waypoints: Object.freeze([
             Object.freeze({ x: 0, z: 0, h: 0 }),
-            Object.freeze({ x: 32, z: -2, h: 0 }),
-            Object.freeze({ x: 58, z: 12, h: 1 }),
-            Object.freeze({ x: 70, z: 36, h: 2 }),
-            Object.freeze({ x: 60, z: 60, h: 3 }),
-            Object.freeze({ x: 34, z: 76, h: 4 }),
-            Object.freeze({ x: 6, z: 72, h: 4 }),
-            Object.freeze({ x: -14, z: 54, h: 3 }),
-            Object.freeze({ x: -20, z: 30, h: 2 }),
-            Object.freeze({ x: -6, z: 12, h: 1 }),
-            Object.freeze({ x: 22, z: 14, h: 2 }),
-            Object.freeze({ x: 40, z: 28, h: 5 }),
-            Object.freeze({ x: 30, z: 48, h: 6 }),
-            Object.freeze({ x: 4, z: 46, h: 5 }),
-            Object.freeze({ x: -18, z: 26, h: 3 }),
-            Object.freeze({ x: -12, z: 4, h: 2 }),
-            Object.freeze({ x: 10, z: -12, h: 1 }),
+            Object.freeze({ x: 36, z: -12, h: 0 }),
+            Object.freeze({ x: 88, z: -10, h: 0 }),
+            Object.freeze({ x: 124, z: 18, h: 0 }),
+            Object.freeze({ x: 132, z: 66, h: 0 }),
+            Object.freeze({ x: 104, z: 108, h: 0 }),
+            Object.freeze({ x: 52, z: 126, h: 0 }),
+            Object.freeze({ x: 0, z: 122, h: 0 }),
+            Object.freeze({ x: -46, z: 94, h: 0 }),
+            Object.freeze({ x: -70, z: 52, h: 0 }),
+            Object.freeze({ x: -62, z: 4, h: 0 }),
+            Object.freeze({ x: -26, z: -26, h: 0 }),
+            Object.freeze({ x: 8, z: -34, h: 0 }),
+            Object.freeze({ x: 32, z: -18, h: 0 }),
             Object.freeze({ x: 0, z: 0, h: 0 })
         ]),
-        boostFractions: Object.freeze([0.06, 0.15, 0.24, 0.35, 0.46, 0.58, 0.69, 0.82, 0.92]),
-        checkpointFractions: Object.freeze([0.24, 0.49, 0.74]),
-        rampSpawns: Object.freeze([
-            Object.freeze({ t: 0.11, type: PROP_TYPE.RACE_RAMP_LOW }),
-            Object.freeze({ t: 0.31, type: PROP_TYPE.RACE_RAMP_MEDIUM }),
-            Object.freeze({ t: 0.48, type: PROP_TYPE.RACE_RAMP_HIGH }),
-            Object.freeze({ t: 0.67, type: PROP_TYPE.RACE_RAMP_MEDIUM }),
-            Object.freeze({ t: 0.86, type: PROP_TYPE.RACE_RAMP_LOW })
-        ]),
-        barrierStride: 2,
+        boostFractions: Object.freeze([0.16, 0.35, 0.55, 0.75, 0.9]),
+        checkpointFractions: Object.freeze([0.25, 0.5, 0.75]),
+        rampSpawns: Object.freeze([]),
+        barrierStride: 1,
         curbStride: 1
     })
 });
 const RACE_TRACK_SURFACE_BLOCK_ID = BLOCK.SLATE;
 const RACE_TRACK_FILL_BLOCK_ID = BLOCK.STONE_BRICKS;
+const RACE_TRACK_SIGN_ARROW_BLOCK_ID = BLOCK.ICE;
+const RACE_TRACK_SIGN_START_BLOCK_ID = BLOCK.SNOW;
+const RACE_TRACK_MANAGED_PROP_TYPES = new Set([
+    PROP_TYPE.RACE_BARRIER,
+    PROP_TYPE.RACE_CURB,
+    PROP_TYPE.RACE_FINISH_LINE,
+    PROP_TYPE.RACE_CHECKPOINT,
+    PROP_TYPE.RACE_BOOST_PAD,
+    PROP_TYPE.RACE_RAMP_LOW,
+    PROP_TYPE.RACE_RAMP_MEDIUM,
+    PROP_TYPE.RACE_RAMP_HIGH,
+    PROP_TYPE.RACE_TRACK_MODEL_ONE,
+    PROP_TYPE.RACE_TRACK_MODEL_TWO
+]);
 const RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT = 6;
 const RACE_TRACK_CLEARANCE_HEIGHT = 2;
 const RACE_TRACK_CORRIDOR_SAMPLE_STEP = 0.82;
@@ -18662,6 +18683,24 @@ function buildRaceTrackNodesFromTemplate(templateConfig, anchor) {
     const templateStep = Math.max(0.9, Number(templateConfig.sampleStep) || 1.2);
     const sampleStep = Math.min(1.35, templateStep);
     const maxGradeStep = Math.max(1, Math.floor(Number(templateConfig.maxGradeStep) || 1));
+    const designBlend = THREE.MathUtils.clamp(
+        Number(templateConfig?.designHeightBlend),
+        0,
+        1
+    );
+    const resolvedDesignBlend = Number.isFinite(designBlend) ? designBlend : RACE_TRACK_DESIGN_HEIGHT_BLEND;
+    const maxAboveTerrain = Math.max(
+        0,
+        Number.isFinite(Number(templateConfig?.maxAboveTerrain))
+            ? Number(templateConfig.maxAboveTerrain)
+            : RACE_TRACK_MAX_ABOVE_TERRAIN
+    );
+    const maxBelowTerrain = Math.max(
+        0,
+        Number.isFinite(Number(templateConfig?.maxBelowTerrain))
+            ? Number(templateConfig.maxBelowTerrain)
+            : RACE_TRACK_MAX_BELOW_TERRAIN
+    );
     const nodes = [];
     const designAnchorTopY = Math.floor(Number(anchor.y) || 0);
     let previousTopY = designAnchorTopY;
@@ -18686,7 +18725,7 @@ function buildRaceTrackNodesFromTemplate(templateConfig, anchor) {
             const worldZ = anchor.z + localZ;
             const groundTopY = sampleTrackSurfaceTopY(worldX, worldZ, previousTopY + 10);
             const designedTopY = Math.round(designAnchorTopY + localH);
-            const blendedTopY = Math.round(lerp(groundTopY, designedTopY, RACE_TRACK_DESIGN_HEIGHT_BLEND));
+            const blendedTopY = Math.round(lerp(groundTopY, designedTopY, resolvedDesignBlend));
             if (!initialized) {
                 previousTopY = blendedTopY;
                 initialized = true;
@@ -18694,8 +18733,8 @@ function buildRaceTrackNodesFromTemplate(templateConfig, anchor) {
                 const delta = THREE.MathUtils.clamp(blendedTopY - previousTopY, -maxGradeStep, maxGradeStep);
                 previousTopY += delta;
             }
-            const maxTop = groundTopY + RACE_TRACK_MAX_ABOVE_TERRAIN;
-            const minTop = groundTopY - RACE_TRACK_MAX_BELOW_TERRAIN;
+            const maxTop = groundTopY + maxAboveTerrain;
+            const minTop = groundTopY - maxBelowTerrain;
             previousTopY = THREE.MathUtils.clamp(previousTopY, minTop, maxTop);
             previousTopY = THREE.MathUtils.clamp(previousTopY, 2, WORLD_MAX_Y - 4);
             nodes.push({
@@ -18723,9 +18762,16 @@ function getRaceTrackNodeYaw(nodes, index) {
     return normalizeYawRadians(Math.atan2(dx, dz));
 }
 
-function createRaceTrackColumnPlan(nodes, roadHalfWidth) {
+function createRaceTrackColumnPlan(nodes, roadHalfWidth, templateConfig = null) {
     const columns = new Map();
     const halfWidth = Math.max(2, Math.floor(Number(roadHalfWidth) || 4));
+    const forceSingleLayer = templateConfig?.forceSingleLayer === true;
+    const layerMergeDelta = Math.max(
+        0.8,
+        Number.isFinite(Number(templateConfig?.layerMergeDelta))
+            ? Number(templateConfig.layerMergeDelta)
+            : 1.45
+    );
     if (!Array.isArray(nodes) || nodes.length < 2) {
         return columns;
     }
@@ -18736,11 +18782,34 @@ function createRaceTrackColumnPlan(nodes, roadHalfWidth) {
         const key = blockColumnKey(roundedX, roundedZ);
         let entry = columns.get(key);
         if (!entry) {
-            entry = { x: roundedX, z: roundedZ, sumTopY: 0, count: 0 };
+            entry = { x: roundedX, z: roundedZ, layers: [] };
             columns.set(key, entry);
         }
-        entry.sumTopY += (Number(sampleTopY) || 0) * weight;
-        entry.count += weight;
+        const normalizedTopY = Number(sampleTopY) || 0;
+        if (forceSingleLayer) {
+            if (!entry.layers[0]) {
+                entry.layers[0] = { sumTopY: 0, count: 0 };
+            }
+            entry.layers[0].sumTopY += normalizedTopY * weight;
+            entry.layers[0].count += weight;
+            return;
+        }
+        let bestLayer = null;
+        let bestDelta = Number.POSITIVE_INFINITY;
+        for (const layer of entry.layers) {
+            const layerAverage = (Number(layer.sumTopY) || 0) / Math.max(1, Number(layer.count) || 1);
+            const delta = Math.abs(layerAverage - normalizedTopY);
+            if (delta < bestDelta) {
+                bestDelta = delta;
+                bestLayer = layer;
+            }
+        }
+        if (!bestLayer || bestDelta > layerMergeDelta) {
+            bestLayer = { sumTopY: 0, count: 0 };
+            entry.layers.push(bestLayer);
+        }
+        bestLayer.sumTopY += normalizedTopY * weight;
+        bestLayer.count += weight;
     };
 
     for (let i = 0; i < nodes.length - 1; i += 1) {
@@ -18774,34 +18843,130 @@ function createRaceTrackColumnPlan(nodes, roadHalfWidth) {
     return columns;
 }
 
-function applyRaceTrackColumnPlan(columns, stats) {
+function applyRaceTrackColumnPlan(columns, stats, templateConfig = null) {
+    const columnMaxVerticalEdit = Math.max(
+        1,
+        Math.floor(
+            Number.isFinite(Number(templateConfig?.columnMaxVerticalEdit))
+                ? Number(templateConfig.columnMaxVerticalEdit)
+                : RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT
+        )
+    );
+    const bridgeFillDepth = Math.max(
+        0,
+        Math.floor(Number.isFinite(Number(templateConfig?.bridgeFillDepth)) ? Number(templateConfig.bridgeFillDepth) : 0)
+    );
+    const layerMinVerticalGap = Math.max(
+        3,
+        Math.floor(Number.isFinite(Number(templateConfig?.layerMinVerticalGap)) ? Number(templateConfig.layerMinVerticalGap) : 4)
+    );
+    const layerNoiseRatioThreshold = THREE.MathUtils.clamp(
+        Number.isFinite(Number(templateConfig?.layerNoiseRatioThreshold))
+            ? Number(templateConfig.layerNoiseRatioThreshold)
+            : 0.26,
+        0,
+        1
+    );
+    const maxLayersPerColumn = Math.max(
+        1,
+        Math.floor(Number.isFinite(Number(templateConfig?.maxLayersPerColumn)) ? Number(templateConfig.maxLayersPerColumn) : 2)
+    );
+    const forceSingleLayer = templateConfig?.forceSingleLayer === true;
     const topYByColumnKey = new Map();
     for (const entry of columns.values()) {
         const x = Math.floor(Number(entry.x) || 0);
         const z = Math.floor(Number(entry.z) || 0);
-        const averagedTopY = Math.round((Number(entry.sumTopY) || 0) / Math.max(1, Number(entry.count) || 1));
-        let targetTopY = THREE.MathUtils.clamp(averagedTopY, 2, WORLD_MAX_Y - 4);
+        const layersRawSource = Array.isArray(entry.layers) ? entry.layers : [];
+        const layersByWeight = [...layersRawSource]
+            .filter((layer) => Number(layer?.count) > 0)
+            .sort((left, right) => (Number(right?.count) || 0) - (Number(left?.count) || 0));
+        const peakCount = Number(layersByWeight[0]?.count) || 0;
+        const minLayerCount = Math.max(1.2, peakCount * layerNoiseRatioThreshold);
+        const layersRaw = layersByWeight
+            .filter((layer) => (Number(layer?.count) || 0) >= minLayerCount)
+            .slice(0, forceSingleLayer ? 1 : maxLayersPerColumn);
+        if (layersRaw.length <= 0) {
+            continue;
+        }
+        const layerTopYs = layersRaw
+            .map((layer) => {
+                const avgY = (Number(layer.sumTopY) || 0) / Math.max(1, Number(layer.count) || 1);
+                return THREE.MathUtils.clamp(Math.round(avgY), 2, WORLD_MAX_Y - 4);
+            })
+            .filter((value) => Number.isFinite(value))
+            .sort((a, b) => a - b);
+        if (layerTopYs.length <= 0) {
+            continue;
+        }
+        const dedupedLayerTopYs = [];
+        for (const topY of layerTopYs) {
+            const last = dedupedLayerTopYs[dedupedLayerTopYs.length - 1];
+            if (Number.isFinite(last) && Math.abs(topY - last) <= 1) {
+                dedupedLayerTopYs[dedupedLayerTopYs.length - 1] = Math.round((last + topY) * 0.5);
+            } else {
+                dedupedLayerTopYs.push(topY);
+            }
+        }
+        const resolvedLayerTopYs = dedupedLayerTopYs
+            .map((value) => THREE.MathUtils.clamp(Math.round(value), 2, WORLD_MAX_Y - 4))
+            .filter((value) => Number.isFinite(value))
+            .sort((a, b) => a - b);
+        if (resolvedLayerTopYs.length <= 0) {
+            continue;
+        }
+        if (forceSingleLayer && resolvedLayerTopYs.length > 1) {
+            resolvedLayerTopYs.length = 1;
+        }
+        for (let i = 1; i < resolvedLayerTopYs.length; i += 1) {
+            const minAllowed = resolvedLayerTopYs[i - 1] + layerMinVerticalGap;
+            if (resolvedLayerTopYs[i] < minAllowed) {
+                resolvedLayerTopYs[i] = minAllowed;
+            }
+        }
+        const maxAllowedTopY = WORLD_MAX_Y - 4;
+        const overflow = resolvedLayerTopYs[resolvedLayerTopYs.length - 1] - maxAllowedTopY;
+        if (overflow > 0) {
+            for (let i = 0; i < resolvedLayerTopYs.length; i += 1) {
+                resolvedLayerTopYs[i] = Math.max(2, resolvedLayerTopYs[i] - overflow);
+            }
+        }
+
+        let targetTopY = resolvedLayerTopYs[0];
         const currentTopY = sampleTrackSurfaceTopY(x + 0.5, z + 0.5, targetTopY + 10);
         const currentTopSolidY = currentTopY - 1;
         let targetTopSolidY = targetTopY - 1;
 
         const verticalDelta = targetTopSolidY - currentTopSolidY;
-        if (verticalDelta > RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT) {
-            targetTopSolidY = currentTopSolidY + RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT;
+        if (verticalDelta > columnMaxVerticalEdit) {
+            targetTopSolidY = currentTopSolidY + columnMaxVerticalEdit;
             targetTopY = targetTopSolidY + 1;
-        } else if (verticalDelta < -RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT) {
-            targetTopSolidY = currentTopSolidY - RACE_TRACK_COLUMN_MAX_VERTICAL_EDIT;
+        } else if (verticalDelta < -columnMaxVerticalEdit) {
+            targetTopSolidY = currentTopSolidY - columnMaxVerticalEdit;
             targetTopY = targetTopSolidY + 1;
         }
 
         if (!inWorldBounds(x, targetTopSolidY, z)) {
             continue;
         }
+        resolvedLayerTopYs[0] = targetTopY;
 
         if (currentTopSolidY < targetTopSolidY) {
-            for (let y = currentTopSolidY + 1; y <= targetTopSolidY; y += 1) {
-                applyBlockMutation(x, y, z, RACE_TRACK_FILL_BLOCK_ID, "local");
-                stats.blocksEdited += 1;
+            const verticalRise = targetTopSolidY - currentTopSolidY;
+            if (bridgeFillDepth > 0 && verticalRise > bridgeFillDepth) {
+                const fillStartY = Math.max(currentTopSolidY + 1, targetTopSolidY - bridgeFillDepth + 1);
+                for (let y = currentTopSolidY + 1; y < fillStartY; y += 1) {
+                    applyBlockMutation(x, y, z, BLOCK.AIR, "local");
+                    stats.blocksEdited += 1;
+                }
+                for (let y = fillStartY; y <= targetTopSolidY; y += 1) {
+                    applyBlockMutation(x, y, z, RACE_TRACK_FILL_BLOCK_ID, "local");
+                    stats.blocksEdited += 1;
+                }
+            } else {
+                for (let y = currentTopSolidY + 1; y <= targetTopSolidY; y += 1) {
+                    applyBlockMutation(x, y, z, RACE_TRACK_FILL_BLOCK_ID, "local");
+                    stats.blocksEdited += 1;
+                }
             }
         } else if (currentTopSolidY > targetTopSolidY) {
             for (let y = targetTopSolidY + 1; y <= currentTopSolidY; y += 1) {
@@ -18809,17 +18974,39 @@ function applyRaceTrackColumnPlan(columns, stats) {
                 stats.blocksEdited += 1;
             }
         }
-
-        applyBlockMutation(x, targetTopSolidY, z, RACE_TRACK_SURFACE_BLOCK_ID, "local");
-        stats.blocksEdited += 1;
-        for (let y = targetTopSolidY + 1; y <= targetTopSolidY + RACE_TRACK_CLEARANCE_HEIGHT; y += 1) {
-            if (!inWorldBounds(x, y, z)) {
-                break;
+        for (let layerIndex = 0; layerIndex < resolvedLayerTopYs.length; layerIndex += 1) {
+            const layerTopY = resolvedLayerTopYs[layerIndex];
+            const layerTopSolidY = layerTopY - 1;
+            if (!inWorldBounds(x, layerTopSolidY, z)) {
+                continue;
             }
-            applyBlockMutation(x, y, z, BLOCK.AIR, "local");
+            applyBlockMutation(x, layerTopSolidY, z, RACE_TRACK_SURFACE_BLOCK_ID, "local");
             stats.blocksEdited += 1;
+            const nextLayerTopY = resolvedLayerTopYs[layerIndex + 1];
+            let clearanceTopY = layerTopSolidY + RACE_TRACK_CLEARANCE_HEIGHT;
+            if (Number.isFinite(nextLayerTopY)) {
+                clearanceTopY = Math.min(clearanceTopY, nextLayerTopY - 2);
+            }
+            for (let y = layerTopSolidY + 1; y <= clearanceTopY; y += 1) {
+                if (!inWorldBounds(x, y, z)) {
+                    break;
+                }
+                applyBlockMutation(x, y, z, BLOCK.AIR, "local");
+                stats.blocksEdited += 1;
+            }
         }
-        topYByColumnKey.set(blockColumnKey(x, z), targetTopY);
+        for (let layerIndex = 0; layerIndex < resolvedLayerTopYs.length - 1; layerIndex += 1) {
+            const lowerTopSolidY = resolvedLayerTopYs[layerIndex] - 1;
+            const upperTopSolidY = resolvedLayerTopYs[layerIndex + 1] - 1;
+            for (let y = lowerTopSolidY + 1; y < upperTopSolidY; y += 1) {
+                if (!inWorldBounds(x, y, z)) {
+                    continue;
+                }
+                applyBlockMutation(x, y, z, BLOCK.AIR, "local");
+                stats.blocksEdited += 1;
+            }
+        }
+        topYByColumnKey.set(blockColumnKey(x, z), resolvedLayerTopYs);
     }
     return topYByColumnKey;
 }
@@ -18828,10 +19015,88 @@ function getRaceTrackTopYAt(topYByColumnKey, x, z, fallbackTopY = 1) {
     const sampleX = Math.round(Number(x) || 0);
     const sampleZ = Math.round(Number(z) || 0);
     const direct = topYByColumnKey.get(blockColumnKey(sampleX, sampleZ));
+    if (Array.isArray(direct) && direct.length > 0) {
+        const fallback = Number(fallbackTopY);
+        if (Number.isFinite(fallback)) {
+            let best = direct[0];
+            let bestDelta = Math.abs((Number(best) || 0) - fallback);
+            for (let i = 1; i < direct.length; i += 1) {
+                const candidate = Number(direct[i]) || 0;
+                const delta = Math.abs(candidate - fallback);
+                if (delta < bestDelta) {
+                    best = candidate;
+                    bestDelta = delta;
+                }
+            }
+            return Number(best) || sampleTrackSurfaceTopY(sampleX + 0.5, sampleZ + 0.5, fallback + 8);
+        }
+        const highest = Number(direct[direct.length - 1]);
+        if (Number.isFinite(highest)) {
+            return highest;
+        }
+    }
     if (Number.isFinite(direct)) {
         return direct;
     }
     return sampleTrackSurfaceTopY(sampleX + 0.5, sampleZ + 0.5, fallbackTopY + 8);
+}
+
+function getRaceTrackLayerTopYListAt(topYByColumnKey, x, z) {
+    const sampleX = Math.round(Number(x) || 0);
+    const sampleZ = Math.round(Number(z) || 0);
+    const direct = topYByColumnKey.get(blockColumnKey(sampleX, sampleZ));
+    if (Array.isArray(direct)) {
+        return direct
+            .map((value) => Number(value))
+            .filter((value) => Number.isFinite(value));
+    }
+    if (Number.isFinite(Number(direct))) {
+        return [Number(direct)];
+    }
+    return [];
+}
+
+function hasRaceTrackLayerNear(topYByColumnKey, x, z, referenceTopY, maxDelta = 1.35) {
+    const layers = getRaceTrackLayerTopYListAt(topYByColumnKey, x, z);
+    if (layers.length <= 0) {
+        return false;
+    }
+    const reference = Number(referenceTopY);
+    if (!Number.isFinite(reference)) {
+        return true;
+    }
+    for (const layerTopY of layers) {
+        if (Math.abs(layerTopY - reference) <= maxDelta) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function isRaceTrackEdgePlacementValid(topYByColumnKey, node, rightX, rightZ, roadHalfWidth, side, candidateX, candidateZ, candidateTopY, options = null) {
+    const nodeX = Number(node?.x) || 0;
+    const nodeZ = Number(node?.z) || 0;
+    const referenceTopY = Number.isFinite(Number(candidateTopY))
+        ? Number(candidateTopY)
+        : (Number(node?.topY) || 0);
+    const innerOffset = side * Math.max(1.25, roadHalfWidth - 0.45);
+    const innerX = Math.round(nodeX + rightX * innerOffset);
+    const innerZ = Math.round(nodeZ + rightZ * innerOffset);
+    if (!hasRaceTrackLayerNear(topYByColumnKey, innerX, innerZ, referenceTopY, 1.4)) {
+        return false;
+    }
+    if (hasRaceTrackLayerNear(topYByColumnKey, candidateX, candidateZ, referenceTopY, 1.4)) {
+        return false;
+    }
+    const strictOuterCheck = options?.strictOuterCheck !== false;
+    if (strictOuterCheck) {
+        const outerX = Math.round(candidateX + rightX * side * 1.45);
+        const outerZ = Math.round(candidateZ + rightZ * side * 1.45);
+        if (hasRaceTrackLayerNear(topYByColumnKey, outerX, outerZ, referenceTopY, 1.4)) {
+            return false;
+        }
+    }
+    return true;
 }
 
 function addRaceTrackProp(propType, worldX, worldY, worldZ, yaw, stats, dedupeSet = null) {
@@ -18883,11 +19148,160 @@ function getRaceTrackNodeIndexByFraction(nodes, fraction) {
     return THREE.MathUtils.clamp(Math.round((nodes.length - 1) * clamped), 0, nodes.length - 1);
 }
 
+function paintRaceTrackSignBlock(topYByColumnKey, worldX, worldZ, fallbackTopY, blockId, stats, dedupeSet = null) {
+    const x = Math.round(Number(worldX) || 0);
+    const z = Math.round(Number(worldZ) || 0);
+    const topY = getRaceTrackTopYAt(topYByColumnKey, x, z, fallbackTopY);
+    const topSolidY = Math.round(topY - 1);
+    if (!inWorldBounds(x, topSolidY, z)) {
+        return false;
+    }
+    if (!hasRaceTrackLayerNear(topYByColumnKey, x, z, topY, 1.9)) {
+        return false;
+    }
+    const paintKey = `${x}|${topSolidY}|${z}`;
+    if (dedupeSet && dedupeSet.has(paintKey)) {
+        return false;
+    }
+    if (getBlock(x, topSolidY, z) !== blockId) {
+        applyBlockMutation(x, topSolidY, z, blockId, "local");
+        stats.blocksEdited += 1;
+    }
+    if (dedupeSet) {
+        dedupeSet.add(paintKey);
+    }
+    return true;
+}
+
+function placeRaceTrackDirectionalArrowAtNode(nodes, nodeIndex, topYByColumnKey, blockId, stats, dedupeSet = null) {
+    const node = nodes[nodeIndex];
+    if (!node) {
+        return;
+    }
+    const yaw = getRaceTrackNodeYaw(nodes, nodeIndex);
+    const rightX = Math.sin(yaw + Math.PI * 0.5);
+    const rightZ = Math.cos(yaw + Math.PI * 0.5);
+    const forwardX = Math.sin(yaw);
+    const forwardZ = Math.cos(yaw);
+    const pattern = [
+        [0, 3],
+        [-1, 2], [0, 2], [1, 2],
+        [-2, 1], [-1, 1], [0, 1], [1, 1], [2, 1],
+        [0, 0],
+        [0, -1], [0, -2]
+    ];
+    for (const [lateral, forward] of pattern) {
+        const markerX = (Number(node.x) || 0) + rightX * lateral + forwardX * forward;
+        const markerZ = (Number(node.z) || 0) + rightZ * lateral + forwardZ * forward;
+        paintRaceTrackSignBlock(topYByColumnKey, markerX, markerZ, node.topY, blockId, stats, dedupeSet);
+    }
+}
+
+function placeRaceTrackStartSignAtNode(nodes, nodeIndex, topYByColumnKey, stats, dedupeSet = null) {
+    const node = nodes[nodeIndex];
+    if (!node) {
+        return;
+    }
+    const yaw = getRaceTrackNodeYaw(nodes, nodeIndex);
+    const rightX = Math.sin(yaw + Math.PI * 0.5);
+    const rightZ = Math.cos(yaw + Math.PI * 0.5);
+    const forwardX = Math.sin(yaw);
+    const forwardZ = Math.cos(yaw);
+    for (let forward = -2; forward <= 1; forward += 1) {
+        for (let lateral = -3; lateral <= 3; lateral += 1) {
+            const markerX = (Number(node.x) || 0) + rightX * lateral + forwardX * forward;
+            const markerZ = (Number(node.z) || 0) + rightZ * lateral + forwardZ * forward;
+            paintRaceTrackSignBlock(topYByColumnKey, markerX, markerZ, node.topY, RACE_TRACK_SIGN_START_BLOCK_ID, stats, dedupeSet);
+        }
+    }
+    placeRaceTrackDirectionalArrowAtNode(nodes, nodeIndex, topYByColumnKey, RACE_TRACK_SIGN_ARROW_BLOCK_ID, stats, dedupeSet);
+}
+
+function placeRaceTrackSignage(templateConfig, nodes, startNodeIndex, topYByColumnKey, stats) {
+    if (!Array.isArray(nodes) || nodes.length <= 0) {
+        return;
+    }
+    const explicitSpacing = Number(templateConfig?.directionArrowSpacingNodes);
+    if (!Number.isFinite(explicitSpacing) || explicitSpacing <= 0) {
+        return;
+    }
+    const spacing = Math.max(
+        16,
+        Math.floor(
+            Number.isFinite(explicitSpacing)
+                ? explicitSpacing
+                : Math.max(18, nodes.length / 12)
+        )
+    );
+    const signDedupe = new Set();
+    const startIndex = THREE.MathUtils.clamp(Math.floor(Number(startNodeIndex) || 0), 0, nodes.length - 1);
+    for (let i = spacing; i < nodes.length - 2; i += spacing) {
+        placeRaceTrackDirectionalArrowAtNode(nodes, i, topYByColumnKey, RACE_TRACK_SIGN_ARROW_BLOCK_ID, stats, signDedupe);
+    }
+    placeRaceTrackStartSignAtNode(nodes, startIndex, topYByColumnKey, stats, signDedupe);
+}
+
+function paintRaceTrackWordAtNode(nodes, nodeIndex, word, topYByColumnKey, blockId, stats, dedupeSet = null) {
+    const node = nodes[nodeIndex];
+    if (!node || !word) {
+        return;
+    }
+    const patterns = {
+        M: ["10001", "11011", "10101", "10001", "10001"],
+        E: ["1111", "1000", "1110", "1000", "1111"],
+        T: ["11111", "00100", "00100", "00100", "00100"],
+        A: ["01110", "10001", "11111", "10001", "10001"]
+    };
+    const letters = String(word || "").toUpperCase().split("");
+    const resolved = letters
+        .map((letter) => patterns[letter] || null)
+        .filter((pattern) => Array.isArray(pattern));
+    if (resolved.length <= 0) {
+        return;
+    }
+    const yaw = getRaceTrackNodeYaw(nodes, nodeIndex);
+    const rightX = Math.sin(yaw + Math.PI * 0.5);
+    const rightZ = Math.cos(yaw + Math.PI * 0.5);
+    const forwardX = Math.sin(yaw);
+    const forwardZ = Math.cos(yaw);
+    let totalWidth = 0;
+    for (let i = 0; i < resolved.length; i += 1) {
+        totalWidth += resolved[i][0].length;
+        if (i < resolved.length - 1) {
+            totalWidth += 1;
+        }
+    }
+    let cursor = -Math.floor(totalWidth * 0.5);
+    const forwardStart = -4;
+    for (const glyph of resolved) {
+        for (let row = 0; row < glyph.length; row += 1) {
+            const rowText = glyph[row];
+            for (let col = 0; col < rowText.length; col += 1) {
+                if (rowText[col] !== "1") {
+                    continue;
+                }
+                const markerX = (Number(node.x) || 0) + rightX * (cursor + col) + forwardX * (forwardStart - row);
+                const markerZ = (Number(node.z) || 0) + rightZ * (cursor + col) + forwardZ * (forwardStart - row);
+                paintRaceTrackSignBlock(topYByColumnKey, markerX, markerZ, node.topY, blockId, stats, dedupeSet);
+            }
+        }
+        cursor += glyph[0].length + 1;
+    }
+}
+
+function placeRaceTrackFinishLabel(nodes, finishIndex, topYByColumnKey, stats) {
+    const dedupe = new Set();
+    paintRaceTrackWordAtNode(nodes, finishIndex, "META", topYByColumnKey, RACE_TRACK_SIGN_START_BLOCK_ID, stats, dedupe);
+}
+
 function placeRaceTrackFeatures(templateConfig, nodes, topYByColumnKey, stats) {
     const roadHalfWidth = Math.max(2, Math.floor(Number(templateConfig.roadHalfWidth) || 4));
     const barrierStride = Math.max(1, Math.floor(Number(templateConfig.barrierStride) || 2));
     const curbStride = Math.max(1, Math.floor(Number(templateConfig.curbStride) || 1));
+    const strictOuterBarrierCheck = templateConfig?.strictOuterBarrierCheck !== false;
+    const forceBarrierOnAllEdges = templateConfig?.forceBarrierOnAllEdges === true;
     const dedupeSet = new Set();
+    let startIndexForSignage = 0;
 
     for (let i = 0; i < nodes.length; i += 1) {
         const node = nodes[i];
@@ -18898,27 +19312,90 @@ function placeRaceTrackFeatures(templateConfig, nodes, topYByColumnKey, stats) {
 
         if (i % curbStride === 0) {
             for (const side of [-1, 1]) {
-                const curbOffset = side * (roadHalfWidth + 0.35);
-                const curbX = Math.round((Number(node.x) || 0) + rightX * curbOffset);
-                const curbZ = Math.round((Number(node.z) || 0) + rightZ * curbOffset);
-                const curbTopY = getRaceTrackTopYAt(topYByColumnKey, curbX, curbZ, node.topY);
-                addRaceTrackProp(PROP_TYPE.RACE_CURB, curbX + 0.5, curbTopY, curbZ + 0.5, curbYaw, stats, dedupeSet);
+                let curbPlaced = false;
+                for (const extraOffset of [0.55, 0.9, 1.25]) {
+                    const curbOffset = side * (roadHalfWidth + extraOffset);
+                    const curbX = Math.round((Number(node.x) || 0) + rightX * curbOffset);
+                    const curbZ = Math.round((Number(node.z) || 0) + rightZ * curbOffset);
+                    const curbTopY = getRaceTrackTopYAt(topYByColumnKey, curbX, curbZ, node.topY);
+                    if (
+                        !forceBarrierOnAllEdges
+                        && !isRaceTrackEdgePlacementValid(topYByColumnKey, node, rightX, rightZ, roadHalfWidth, side, curbX, curbZ, curbTopY, {
+                            strictOuterCheck: strictOuterBarrierCheck
+                        })
+                    ) {
+                        continue;
+                    }
+                    addRaceTrackProp(PROP_TYPE.RACE_CURB, curbX + 0.5, curbTopY, curbZ + 0.5, curbYaw, stats, dedupeSet);
+                    curbPlaced = true;
+                    break;
+                }
+                if (!curbPlaced) {
+                    continue;
+                }
             }
         }
         if (i % barrierStride === 0) {
             for (const side of [-1, 1]) {
-                const barrierOffset = side * (roadHalfWidth + 1.35);
-                const barrierX = Math.round((Number(node.x) || 0) + rightX * barrierOffset);
-                const barrierZ = Math.round((Number(node.z) || 0) + rightZ * barrierOffset);
-                const barrierTopY = getRaceTrackTopYAt(topYByColumnKey, barrierX, barrierZ, node.topY);
-                addRaceTrackProp(PROP_TYPE.RACE_BARRIER, barrierX + 0.5, barrierTopY, barrierZ + 0.5, curbYaw, stats, dedupeSet);
+                let barrierPlaced = false;
+                for (const extraOffset of [2.2, 2.7, 3.1]) {
+                    const barrierOffset = side * (roadHalfWidth + extraOffset);
+                    const barrierX = Math.round((Number(node.x) || 0) + rightX * barrierOffset);
+                    const barrierZ = Math.round((Number(node.z) || 0) + rightZ * barrierOffset);
+                    const barrierTopY = getRaceTrackTopYAt(topYByColumnKey, barrierX, barrierZ, node.topY);
+                    if (
+                        !forceBarrierOnAllEdges
+                        && !isRaceTrackEdgePlacementValid(topYByColumnKey, node, rightX, rightZ, roadHalfWidth, side, barrierX, barrierZ, barrierTopY, {
+                            strictOuterCheck: strictOuterBarrierCheck
+                        })
+                    ) {
+                        continue;
+                    }
+                    addRaceTrackProp(PROP_TYPE.RACE_BARRIER, barrierX + 0.5, barrierTopY, barrierZ + 0.5, curbYaw, stats, dedupeSet);
+                    barrierPlaced = true;
+                    break;
+                }
+                if (!barrierPlaced) {
+                    continue;
+                }
             }
         }
     }
 
-    const finishIndex = Math.max(2, getRaceTrackNodeIndexByFraction(nodes, 0.03));
+    const finishFraction = THREE.MathUtils.clamp(
+        Number.isFinite(Number(templateConfig?.finishFraction))
+            ? Number(templateConfig.finishFraction)
+            : 0.03,
+        0,
+        1
+    );
+    const finishIndex = Math.max(2, getRaceTrackNodeIndexByFraction(nodes, finishFraction));
     const finishNode = nodes[finishIndex];
     const finishYaw = getRaceTrackNodeYaw(nodes, finishIndex);
+
+    const startFractionRaw = Number(templateConfig?.startMarkerFraction);
+    if (Number.isFinite(startFractionRaw)) {
+        const startFraction = THREE.MathUtils.clamp(startFractionRaw, 0, 1);
+        if (Math.abs(startFraction - finishFraction) >= 0.06) {
+            const startMarkerTypeRaw = String(templateConfig?.startMarkerType || PROP_TYPE.RACE_CHECKPOINT);
+            const startMarkerType = VALID_PROP_TYPES.has(startMarkerTypeRaw)
+                ? startMarkerTypeRaw
+                : PROP_TYPE.RACE_CHECKPOINT;
+            const startIndex = getRaceTrackNodeIndexByFraction(nodes, startFraction);
+            startIndexForSignage = startIndex;
+            const startNode = nodes[startIndex];
+            addRaceTrackProp(
+                startMarkerType,
+                Math.round(startNode.x) + 0.5,
+                getRaceTrackTopYAt(topYByColumnKey, startNode.x, startNode.z, startNode.topY),
+                Math.round(startNode.z) + 0.5,
+                getRaceTrackNodeYaw(nodes, startIndex),
+                stats,
+                dedupeSet
+            );
+        }
+    }
+
     addRaceTrackProp(
         PROP_TYPE.RACE_FINISH_LINE,
         Math.round(finishNode.x) + 0.5,
@@ -18928,6 +19405,7 @@ function placeRaceTrackFeatures(templateConfig, nodes, topYByColumnKey, stats) {
         stats,
         dedupeSet
     );
+    placeRaceTrackFinishLabel(nodes, finishIndex, topYByColumnKey, stats);
 
     for (const fraction of templateConfig.checkpointFractions || []) {
         const checkpointIndex = getRaceTrackNodeIndexByFraction(nodes, fraction);
@@ -18976,6 +19454,7 @@ function placeRaceTrackFeatures(templateConfig, nodes, topYByColumnKey, stats) {
             dedupeSet
         );
     }
+    placeRaceTrackSignage(templateConfig, nodes, startIndexForSignage, topYByColumnKey, stats);
 }
 
 function buildRaceTrackModelFromAnchor(propType, anchor) {
@@ -18993,8 +19472,8 @@ function buildRaceTrackModelFromAnchor(propType, anchor) {
     if (nodes.length < 8) {
         return null;
     }
-    const roadColumns = createRaceTrackColumnPlan(nodes, templateConfig.roadHalfWidth);
-    const topYByColumnKey = applyRaceTrackColumnPlan(roadColumns, stats);
+    const roadColumns = createRaceTrackColumnPlan(nodes, templateConfig.roadHalfWidth, templateConfig);
+    const topYByColumnKey = applyRaceTrackColumnPlan(roadColumns, stats, templateConfig);
     placeRaceTrackFeatures(templateConfig, nodes, topYByColumnKey, stats);
     scheduleWorldSave();
     flushCloudEditWrites();
@@ -19028,6 +19507,219 @@ function tryBuildRaceTrackFromSelection(trackPropType, targetedBlock, targetedPr
         2200
     );
     return true;
+}
+
+function isRaceTrackManagedPropType(propType) {
+    return RACE_TRACK_MANAGED_PROP_TYPES.has(String(propType || ""));
+}
+
+function shouldRestoreRaceTrackAirBlock(parsed, solidColumnRanges) {
+    if (!parsed || solidColumnRanges.size <= 0) {
+        return false;
+    }
+    const radius = 2;
+    for (let dz = -radius; dz <= radius; dz += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+            if (dx * dx + dz * dz > radius * radius) {
+                continue;
+            }
+            const range = solidColumnRanges.get(blockColumnKey(parsed.x + dx, parsed.z + dz));
+            if (!range) {
+                continue;
+            }
+            const minY = range.minY - 3;
+            const maxY = range.maxY + RACE_TRACK_CLEARANCE_HEIGHT + 6;
+            if (parsed.y >= minY && parsed.y <= maxY) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function isRaceTrackPropNearSolidColumns(placed, solidColumns) {
+    if (!placed || solidColumns.size <= 0) {
+        return false;
+    }
+    const baseX = Math.floor(Number(placed.x) || 0);
+    const baseY = Math.floor(Number(placed.y) || 0);
+    const baseZ = Math.floor(Number(placed.z) || 0);
+    const radius = 6;
+    for (let dz = -radius; dz <= radius; dz += 1) {
+        for (let dx = -radius; dx <= radius; dx += 1) {
+            if (dx * dx + dz * dz > radius * radius) {
+                continue;
+            }
+            const range = solidColumns.get(blockColumnKey(baseX + dx, baseZ + dz));
+            if (!range) {
+                continue;
+            }
+            const minY = range.minY - 5;
+            const maxY = range.maxY + 6;
+            if (baseY >= minY && baseY <= maxY) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+function isRaceTrackSolidNearPropCluster(parsed, propCluster) {
+    if (!parsed || !Array.isArray(propCluster) || propCluster.length <= 0) {
+        return false;
+    }
+    const radiusSq = 18 * 18;
+    for (const placed of propCluster) {
+        const propX = Math.floor(Number(placed?.x) || 0);
+        const propY = Math.floor(Number(placed?.y) || 0);
+        const propZ = Math.floor(Number(placed?.z) || 0);
+        if (Math.abs(parsed.y - propY) > 16) {
+            continue;
+        }
+        const dx = parsed.x - propX;
+        const dz = parsed.z - propZ;
+        if (dx * dx + dz * dz <= radiusSq) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function collectRaceTrackPropCluster(finishPlaced = null) {
+    const managedProps = [];
+    for (const placed of placedProps.values()) {
+        if (isRaceTrackManagedPropType(placed.propType)) {
+            managedProps.push(placed);
+        }
+    }
+    if (managedProps.length <= 0) {
+        return [];
+    }
+    if (!finishPlaced || !isRaceTrackManagedPropType(finishPlaced.propType)) {
+        return managedProps;
+    }
+
+    const linkDistanceSq = 28 * 28;
+    const maxVerticalDelta = 14;
+    const visited = new Set([finishPlaced.id]);
+    const queue = [finishPlaced];
+    for (let head = 0; head < queue.length; head += 1) {
+        const current = queue[head];
+        const currentX = Number(current?.x) || 0;
+        const currentY = Number(current?.y) || 0;
+        const currentZ = Number(current?.z) || 0;
+        for (const candidate of managedProps) {
+            if (!candidate || visited.has(candidate.id)) {
+                continue;
+            }
+            if (Math.abs((Number(candidate.y) || 0) - currentY) > maxVerticalDelta) {
+                continue;
+            }
+            const dx = (Number(candidate.x) || 0) - currentX;
+            const dz = (Number(candidate.z) || 0) - currentZ;
+            if (dx * dx + dz * dz <= linkDistanceSq) {
+                visited.add(candidate.id);
+                queue.push(candidate);
+            }
+        }
+    }
+
+    const clustered = managedProps.filter((placed) => visited.has(placed.id));
+    return clustered.length > 0 ? clustered : [finishPlaced];
+}
+
+function removeAllRaceTrackBuildArtifacts(finishPropHit = null) {
+    const solidColumns = new Map();
+    const blockTargetsByKey = new Map();
+    for (const [key, id] of editedBlocks.entries()) {
+        if (id !== RACE_TRACK_SURFACE_BLOCK_ID && id !== RACE_TRACK_FILL_BLOCK_ID) {
+            continue;
+        }
+        const parsed = parseBlockKey(key);
+        if (!parsed) {
+            continue;
+        }
+        blockTargetsByKey.set(key, parsed);
+        const columnKey = blockColumnKey(parsed.x, parsed.z);
+        const existingRange = solidColumns.get(columnKey);
+        if (!existingRange) {
+            solidColumns.set(columnKey, { minY: parsed.y, maxY: parsed.y });
+        } else {
+            existingRange.minY = Math.min(existingRange.minY, parsed.y);
+            existingRange.maxY = Math.max(existingRange.maxY, parsed.y);
+        }
+    }
+    for (const [key, id] of editedBlocks.entries()) {
+        if (id !== BLOCK.AIR) {
+            continue;
+        }
+        const parsed = parseBlockKey(key);
+        if (parsed && shouldRestoreRaceTrackAirBlock(parsed, solidColumns)) {
+            blockTargetsByKey.set(key, parsed);
+        }
+    }
+
+    let removedProps = 0;
+    for (const placed of Array.from(placedProps.values())) {
+        if (!isRaceTrackManagedPropType(placed.propType)) {
+            continue;
+        }
+        if (removePlacedPropEntry(placed.id, "local", false)) {
+            removedProps += 1;
+        }
+    }
+
+    let restoredBlocks = 0;
+    for (const [key, parsed] of blockTargetsByKey.entries()) {
+        if (!editedBlocks.has(key)) {
+            continue;
+        }
+        const proceduralId = getProceduralBlock(parsed.x, parsed.y, parsed.z);
+        applyBlockMutation(parsed.x, parsed.y, parsed.z, proceduralId, "local");
+        if (!editedBlocks.has(key)) {
+            restoredBlocks += 1;
+        }
+    }
+
+    return { removedProps, restoredBlocks };
+}
+
+function promptRaceFinishRemovalMode() {
+    const shouldRelock = controls.isLocked;
+    if (shouldRelock) {
+        try {
+            controls.unlock();
+        } catch (error) {
+        }
+    }
+
+    let mode = "cancel";
+    const removeTrack = window.confirm("Meta: aceptar para borrar TODA la pista; cancelar para ver otra opcion.");
+    if (removeTrack) {
+        mode = "track";
+    } else {
+        const removeMetaOnly = window.confirm("Meta: aceptar para borrar SOLO la meta; cancelar para mantenerla.");
+        if (removeMetaOnly) {
+            mode = "meta";
+        }
+    }
+
+    if (
+        shouldRelock
+        && state.worldStarted
+        && !state.paused
+        && !state.inventoryOpen
+        && !state.tutorialVisible
+        && !state.interactionPanelOpen
+        && !isMapBlockingGameplay()
+    ) {
+        try {
+            controls.lock();
+        } catch (error) {
+        }
+    }
+
+    return mode;
 }
 
 function attemptMineOrPlace(isPlacing) {
@@ -19657,7 +20349,27 @@ function tryRemovePlacedPropAtCrosshair() {
     if (!propHit) {
         return false;
     }
-
+    if (propHit.placed?.propType === PROP_TYPE.RACE_FINISH_LINE) {
+        const mode = promptRaceFinishRemovalMode();
+        if (mode === "track") {
+            const result = removeAllRaceTrackBuildArtifacts(propHit);
+            if (result.restoredBlocks <= 0 && result.removedProps <= 0) {
+                showToast("No encontre pista para borrar", "info", 1300);
+            } else {
+                showToast(
+                    `Pista borrada: ${result.restoredBlocks} bloques restaurados y ${result.removedProps} objetos removidos`,
+                    "success",
+                    2400
+                );
+            }
+            return true;
+        }
+        if (mode === "meta") {
+            return removePlacedPropEntry(propHit.propId, "local", true);
+        }
+        showToast("Accion cancelada", "info", 900);
+        return true;
+    }
     return removePlacedPropEntry(propHit.propId, "local", true);
 }
 
